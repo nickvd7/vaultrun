@@ -1,0 +1,85 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.api
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - DATABASE_URL=postgres://vaultrun:vaultrun@postgres:5432/vaultrun?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - WORKSPACE_BASE_DIR=/data/workspaces
+      - MIGRATIONS_PATH=/app/migrations
+      - MASTER_API_KEY=${MASTER_API_KEY:-changeme-master-key}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - DOCKER_CONTAINER_PREFIX=vaultrun
+      - MAX_FILE_MB=100
+      - MAX_OUTPUT_MB=10
+      - GIN_MODE=${GIN_MODE:-release}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspace_data:/data/workspaces
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ../apps/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=vaultrun
+      - POSTGRES_PASSWORD=vaultrun
+      - POSTGRES_DB=vaultrun
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultrun"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
+  workspace_data:

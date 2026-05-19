@@ -1,0 +1,22 @@
+# Compiled binaries
+/api
+/cli
+/bin/
+
+# Environment
+.env
+.env.local
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Node
+node_modules/
+.next/
+apps/frontend/.next/
+
+# OS
+.DS_Store
+*.swp

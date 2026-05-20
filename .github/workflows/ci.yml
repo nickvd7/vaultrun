@@ -57,6 +57,39 @@ jobs:
         env:
           INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_test?sslmode=disable
 
+  e2e:
+    name: E2E smoke test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vaultrun_e2e
+          POSTGRES_USER: vaultrun
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Pull sandbox image
+        run: docker pull python:3.12-slim
+
+      - name: E2E smoke test
+        run: go test -tags e2e ./cmd/api/ -v -timeout 300s
+        env:
+          INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_e2e?sslmode=disable
+
   python-sdk:
     name: Python SDK tests
     runs-on: ubuntu-latest

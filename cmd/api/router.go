@@ -71,8 +71,13 @@ func newRouter(
 	api.POST("/keys", middleware.APIKeyAuth(db, cfg.Auth.MasterKey), keys.Create)
 	api.GET("/keys", middleware.APIKeyAuth(db, cfg.Auth.MasterKey), keys.List)
 
-	// All remaining routes require a valid API key
-	authGroup := api.Group("/", middleware.APIKeyAuth(db, cfg.Auth.MasterKey))
+	// All remaining routes require a valid API key.
+	// Rate-limit is applied when configured (> 0).
+	groupMiddleware := []gin.HandlerFunc{middleware.APIKeyAuth(db, cfg.Auth.MasterKey)}
+	if cfg.Server.RateLimit > 0 {
+		groupMiddleware = append([]gin.HandlerFunc{middleware.RateLimit(cfg.Server.RateLimit)}, groupMiddleware...)
+	}
+	authGroup := api.Group("/", groupMiddleware...)
 
 	sessions := handlers.NewSessionHandler(hub)
 	authGroup.POST("/sessions", sessions.Create)

@@ -24,6 +24,7 @@ type ServerConfig struct {
 	WriteTimeout    time.Duration
 	ShutdownTimeout time.Duration
 	CORSOrigins     []string // allowed CORS origins; empty = same-origin only
+	RateLimit       int      // max requests per minute per IP (0 = disabled)
 }
 
 type DatabaseConfig struct {
@@ -81,6 +82,7 @@ func Load() (*Config, error) {
 	idleTimeout, _ := strconv.Atoi(getEnv("DOCKER_IDLE_TIMEOUT_MINS", "30"))
 	maxFileMB, _ := strconv.ParseInt(getEnv("MAX_FILE_MB", "100"), 10, 64)
 	maxOutputMB, _ := strconv.ParseInt(getEnv("MAX_OUTPUT_MB", "10"), 10, 64)
+	rateLimit, _ := strconv.Atoi(getEnv("RATE_LIMIT_PER_MIN", "120"))
 
 	// CORS origins: comma-separated list; empty string means deny all cross-origin requests
 	corsOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", ""))
@@ -96,6 +98,7 @@ func Load() (*Config, error) {
 			WriteTimeout:    120 * time.Second,
 			ShutdownTimeout: 15 * time.Second,
 			CORSOrigins:     corsOrigins,
+			RateLimit:       rateLimit,
 		},
 		Database: DatabaseConfig{
 			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),

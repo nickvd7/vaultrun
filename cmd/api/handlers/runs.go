@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,7 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
 	if session.StoppedAt != nil {
@@ -54,6 +55,17 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 	var req createRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate timeout against server-side limits to prevent DoS
+	limits := rh.h.cfg.SessionLimits()
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must be non-negative"})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
 		return
 	}
 
@@ -90,7 +102,7 @@ func (rh *RunHandler) ListBySession(c *gin.Context) {
 	pg := pagination(c)
 	runs, err := dbpkg.ListRuns(c.Request.Context(), rh.h.db, sessionID, pg.limit, pg.offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list runs"})
 		return
 	}
 
@@ -110,7 +122,7 @@ func (rh *RunHandler) Get(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get run"})
 		return
 	}
 

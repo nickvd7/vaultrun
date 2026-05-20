@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
 	"github.com/nickvd7/vaultrun/internal/audit"
+	"github.com/nickvd7/vaultrun/internal/cleanup"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
@@ -61,6 +63,12 @@ func main() {
 
 	al := audit.New(db)
 	rnr := runner.New(db, docker, al)
+
+	// Start background cleanup of idle sessions.
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
+	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
+	go cleanup.Start(cleanupCtx, db, docker, 5*time.Minute, idleFor)
 
 	r := newRouter(cfg, db, docker, ws, rnr, al)
 

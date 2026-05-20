@@ -16,6 +16,7 @@
 node_modules/
 .next/
 apps/frontend/.next/
+*.tsbuildinfo
 
 # OS
 .DS_Store

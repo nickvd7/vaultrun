@@ -18,8 +18,9 @@ func newSessionCmd() *cobra.Command {
 	cmd.AddCommand(
 		sessionCreateCmd(),
 		sessionListCmd(),
-		sessionDeleteCmd(),
 		sessionGetCmd(),
+		sessionStopCmd(),
+		sessionDeleteCmd(),
 	)
 
 	return cmd
@@ -27,11 +28,11 @@ func newSessionCmd() *cobra.Command {
 
 func sessionCreateCmd() *cobra.Command {
 	var (
-		name      string
-		image     string
-		network   bool
-		cpu       float64
-		memMB     int
+		name       string
+		image      string
+		network    bool
+		cpu        float64
+		memMB      int
 		timeoutSec int
 	)
 
@@ -109,10 +110,26 @@ func sessionGetCmd() *cobra.Command {
 	}
 }
 
+// sessionStopCmd is an alias for delete with friendlier naming.
+func sessionStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop <session-id>",
+		Short: "Stop a session and remove its container",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := newClient().delete("/api/v1/sessions/" + args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Session %s stopped\n", args[0])
+			return nil
+		},
+	}
+}
+
 func sessionDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete <session-id>",
-		Short: "Delete a session and its container",
+		Short: "Delete a session and its container (alias: stop)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := newClient().delete("/api/v1/sessions/" + args[0]); err != nil {

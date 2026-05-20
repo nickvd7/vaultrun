@@ -261,6 +261,165 @@ func (c *Client) ListFiles(ctx context.Context, sessionID string) ([]*File, erro
 	return result.Files, nil
 }
 
+// ListRuns returns all runs for a session.
+func (c *Client) ListRuns(ctx context.Context, sessionID string) ([]*Run, error) {
+	var result struct {
+		Runs []*Run `json:"runs"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/sessions/"+sessionID+"/runs", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Runs, nil
+}
+
+// DeleteFile removes a file from a session workspace.
+func (c *Client) DeleteFile(ctx context.Context, sessionID, remotePath string) error {
+	return c.do(ctx, "DELETE", "/api/v1/sessions/"+sessionID+"/files/"+remotePath, nil, nil)
+}
+
+// APIKey represents a VaultRun API key (plaintext is never returned after creation).
+type APIKey struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Prefix     string     `json:"prefix"`
+	Active     bool       `json:"active"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// CreatedKey is returned once on key creation — it includes the plaintext key.
+type CreatedKey struct {
+	APIKey
+	Key string `json:"key"`
+}
+
+// ListKeys returns all API keys.
+func (c *Client) ListKeys(ctx context.Context) ([]*APIKey, error) {
+	var result struct {
+		APIKeys []*APIKey `json:"api_keys"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/keys", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.APIKeys, nil
+}
+
+// CreateKey creates a new API key with the given name. The plaintext key is
+// returned in CreatedKey.Key and will never be retrievable again.
+func (c *Client) CreateKey(ctx context.Context, name string) (*CreatedKey, error) {
+	var k CreatedKey
+	if err := c.do(ctx, "POST", "/api/v1/keys", map[string]string{"name": name}, &k); err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
+// RevokeKey deactivates an API key by ID.
+func (c *Client) RevokeKey(ctx context.Context, keyID string) error {
+	return c.do(ctx, "DELETE", "/api/v1/keys/"+keyID, nil, nil)
+}
+
+// StreamEvent is a single SSE event from the run/stream endpoint.
+type StreamEvent struct {
+	Type       string `json:"type"`        // "stdout", "stderr", or "done"
+	Data       string `json:"data"`        // populated for stdout/stderr
+	RunID      string `json:"run_id"`      // populated in done
+	Status     string `json:"status"`      // populated in done
+	ExitCode   *int   `json:"exit_code"`   // populated in done
+	DurationMS *int64 `json:"duration_ms"` // populated in done
+	Error      string `json:"error"`       // populated on error
+}
+
+// Stream executes a command via SSE, writing stdout/stderr chunks to the
+// provided writers as they arrive. Returns the final StreamEvent (type="done").
+// Pass nil for stdout or stderr to discard that stream.
+func (c *Client) Stream(ctx context.Context, sessionID string, opts RunOptions, stdout, stderr io.Writer) (*StreamEvent, error) {
+	body := map[string]interface{}{
+		"command":         opts.Command,
+		"args":            opts.Args,
+		"timeout_seconds": opts.TimeoutSeconds,
+	}
+	if opts.Env != nil {
+		body["env"] = opts.Env
+	}
+	if opts.WorkingDir != "" {
+		body["working_dir"] = opts.WorkingDir
+	}
+
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/api/v1/sessions/"+sessionID+"/run/stream", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Use a longer timeout for streaming — the caller controls cancellation via ctx.
+	streamClient := *c.httpClient
+	streamClient.Timeout = 0
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body2, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("stream error %d: %s", resp.StatusCode, string(body2))
+	}
+
+	// Read SSE lines: "data: <json>\n\n"
+	buf := make([]byte, 0, 4096)
+	chunk := make([]byte, 512)
+	for {
+		n, readErr := resp.Body.Read(chunk)
+		if n > 0 {
+			buf = append(buf, chunk[:n]...)
+			// Process all complete lines
+			for {
+				nl := bytes.IndexByte(buf, '\n')
+				if nl < 0 {
+					break
+				}
+				line := buf[:nl]
+				buf = buf[nl+1:]
+				if bytes.HasPrefix(line, []byte("data: ")) {
+					payload := line[6:]
+					var ev StreamEvent
+					if err := json.Unmarshal(payload, &ev); err != nil {
+						continue
+					}
+					switch ev.Type {
+					case "stdout":
+						if stdout != nil {
+							_, _ = io.WriteString(stdout, ev.Data)
+						}
+					case "stderr":
+						if stderr != nil {
+							_, _ = io.WriteString(stderr, ev.Data)
+						}
+					case "done":
+						return &ev, nil
+					}
+				}
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+	}
+	return nil, fmt.Errorf("stream ended without done event")
+}
+
 // --- internal helpers ---
 
 func (c *Client) do(ctx context.Context, method, path string, body, out interface{}) error {

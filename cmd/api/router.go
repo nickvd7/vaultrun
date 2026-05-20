@@ -93,6 +93,7 @@ func newRouter(
 	authGroup.POST("/sessions/:id/files", filesH.Upload)
 	authGroup.GET("/sessions/:id/files", filesH.List)
 	authGroup.GET("/sessions/:id/files/*path", filesH.Download)
+	authGroup.DELETE("/sessions/:id/files/*path", filesH.Delete)
 
 	runsH := handlers.NewRunHandler(hub)
 	authGroup.POST("/sessions/:id/run", runsH.Execute)

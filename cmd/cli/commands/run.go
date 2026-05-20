@@ -1,7 +1,13 @@
 package commands
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -73,6 +79,106 @@ Examples:
 	cmd.Flags().StringArrayVar(&env, "env", nil, "Environment variables (KEY=VALUE)")
 	cmd.Flags().StringVar(&workDir, "workdir", "", "Working directory inside container")
 
+	return cmd
+}
+
+func newStreamCmd() *cobra.Command {
+	var (
+		timeout int
+		env     []string
+		workDir string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "stream <session-id> -- <command> [args...]",
+		Short: "Execute a command with live output (SSE streaming)",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+			command := args[1]
+			cmdArgs := args[2:]
+
+			envMap := map[string]string{}
+			for _, e := range env {
+				for i, c := range e {
+					if c == '=' {
+						envMap[e[:i]] = e[i+1:]
+						break
+					}
+				}
+			}
+
+			body := map[string]interface{}{
+				"command":         command,
+				"args":            cmdArgs,
+				"timeout_seconds": timeout,
+				"env":             envMap,
+			}
+			if workDir != "" {
+				body["working_dir"] = workDir
+			}
+
+			b, _ := json.Marshal(body)
+			client := newClient()
+			req, err := http.NewRequest("POST",
+				client.baseURL+"/api/v1/sessions/"+sessionID+"/run/stream",
+				bytes.NewReader(b))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("X-API-Key", client.key)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "text/event-stream")
+
+			resp, err := client.http.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode >= 400 {
+				body2, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("stream error (%d): %s", resp.StatusCode, string(body2))
+			}
+
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if len(line) < 6 || line[:6] != "data: " {
+					continue
+				}
+				var ev struct {
+					Type     string `json:"type"`
+					Data     string `json:"data"`
+					Status   string `json:"status"`
+					ExitCode *int   `json:"exit_code"`
+					Error    string `json:"error"`
+				}
+				if err := json.Unmarshal([]byte(line[6:]), &ev); err != nil {
+					continue
+				}
+				switch ev.Type {
+				case "stdout":
+					fmt.Fprint(os.Stdout, ev.Data)
+				case "stderr":
+					fmt.Fprint(os.Stderr, ev.Data)
+				case "done":
+					if ev.Error != "" {
+						return fmt.Errorf("run failed: %s", ev.Error)
+					}
+					if ev.ExitCode != nil && *ev.ExitCode != 0 {
+						os.Exit(*ev.ExitCode)
+					}
+					return nil
+				}
+			}
+			return scanner.Err()
+		},
+	}
+
+	cmd.Flags().IntVar(&timeout, "timeout", 30, "Execution timeout in seconds")
+	cmd.Flags().StringArrayVar(&env, "env", nil, "Environment variables (KEY=VALUE)")
+	cmd.Flags().StringVar(&workDir, "workdir", "", "Working directory inside container")
 	return cmd
 }
 

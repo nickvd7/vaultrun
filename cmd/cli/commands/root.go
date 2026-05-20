@@ -26,8 +26,10 @@ Use this CLI to create sessions, upload files, execute commands, and inspect res
 		newSessionCmd(),
 		newFileCmd(),
 		newRunCmd(),
+		newStreamCmd(),
 		newLogsCmd(),
 		newUpCmd(),
+		newKeyCmd(),
 	)
 
 	return root

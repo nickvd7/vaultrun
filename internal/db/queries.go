@@ -148,8 +148,14 @@ func ListFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) ([]*models
 }
 
 func DeleteFile(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, path string) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM files WHERE session_id = $1 AND path = $2`, sessionID, path)
-	return err
+	res, err := db.ExecContext(ctx, `DELETE FROM files WHERE session_id = $1 AND path = $2`, sessionID, path)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // Audit logs

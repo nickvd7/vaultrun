@@ -32,3 +32,14 @@ func (AllowAll) EvalCommand(_ context.Context, _ uuid.UUID, _ string, _ []string
 func (AllowAll) EvalFileAccess(_ context.Context, _ uuid.UUID, _ string, _ bool) Decision {
 	return Decision{Allowed: true}
 }
+
+// DenyAll rejects every request with the given reason. Useful for tests.
+type DenyAll struct{ Reason string }
+
+func (d DenyAll) EvalCommand(_ context.Context, _ uuid.UUID, _ string, _ []string) Decision {
+	return Decision{Allowed: false, Reason: d.Reason}
+}
+
+func (d DenyAll) EvalFileAccess(_ context.Context, _ uuid.UUID, _ string, _ bool) Decision {
+	return Decision{Allowed: false, Reason: d.Reason}
+}

@@ -17,7 +17,7 @@ func newFileCmd() *cobra.Command {
 		Use:   "file",
 		Short: "Manage files in a session workspace",
 	}
-	cmd.AddCommand(fileUploadCmd(), fileDownloadCmd(), fileListCmd())
+	cmd.AddCommand(fileUploadCmd(), fileDownloadCmd(), fileListCmd(), fileDeleteCmd())
 	return cmd
 }
 
@@ -160,6 +160,25 @@ func fileListCmd() *cobra.Command {
 				fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", f["path"], f["size_bytes"], f["content_type"], f["updated_at"])
 			}
 			return w.Flush()
+		},
+	}
+}
+
+func fileDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <session-id> <remote-path>",
+		Short: "Delete a file from a session workspace",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[1]
+			if len(path) > 0 && path[0] != '/' {
+				path = "/" + path
+			}
+			if err := newClient().delete("/api/v1/sessions/" + args[0] + "/files" + path); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted %s\n", args[1])
+			return nil
 		},
 	}
 }

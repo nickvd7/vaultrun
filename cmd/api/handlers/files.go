@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -176,6 +177,52 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	})
 
 	c.DataFromReader(http.StatusOK, -1, ct, f, nil)
+}
+
+// DELETE /api/v1/sessions/:id/files/*path
+func (fh *FileHandler) Delete(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	userPath := c.Param("path")
+	if userPath == "" || userPath == "/" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+		return
+	}
+
+	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	if d := fh.h.policy.EvalFileAccess(c.Request.Context(), sessionID, userPath, true); !d.Allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "file access denied by policy"})
+		return
+	}
+
+	// Remove from filesystem (best-effort — may not exist if metadata got out of sync)
+	if resolved, err := fh.h.ws.SafePath(sessionID, userPath); err == nil {
+		_ = os.Remove(resolved)
+	}
+
+	if err := dbpkg.DeleteFile(c.Request.Context(), fh.h.db, sessionID, userPath); err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file"})
+		return
+	}
+
+	fh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:     middleware.Actor(c),
+		SessionID: &sessionID,
+		Action:    models.ActionFileDeleted,
+		Metadata:  models.JSONB{"path": userPath},
+	})
+
+	c.Status(http.StatusNoContent)
 }
 
 // sanitizeFilename strips control characters, quotes, and non-printable

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,8 @@ func (ah *AuditHandler) List(c *gin.Context) {
 
 	logs, err := dbpkg.ListAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, pg.limit, pg.offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list audit logs", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list audit logs"})
 		return
 	}
 

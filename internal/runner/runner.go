@@ -152,6 +152,20 @@ func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, e
 		return nil, fmt.Errorf("command contains disallowed characters")
 	}
 
+	// Validate env var keys: reject null bytes, newlines, and '=' which could
+	// corrupt the env string passed to the Docker exec API (H-2).
+	for k := range req.Env {
+		if strings.ContainsAny(k, "=\x00\n\r") {
+			return nil, fmt.Errorf("env key %q contains disallowed characters", k)
+		}
+	}
+	// Validate env var values: reject null bytes.
+	for k, v := range req.Env {
+		if strings.ContainsRune(v, '\x00') {
+			return nil, fmt.Errorf("env value for key %q contains disallowed characters", k)
+		}
+	}
+
 	if d := r.hook.EvalCommand(ctx, req.SessionID, req.Command, req.Args); !d.Allowed {
 		return nil, fmt.Errorf("command denied by policy: %s", d.Reason)
 	}

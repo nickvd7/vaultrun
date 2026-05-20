@@ -57,6 +57,9 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 	if userPath == "" {
 		userPath = fileHeader.Filename
 	}
+	// Normalize before policy eval so rules see the same canonical form that
+	// the filesystem will actually use (prevents ./foo/../secret bypass).
+	userPath = filepath.Clean("/" + userPath)
 
 	maxBytes := fh.h.cfg.Workspace.MaxFileMB * 1024 * 1024
 
@@ -142,6 +145,7 @@ func (fh *FileHandler) Download(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 		return
 	}
+	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
 	// Verify session exists
 	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
@@ -191,6 +195,7 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 		return
 	}
+	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
 	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})

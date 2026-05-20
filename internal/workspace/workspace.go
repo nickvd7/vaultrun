@@ -1,12 +1,14 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/google/uuid"
 )
@@ -89,30 +91,65 @@ func (m *Manager) safeReadPath(sessionID uuid.UUID, userPath string) (string, er
 
 // WriteFile writes data to a safe path inside the workspace, creating
 // intermediate directories as needed. Mode 0o600: owner-only access.
+//
+// Security: guards against symlink-escape attacks where a container process
+// creates a symlink inside /workspace pointing to a host path outside the
+// workspace root. Two layers of protection are applied:
+//  1. The entire parent-directory chain is symlink-resolved and verified to
+//     stay inside the workspace root before any write takes place.
+//  2. The file is opened with O_NOFOLLOW so that if the final path component
+//     is itself a symlink (e.g. created in a TOCTOU window) the open fails.
 func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, maxBytes int64) (int64, error) {
 	dest, err := m.SafePath(sessionID, userPath)
 	if err != nil {
 		return 0, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+	root := m.sessionPath(sessionID)
+	parentDir := filepath.Dir(dest)
+
+	if err := os.MkdirAll(parentDir, 0o700); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
 
-	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	// Resolve every symlink in the parent directory chain and confirm it stays
+	// inside the workspace root. This catches symlinked subdirectories.
+	realParent, err := filepath.EvalSymlinks(parentDir)
 	if err != nil {
+		return 0, fmt.Errorf("resolve parent directory: %w", err)
+	}
+	if !strings.HasPrefix(realParent, root+string(os.PathSeparator)) && realParent != root {
+		return 0, fmt.Errorf("symlink escape detected")
+	}
+
+	// Reconstruct dest from the real (non-symlinked) parent path.
+	dest = filepath.Join(realParent, filepath.Base(dest))
+
+	// O_NOFOLLOW: if the final path component is a symlink the open returns
+	// ELOOP, preventing a race between the parent check above and this open.
+	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return 0, fmt.Errorf("write target is a symlink — rejected")
+		}
 		return 0, fmt.Errorf("open file for write: %w", err)
 	}
 	defer f.Close()
 
-	lr := io.LimitReader(r, maxBytes+1)
+	// Read up to maxBytes exactly. If the reader still has data after that,
+	// the file is oversized — delete and return an error.
+	lr := io.LimitReader(r, maxBytes)
 	n, err := io.Copy(f, lr)
 	if err != nil {
+		_ = os.Remove(dest)
 		return 0, fmt.Errorf("write file: %w", err)
 	}
-	if n > maxBytes {
-		_ = os.Remove(dest)
-		return 0, fmt.Errorf("file exceeds maximum size of %d bytes", maxBytes)
+	if n == maxBytes {
+		extra := make([]byte, 1)
+		if nr, _ := r.Read(extra); nr > 0 {
+			_ = os.Remove(dest)
+			return 0, fmt.Errorf("file exceeds maximum size of %d bytes", maxBytes)
+		}
 	}
 
 	return n, nil

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -109,7 +110,9 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	}
 
 	// Create Docker container
-	containerName := fmt.Sprintf("%s-%s", sh.h.cfg.Docker.ContainerPrefix, sessionID.String()[:8])
+	// Use the full UUID as the container name suffix to avoid birthday collisions
+	// (8-char hex has ~1% collision at 65 K sessions).
+	containerName := fmt.Sprintf("%s-%s", sh.h.cfg.Docker.ContainerPrefix, sessionID.String())
 	containerID, err := sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{
 		SessionID:      sessionID,
 		Image:          req.Image,
@@ -126,6 +129,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	}
 
 	if err := dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusRunning, &containerID); err != nil {
+		// Container is running but we failed to persist its ID — stop it now to
+		// prevent an orphaned container that can never be cleaned up (H-3).
+		_ = sh.h.docker.StopSandbox(context.Background(), containerID)
+		_ = sh.h.ws.Delete(sessionID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update session status failed"})
 		return
 	}

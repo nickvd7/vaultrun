@@ -108,7 +108,7 @@ type Session struct {
 	CPULimit        float64    `db:"cpu_limit"        json:"cpu_limit"`
 	MemoryLimitMB   int        `db:"memory_limit_mb"  json:"memory_limit_mb"`
 	TimeoutSeconds  int        `db:"timeout_seconds"  json:"timeout_seconds"`
-	WorkspacePath   string     `db:"workspace_path"   json:"workspace_path"`
+	WorkspacePath   string     `db:"workspace_path"   json:"-"` // internal host path — never expose to callers
 	CreatedBy       string     `db:"created_by"       json:"created_by"`
 	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
@@ -120,7 +120,7 @@ type Run struct {
 	SessionID      uuid.UUID   `db:"session_id"      json:"session_id"`
 	Command        string      `db:"command"         json:"command"`
 	Args           StringArray `db:"args"            json:"args"`
-	Env            JSONB       `db:"env"             json:"env,omitempty"`
+	Env            JSONB       `db:"env"             json:"-"` // may contain secrets — never expose to callers
 	WorkingDir     string      `db:"working_dir"     json:"working_dir"`
 	Status         string      `db:"status"          json:"status"`
 	ExitCode       *int        `db:"exit_code"       json:"exit_code,omitempty"`

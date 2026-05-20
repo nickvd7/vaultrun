@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"context"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -27,19 +27,19 @@ func (ph *PolicyHandler) Get(c *gin.Context) {
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
+		// Log the real error (with path) server-side; never expose host paths
+		// or OS error details to callers (M-3).
+		slog.Error("policy file unreadable", "err", err)
 		c.JSON(http.StatusOK, gin.H{
-			"enabled":   true,
-			"file_path": filePath,
-			"content":   "",
-			"error":     "policy file unreadable: " + err.Error(),
+			"enabled": true,
+			"error":   "policy file unreadable",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"enabled":   true,
-		"file_path": filePath,
-		"content":   string(content),
+		"enabled": true,
+		"content": string(content),
 	})
 }
 
@@ -77,7 +77,9 @@ func (ph *PolicyHandler) Eval(c *gin.Context) {
 		sessionID = parsed
 	}
 
-	ctx := context.Background()
+	// Use the request context so OPA evaluation is cancelled if the client
+	// disconnects or the server shuts down (M-7).
+	ctx := c.Request.Context()
 	hook := ph.h.Policy()
 
 	var d policy.Decision

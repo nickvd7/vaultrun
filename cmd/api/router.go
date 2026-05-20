@@ -33,6 +33,11 @@ func newRouter(
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
+	// Do not trust X-Forwarded-For from arbitrary proxies; prevents rate-limit
+	// bypass via IP spoofing. Operators behind a known proxy should configure
+	// its CIDR here instead of nil.
+	_ = r.SetTrustedProxies(nil)
+
 	r.MaxMultipartMemory = cfg.Workspace.MaxFileMB * 1024 * 1024
 
 	// CORS: only allow explicitly configured origins.

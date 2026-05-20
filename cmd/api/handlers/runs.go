@@ -214,6 +214,21 @@ func (rh *RunHandler) Get(c *gin.Context) {
 		return
 	}
 
+	// Ownership check: verify the caller owns the parent session (H-5).
+	// This prevents cross-tenant run data leakage via direct UUID access.
+	actor := middleware.Actor(c)
+	if actor != "master" {
+		session, sessErr := dbpkg.GetSession(c.Request.Context(), rh.h.db, run.SessionID)
+		if sessErr == sql.ErrNoRows || (sessErr == nil && session.CreatedBy != actor) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+			return
+		}
+		if sessErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify run ownership"})
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, run)
 }
 

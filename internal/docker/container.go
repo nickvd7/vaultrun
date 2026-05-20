@@ -57,12 +57,21 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		Resources: container.Resources{
 			NanoCPUs: nanoCPUs,
 			Memory:   memoryBytes,
+			// MemorySwap = Memory disables swap, preventing containers from
+			// exceeding their memory cap through the swap subsystem (L-4).
+			MemorySwap: memoryBytes,
+			// PidsLimit caps total process count to block fork-bomb attacks
+			// from exhausting the host PID namespace (L-5).
+			PidsLimit: int64Ptr(512),
 		},
 		// Security hardening
 		ReadonlyRootfs: false, // workspace is writable via bind mount
-		SecurityOpt:    []string{"no-new-privileges"},
-		CapDrop:        []string{"ALL"},
-		CapAdd:         []string{}, // grant nothing extra
+		// no-new-privileges: blocks setuid privilege escalation.
+		// seccomp=default: applies Docker's built-in syscall filter regardless
+		// of daemon configuration, ensuring consistent hardening (L-6).
+		SecurityOpt: []string{"no-new-privileges", "seccomp=default"},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{}, // grant nothing extra
 	}
 
 	resp, err := c.inner.ContainerCreate(ctx,
@@ -104,6 +113,8 @@ func (c *Client) StopSandbox(ctx context.Context, containerID string) error {
 	}
 	return c.inner.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true, RemoveVolumes: false})
 }
+
+func int64Ptr(v int64) *int64 { return &v }
 
 // ContainerRunning returns true if the container exists and is running.
 func (c *Client) ContainerRunning(ctx context.Context, containerID string) (bool, error) {

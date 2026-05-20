@@ -222,6 +222,9 @@ func ListAPIKeys(ctx context.Context, db *sqlx.DB) ([]*models.APIKey, error) {
 }
 
 func RevokeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
+	// No active=TRUE filter: makes revocation idempotent (revoking an already-
+	// revoked key returns success rather than 404, preventing oracle attacks).
+	// We still return ErrNoRows if the key never existed at all.
 	res, err := db.ExecContext(ctx, `UPDATE api_keys SET active = FALSE WHERE id = $1`, id)
 	if err != nil {
 		return err

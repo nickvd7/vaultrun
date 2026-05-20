@@ -6,7 +6,7 @@ import responses as rsps
 
 import pytest
 
-from sandbox_sdk.client import Client, File, Run, Session, VaultRunError
+from sandbox_sdk.client import APIKey, Client, CreatedKey, File, Run, Session, VaultRunError
 
 BASE_URL = "http://testserver"
 
@@ -17,6 +17,7 @@ BASE_URL = "http://testserver"
 SESSION_ID = "sess-abc123"
 RUN_ID = "run-xyz789"
 FILE_ID = "file-def456"
+KEY_ID = "key-ghi012"
 CREATED_AT = "2024-01-15T12:00:00Z"
 
 SESSION_JSON = {
@@ -57,6 +58,18 @@ FILE_JSON = {
     "content_type": "text/x-python",
     "created_at": CREATED_AT,
 }
+
+API_KEY_JSON = {
+    "id": KEY_ID,
+    "name": "ci-key",
+    "prefix": "vr_ci_",
+    "active": True,
+    "created_at": CREATED_AT,
+    "last_used_at": None,
+    "expires_at": None,
+}
+
+CREATED_KEY_JSON = {**API_KEY_JSON, "key": "vr_ci_secret123"}
 
 
 @pytest.fixture
@@ -331,3 +344,121 @@ def test_missing_api_key_still_sends_header() -> None:
     sent_headers = rsps.calls[0].request.headers
     assert "X-API-Key" in sent_headers
     assert sent_headers["X-API-Key"] == ""
+
+
+# ---------------------------------------------------------------------------
+# test_list_sessions_pagination
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_list_sessions_pagination(client: Client) -> None:
+    second_session = dict(SESSION_JSON, id="sess-second", name="second")
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions",
+        json={"sessions": [SESSION_JSON, second_session]},
+        status=200,
+    )
+
+    sessions = client.list_sessions(page=2, limit=10)
+
+    assert len(sessions) == 2
+    req_url = rsps.calls[0].request.url
+    assert "page=2" in req_url
+    assert "limit=10" in req_url
+
+
+# ---------------------------------------------------------------------------
+# test_list_keys
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_list_keys(client: Client) -> None:
+    second_key = dict(API_KEY_JSON, id="key-second", name="prod-key")
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/keys",
+        json={"api_keys": [API_KEY_JSON, second_key]},
+        status=200,
+    )
+
+    keys = client.list_keys()
+
+    assert len(keys) == 2
+    assert all(isinstance(k, APIKey) for k in keys)
+    assert keys[0].id == KEY_ID
+    assert keys[0].name == "ci-key"
+    assert keys[0].prefix == "vr_ci_"
+    assert keys[0].active is True
+    assert keys[1].id == "key-second"
+
+
+# ---------------------------------------------------------------------------
+# test_create_key_no_expiry
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_create_key_no_expiry(client: Client) -> None:
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/keys",
+        json=CREATED_KEY_JSON,
+        status=201,
+    )
+
+    created = client.create_key("ci-key")
+
+    assert isinstance(created, CreatedKey)
+    assert created.id == KEY_ID
+    assert created.key == "vr_ci_secret123"
+    assert created.expires_at is None
+
+    body = rsps.calls[0].request.body
+    assert b"ci-key" in body if isinstance(body, bytes) else "ci-key" in body
+    assert "expires_at" not in (body.decode() if isinstance(body, bytes) else body)
+
+
+# ---------------------------------------------------------------------------
+# test_create_key_with_expiry
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_create_key_with_expiry(client: Client) -> None:
+    from datetime import datetime, timezone
+
+    expiry_str = "2025-12-31T00:00:00+00:00"
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/keys",
+        json={**CREATED_KEY_JSON, "expires_at": expiry_str},
+        status=201,
+    )
+
+    expiry = datetime(2025, 12, 31, tzinfo=timezone.utc)
+    created = client.create_key("ci-key", expires_at=expiry)
+
+    assert isinstance(created, CreatedKey)
+    assert created.expires_at == expiry_str
+
+    body = rsps.calls[0].request.body
+    decoded = body.decode() if isinstance(body, bytes) else body
+    assert "expires_at" in decoded
+    assert "2025-12-31" in decoded
+
+
+# ---------------------------------------------------------------------------
+# test_revoke_key
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_revoke_key(client: Client) -> None:
+    rsps.add(
+        rsps.DELETE,
+        f"{BASE_URL}/api/v1/keys/{KEY_ID}",
+        status=204,
+        body=b"",
+    )
+
+    client.revoke_key(KEY_ID)
+
+    assert len(rsps.calls) == 1

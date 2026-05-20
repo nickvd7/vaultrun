@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any, Optional
 
@@ -59,6 +59,22 @@ class File:
     size_bytes: int
     content_type: str
     created_at: str
+
+
+@dataclass
+class APIKey:
+    id: str
+    name: str
+    prefix: str
+    active: bool
+    created_at: str
+    last_used_at: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+@dataclass
+class CreatedKey(APIKey):
+    key: str = ""
 
 
 class Client:
@@ -118,9 +134,9 @@ class Client:
         """Get a session by ID."""
         return self._parse_session(self._get(f"/api/v1/sessions/{session_id}"))
 
-    def list_sessions(self) -> list[Session]:
-        """List all active sessions."""
-        data = self._get("/api/v1/sessions")
+    def list_sessions(self, *, page: int = 1, limit: int = 20) -> list[Session]:
+        """List sessions, newest first. Use page/limit to paginate."""
+        data = self._get(f"/api/v1/sessions?page={page}&limit={limit}")
         return [self._parse_session(s) for s in data.get("sessions", [])]
 
     def delete_session(self, session_id: str) -> None:
@@ -203,6 +219,32 @@ class Client:
         data = self._get(f"/api/v1/sessions/{session_id}/files")
         return [self._parse_file(f) for f in data.get("files", [])]
 
+    # --- API key management ---
+
+    def list_keys(self) -> list[APIKey]:
+        """List all API keys (does not reveal plaintext keys)."""
+        data = self._get("/api/v1/keys")
+        return [self._parse_api_key(k) for k in data.get("api_keys", [])]
+
+    def create_key(
+        self,
+        name: str,
+        *,
+        expires_at: Optional[datetime] = None,
+    ) -> CreatedKey:
+        """Create a new API key.  The plaintext key is only available in the returned object."""
+        body: dict[str, Any] = {"name": name}
+        if expires_at is not None:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            body["expires_at"] = expires_at.isoformat()
+        data = self._post("/api/v1/keys", body)
+        return self._parse_created_key(data)
+
+    def revoke_key(self, key_id: str) -> None:
+        """Revoke an API key by ID."""
+        self._delete(f"/api/v1/keys/{key_id}")
+
     # --- Internal helpers ---
 
     def _get(self, path: str) -> dict:
@@ -227,6 +269,31 @@ class Client:
             except Exception:
                 msg = resp.text
             raise VaultRunError(resp.status_code, msg)
+
+    @staticmethod
+    def _parse_api_key(d: dict) -> APIKey:
+        return APIKey(
+            id=d["id"],
+            name=d["name"],
+            prefix=d["prefix"],
+            active=d["active"],
+            created_at=d["created_at"],
+            last_used_at=d.get("last_used_at"),
+            expires_at=d.get("expires_at"),
+        )
+
+    @staticmethod
+    def _parse_created_key(d: dict) -> CreatedKey:
+        return CreatedKey(
+            id=d["id"],
+            name=d["name"],
+            prefix=d["prefix"],
+            active=d["active"],
+            created_at=d["created_at"],
+            last_used_at=d.get("last_used_at"),
+            expires_at=d.get("expires_at"),
+            key=d["key"],
+        )
 
     @staticmethod
     def _parse_session(d: dict) -> Session:

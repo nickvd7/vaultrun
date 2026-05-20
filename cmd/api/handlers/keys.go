@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,7 +22,8 @@ type KeyHandler struct {
 func NewKeyHandler(h *Hub) *KeyHandler { return &KeyHandler{h: h} }
 
 type createKeyRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name      string  `json:"name" binding:"required"`
+	ExpiresAt *string `json:"expires_at"` // optional RFC3339 timestamp
 }
 
 // POST /api/v1/keys
@@ -32,7 +34,21 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 		return
 	}
 
-	plaintext, key, err := authpkg.GenerateKey(req.Name)
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid expires_at: use RFC3339 format"})
+			return
+		}
+		if t.Before(time.Now()) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be in the future"})
+			return
+		}
+		expiresAt = &t
+	}
+
+	plaintext, key, err := authpkg.GenerateKey(req.Name, expiresAt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "key generation failed"})
 		return
@@ -44,23 +60,32 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 	}
 
 	actor := middleware.Actor(c)
+	meta := models.JSONB{
+		"key_id":   key.ID.String(),
+		"key_name": key.Name,
+		"prefix":   key.Prefix,
+	}
+	if expiresAt != nil {
+		meta["expires_at"] = expiresAt.Format(time.RFC3339)
+	}
 	kh.h.audit.Log(c.Request.Context(), audit.Event{
-		Actor:  actor,
-		Action: models.ActionAPIKeyCreated,
-		Metadata: models.JSONB{
-			"key_id":   key.ID.String(),
-			"key_name": key.Name,
-			"prefix":   key.Prefix,
-		},
+		Actor:    actor,
+		Action:   models.ActionAPIKeyCreated,
+		Metadata: meta,
 	})
 
-	c.JSON(http.StatusCreated, gin.H{
+	resp := gin.H{
 		"id":         key.ID,
 		"name":       key.Name,
 		"prefix":     key.Prefix,
 		"key":        plaintext, // shown exactly once — caller must save it
+		"active":     key.Active,
 		"created_at": key.CreatedAt,
-	})
+	}
+	if expiresAt != nil {
+		resp["expires_at"] = expiresAt.Format(time.RFC3339)
+	}
+	c.JSON(http.StatusCreated, resp)
 }
 
 // GET /api/v1/keys

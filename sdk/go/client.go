@@ -304,11 +304,21 @@ func (c *Client) ListKeys(ctx context.Context) ([]*APIKey, error) {
 	return result.APIKeys, nil
 }
 
-// CreateKey creates a new API key with the given name. The plaintext key is
-// returned in CreatedKey.Key and will never be retrievable again.
-func (c *Client) CreateKey(ctx context.Context, name string) (*CreatedKey, error) {
+// CreateKeyOptions configures a new API key.
+type CreateKeyOptions struct {
+	Name      string
+	ExpiresAt *time.Time // nil means no expiry
+}
+
+// CreateKey creates a new API key. The plaintext key is returned in
+// CreatedKey.Key and will never be retrievable again.
+func (c *Client) CreateKey(ctx context.Context, opts CreateKeyOptions) (*CreatedKey, error) {
+	body := map[string]interface{}{"name": opts.Name}
+	if opts.ExpiresAt != nil {
+		body["expires_at"] = opts.ExpiresAt.UTC().Format(time.RFC3339)
+	}
 	var k CreatedKey
-	if err := c.do(ctx, "POST", "/api/v1/keys", map[string]string{"name": name}, &k); err != nil {
+	if err := c.do(ctx, "POST", "/api/v1/keys", body, &k); err != nil {
 		return nil, err
 	}
 	return &k, nil

@@ -19,7 +19,8 @@ const keyLength = 32
 
 // GenerateKey creates a cryptographically random API key with a readable prefix.
 // Returns the plaintext key (shown once) and a models.APIKey ready to persist.
-func GenerateKey(name string) (plaintext string, key *models.APIKey, err error) {
+// expiresAt is optional; pass nil for a non-expiring key.
+func GenerateKey(name string, expiresAt *time.Time) (plaintext string, key *models.APIKey, err error) {
 	raw := make([]byte, keyLength)
 	if _, err := rand.Read(raw); err != nil {
 		return "", nil, fmt.Errorf("generate random bytes: %w", err)
@@ -35,6 +36,7 @@ func GenerateKey(name string) (plaintext string, key *models.APIKey, err error) 
 		KeyHash:   hash,
 		Prefix:    prefix,
 		CreatedAt: time.Now().UTC(),
+		ExpiresAt: expiresAt,
 		Active:    true,
 	}
 

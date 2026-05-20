@@ -12,7 +12,7 @@ import (
 )
 
 func TestGenerateKey(t *testing.T) {
-	plaintext, key, err := auth.GenerateKey("test-key")
+	plaintext, key, err := auth.GenerateKey("test-key", nil)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestHashKeyDifferentInputs(t *testing.T) {
 func TestGenerateKeyUniqueness(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 50; i++ {
-		plain, _, err := auth.GenerateKey("k")
+		plain, _, err := auth.GenerateKey("k", nil)
 		if err != nil {
 			t.Fatalf("GenerateKey: %v", err)
 		}

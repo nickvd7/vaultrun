@@ -122,10 +122,10 @@ export const api = {
     list: () =>
       request<{ api_keys: APIKey[] }>("/keys").then((r) => r.api_keys),
 
-    create: (name: string) =>
+    create: (name: string, expiresAt?: string) =>
       request<CreatedKey>("/keys", {
         method: "POST",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(expiresAt ? { name, expires_at: expiresAt } : { name }),
       }),
 
     revoke: (id: string) =>

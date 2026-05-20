@@ -112,9 +112,12 @@ func newRouter(
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)
 
+	// Policy endpoints expose Rego source and dry-run eval — restrict to the
+	// master key so regular API keys cannot enumerate allowed commands (L-8).
+	masterMW := middleware.RequireMasterKey()
 	polH := handlers.NewPolicyHandler(hub)
-	authGroup.GET("/policy", polH.Get)
-	authGroup.POST("/policy/eval", polH.Eval)
+	authGroup.GET("/policy", masterMW, polH.Get)
+	authGroup.POST("/policy/eval", masterMW, polH.Eval)
 
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

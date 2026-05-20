@@ -92,6 +92,10 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 	if err != nil {
 		return run, nil
 	}
+	// Surface output truncation on the response (not persisted to DB).
+	if execErr == nil && result != nil && result.Truncated {
+		updated.OutputTruncated = true
+	}
 	return updated, nil
 }
 
@@ -138,6 +142,9 @@ func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.W
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
 		return run, nil
+	}
+	if execErr == nil && result != nil && result.Truncated {
+		updated.OutputTruncated = true
 	}
 	return updated, nil
 }

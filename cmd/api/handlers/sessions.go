@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -77,6 +76,22 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Enforce per-actor session quota (M-6). Master key is exempt.
+	actor := middleware.Actor(c)
+	if limits.MaxSessionsPerActor > 0 && actor != "master" {
+		count, err := dbpkg.CountActiveSessionsByActor(c.Request.Context(), sh.h.db, actor)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
+			return
+		}
+		if count >= limits.MaxSessionsPerActor {
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": fmt.Sprintf("active session limit of %d reached", limits.MaxSessionsPerActor),
+			})
+			return
+		}
+	}
+
 	sessionID := uuid.New()
 
 	wspath, err := sh.h.ws.Create(sessionID)
@@ -85,7 +100,6 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	actor := middleware.Actor(c)
 	now := time.Now().UTC()
 
 	session := &models.Session{
@@ -158,7 +172,12 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 // GET /api/v1/sessions
 func (sh *SessionHandler) List(c *gin.Context) {
 	pg := pagination(c)
-	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, pg.limit, pg.offset)
+	// Non-master callers only see their own sessions (C-2 tenant isolation).
+	listActor := middleware.Actor(c)
+	if listActor == "master" {
+		listActor = ""
+	}
+	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, listActor, pg.limit, pg.offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
@@ -172,17 +191,10 @@ func (sh *SessionHandler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	session, err := dbpkg.GetSession(c.Request.Context(), sh.h.db, id)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	session, ok := sh.h.checkSessionAccess(c, id)
+	if !ok {
 		return
 	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
-		return
-	}
-
 	c.JSON(http.StatusOK, session)
 }
 
@@ -192,14 +204,8 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	session, err := dbpkg.GetSession(c.Request.Context(), sh.h.db, id)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+	session, ok := sh.h.checkSessionAccess(c, id)
+	if !ok {
 		return
 	}
 

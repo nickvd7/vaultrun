@@ -37,6 +37,7 @@ const (
 	ActionAPIKeyCreated   = "apikey.created"
 	ActionAPIKeyRevoked   = "apikey.revoked"
 	ActionFileDeleted     = "file.deleted"
+	ActionSessionExpired  = "session.expired" // emitted by background cleanup goroutine
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.
@@ -130,8 +131,10 @@ type Run struct {
 	TimeoutSeconds int         `db:"timeout_seconds" json:"timeout_seconds"`
 	CreatedAt      time.Time   `db:"created_at"      json:"created_at"`
 	UpdatedAt      time.Time   `db:"updated_at"      json:"updated_at"`
-	StartedAt      *time.Time  `db:"started_at"      json:"started_at,omitempty"`
-	FinishedAt     *time.Time  `db:"finished_at"     json:"finished_at,omitempty"`
+	StartedAt       *time.Time  `db:"started_at"       json:"started_at,omitempty"`
+	FinishedAt      *time.Time  `db:"finished_at"      json:"finished_at,omitempty"`
+	// OutputTruncated is not persisted; set in-memory when docker capped output.
+	OutputTruncated bool        `db:"-"                json:"output_truncated,omitempty"`
 }
 
 type File struct {

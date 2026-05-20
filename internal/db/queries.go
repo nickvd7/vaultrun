@@ -33,12 +33,22 @@ func GetSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Session
 	return &s, nil
 }
 
-func ListSessions(ctx context.Context, db *sqlx.DB, limit, offset int) ([]*models.Session, error) {
+// ListSessions returns active sessions. When actor is non-empty only that
+// actor's sessions are returned (tenant isolation). Master key passes "".
+func ListSessions(ctx context.Context, db *sqlx.DB, actor string, limit, offset int) ([]*models.Session, error) {
 	var sessions []*models.Session
-	err := db.SelectContext(ctx, &sessions,
-		`SELECT * FROM sessions WHERE stopped_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-		limit, offset,
-	)
+	var err error
+	if actor != "" {
+		err = db.SelectContext(ctx, &sessions,
+			`SELECT * FROM sessions WHERE stopped_at IS NULL AND created_by = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			actor, limit, offset,
+		)
+	} else {
+		err = db.SelectContext(ctx, &sessions,
+			`SELECT * FROM sessions WHERE stopped_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+			limit, offset,
+		)
+	}
 	return sessions, err
 }
 
@@ -169,12 +179,22 @@ func CreateAuditLog(ctx context.Context, db *sqlx.DB, a *models.AuditLog) error 
 	return err
 }
 
-func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, limit, offset int) ([]*models.AuditLog, error) {
+// ListAuditLogs returns audit log entries. When actor is non-empty only
+// that actor's log entries are returned (tenant isolation). When sessionID
+// is set it takes precedence. Master key passes actor="".
+func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string, limit, offset int) ([]*models.AuditLog, error) {
 	var logs []*models.AuditLog
 	if sessionID != nil {
 		err := db.SelectContext(ctx, &logs,
 			`SELECT * FROM audit_logs WHERE session_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
 			sessionID, limit, offset,
+		)
+		return logs, err
+	}
+	if actor != "" {
+		err := db.SelectContext(ctx, &logs,
+			`SELECT * FROM audit_logs WHERE actor = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
+			actor, limit, offset,
 		)
 		return logs, err
 	}
@@ -243,6 +263,17 @@ func ListActiveSessions(ctx context.Context, db *sqlx.DB) ([]*models.Session, er
 		models.SessionStatusCreated, models.SessionStatusRunning,
 	)
 	return sessions, err
+}
+
+// CountActiveSessionsByActor returns the number of active (not stopped) sessions
+// for a given actor. Used to enforce per-actor session limits.
+func CountActiveSessionsByActor(ctx context.Context, db *sqlx.DB, actor string) (int, error) {
+	var n int
+	err := db.GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM sessions WHERE created_by = $1 AND stopped_at IS NULL`,
+		actor,
+	)
+	return n, err
 }
 
 func CountSessions(ctx context.Context, db *sqlx.DB) (int, error) {

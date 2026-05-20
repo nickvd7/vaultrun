@@ -42,8 +42,6 @@ type RedisConfig struct {
 
 type DockerConfig struct {
 	Host            string
-	TLSVerify       bool
-	CertPath        string
 	NetworkName     string
 	DefaultImage    string
 	ContainerPrefix string
@@ -66,9 +64,10 @@ type AuthConfig struct {
 
 // Limits caps applied to session creation requests.
 type SessionLimits struct {
-	MaxCPU        float64
-	MaxMemoryMB   int
-	MaxTimeoutSec int
+	MaxCPU              float64
+	MaxMemoryMB         int
+	MaxTimeoutSec       int
+	MaxSessionsPerActor int // 0 = unlimited
 }
 
 func Load() (*Config, error) {
@@ -148,7 +147,11 @@ func (c *Config) SessionLimits() SessionLimits {
 	if maxTO <= 0 {
 		maxTO = 86400
 	}
-	return SessionLimits{MaxCPU: maxCPU, MaxMemoryMB: maxMem, MaxTimeoutSec: maxTO}
+	maxSessions, _ := strconv.Atoi(getEnv("MAX_SESSIONS_PER_ACTOR", "20"))
+	if maxSessions < 0 {
+		maxSessions = 0
+	}
+	return SessionLimits{MaxCPU: maxCPU, MaxMemoryMB: maxMem, MaxTimeoutSec: maxTO, MaxSessionsPerActor: maxSessions}
 }
 
 // ImageAllowed returns true if the given image is permitted.

@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 )
 
@@ -30,7 +31,15 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		sessionIDPtr = &id
 	}
 
-	logs, err := dbpkg.ListAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, pg.limit, pg.offset)
+	// C-2: Non-master callers only see their own audit logs.
+	// Master gets an empty string which means "all actors" in the query.
+	actor := middleware.Actor(c)
+	auditActor := actor
+	if actor == "master" {
+		auditActor = ""
+	}
+
+	logs, err := dbpkg.ListAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor, pg.limit, pg.offset)
 	if err != nil {
 		slog.Error("list audit logs", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list audit logs"})

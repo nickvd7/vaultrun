@@ -74,6 +74,11 @@ func main() {
 		}
 		policyHook = h
 		slog.Info("opa policy loaded", "file", policyFile)
+	} else {
+		// M-8: warn operators who start without an explicit policy — AllowAll
+		// permits every command and every file path with no restrictions.
+		slog.Warn("OPA_POLICY_FILE not set — running with AllowAll policy; " +
+			"all commands and file paths are permitted inside sandbox containers")
 	}
 
 	rnr := runner.New(db, docker, al, policyHook)
@@ -82,7 +87,7 @@ func main() {
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
-	go cleanup.Start(cleanupCtx, db, docker, 5*time.Minute, idleFor)
+	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor)
 
 	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook)
 

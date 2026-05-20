@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -32,13 +34,9 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	session, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+	// C-2: verify caller owns the session (returns 404 for cross-tenant access).
+	session, ok := fh.h.checkSessionAccess(c, sessionID)
+	if !ok {
 		return
 	}
 	if session.StoppedAt != nil {
@@ -75,13 +73,20 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 	}
 	defer f.Close()
 
-	written, err := fh.h.ws.WriteFile(sessionID, userPath, f, maxBytes)
+	// M-2: Probe actual content type from the first 512 bytes of the upload
+	// instead of trusting the client-supplied Content-Type header, which can
+	// be spoofed to bypass downstream content-sniffing defences.
+	sniff := make([]byte, 512)
+	n, _ := f.Read(sniff)
+	ct := http.DetectContentType(sniff[:n])
+
+	// Reconstruct the full stream: sniffed bytes prepended to the remainder.
+	written, err := fh.h.ws.WriteFile(sessionID, userPath, io.MultiReader(bytes.NewReader(sniff[:n]), f), maxBytes)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ct := detectContentType(userPath, fileHeader.Header.Get("Content-Type"))
 	now := time.Now().UTC()
 
 	fileMeta := &models.File{
@@ -119,8 +124,8 @@ func (fh *FileHandler) List(c *gin.Context) {
 		return
 	}
 
-	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	// C-2: verify caller owns the session.
+	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
 		return
 	}
 
@@ -147,9 +152,8 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	}
 	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
-	// Verify session exists
-	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	// C-2: verify caller owns the session.
+	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
 		return
 	}
 
@@ -165,7 +169,7 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	}
 	defer f.Close()
 
-	ct := detectContentType(userPath, "")
+	ct := detectContentType(userPath)
 
 	// Sanitize filename for Content-Disposition to prevent header injection.
 	// RFC 6266: only allow safe ASCII; strip control characters and quotes.
@@ -197,8 +201,8 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 	}
 	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
-	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	// C-2: verify caller owns the session.
+	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
 		return
 	}
 
@@ -248,10 +252,10 @@ func sanitizeFilename(name string) string {
 	return s
 }
 
-func detectContentType(path, provided string) string {
-	if provided != "" && provided != "application/octet-stream" {
-		return provided
-	}
+// detectContentType returns a MIME type for the given file path using the
+// file extension. Used for Download responses where we are not trusting
+// client input (no provided parameter accepted to prevent spoofing).
+func detectContentType(path string) string {
 	ext := filepath.Ext(path)
 	if ext != "" {
 		if t := mime.TypeByExtension(ext); t != "" {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 
@@ -8,9 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
+	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
+	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
@@ -74,4 +78,28 @@ func parseUUID(c *gin.Context, param string) (uuid.UUID, bool) {
 		return uuid.UUID{}, false
 	}
 	return id, true
+}
+
+// checkSessionAccess loads a session and verifies the caller owns it (C-2).
+// The master actor bypasses the ownership check and sees all sessions.
+// On failure the handler writes the appropriate JSON response and returns nil.
+// Pattern: session, ok := h.checkSessionAccess(c, id); if !ok { return }
+func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID) (*models.Session, bool) {
+	session, err := dbpkg.GetSession(c.Request.Context(), h.db, sessionID)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return nil, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+		return nil, false
+	}
+	actor := middleware.Actor(c)
+	// Non-master callers may only access their own sessions. Return 404 (not
+	// 403) to avoid leaking the existence of sessions owned by other actors.
+	if actor != "master" && session.CreatedBy != actor {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return nil, false
+	}
+	return session, true
 }

@@ -29,6 +29,7 @@ type ExecResult struct {
 	Stderr     string // populated by Exec; empty when using ExecStream
 	DurationMS int64
 	TimedOut   bool
+	Truncated  bool // true when stdout or stderr was capped at MaxOutputBytes (M-10)
 }
 
 // Exec runs a command inside the sandbox container and buffers full output.
@@ -40,15 +41,15 @@ func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) 
 		maxBytes = 10 * 1024 * 1024
 	}
 	var stdoutBuf, stderrBuf bytes.Buffer
-	result, err := c.execInternal(ctx, cfg,
-		&limitedWriter{w: &stdoutBuf, limit: maxBytes},
-		&limitedWriter{w: &stderrBuf, limit: maxBytes},
-	)
+	outW := &limitedWriter{w: &stdoutBuf, limit: maxBytes}
+	errW := &limitedWriter{w: &stderrBuf, limit: maxBytes}
+	result, err := c.execInternal(ctx, cfg, outW, errW)
 	if err != nil {
 		return result, err
 	}
 	result.Stdout = stdoutBuf.String()
 	result.Stderr = stderrBuf.String()
+	result.Truncated = outW.truncated || errW.truncated
 	return result, nil
 }
 
@@ -60,10 +61,13 @@ func (c *Client) ExecStream(ctx context.Context, cfg ExecConfig, stdout, stderr 
 	if maxBytes <= 0 {
 		maxBytes = 10 * 1024 * 1024
 	}
-	return c.execInternal(ctx, cfg,
-		&limitedWriter{w: stdout, limit: maxBytes},
-		&limitedWriter{w: stderr, limit: maxBytes},
-	)
+	outW := &limitedWriter{w: stdout, limit: maxBytes}
+	errW := &limitedWriter{w: stderr, limit: maxBytes}
+	result, err := c.execInternal(ctx, cfg, outW, errW)
+	if result != nil {
+		result.Truncated = outW.truncated || errW.truncated
+	}
+	return result, err
 }
 
 // execInternal is the shared implementation for Exec and ExecStream.
@@ -175,17 +179,20 @@ func demuxDockerStream(r io.Reader, stdout, stderr io.Writer) error {
 }
 
 type limitedWriter struct {
-	w     io.Writer
-	limit int64
-	n     int64
+	w         io.Writer
+	limit     int64
+	n         int64
+	truncated bool // set when bytes are dropped due to reaching the limit
 }
 
 func (lw *limitedWriter) Write(p []byte) (int, error) {
 	remaining := lw.limit - lw.n
 	if remaining <= 0 {
-		return len(p), nil // silently drop excess
+		lw.truncated = true
+		return len(p), nil // drop excess, signal caller via Truncated
 	}
 	if int64(len(p)) > remaining {
+		lw.truncated = true
 		p = p[:remaining]
 	}
 	n, err := lw.w.Write(p)

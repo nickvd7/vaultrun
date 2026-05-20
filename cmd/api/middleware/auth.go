@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
 	"strings"
@@ -13,10 +15,21 @@ import (
 
 const actorKey = "actor"
 
+// masterKeyMAC computes HMAC-SHA256 of key under a fixed label so that two
+// values can be compared in constant time regardless of their length (L-1).
+// Raw ConstantTimeCompare short-circuits on length mismatch, leaking key length.
+func masterKeyMAC(key string) []byte {
+	h := hmac.New(sha256.New, []byte("vaultrun-master-key-compare-v1"))
+	h.Write([]byte(key))
+	return h.Sum(nil)
+}
+
 // APIKeyAuth validates Bearer or X-API-Key tokens against the database.
-// The master key path uses constant-time comparison to prevent timing attacks.
+// Master key comparison is length-safe via HMAC before ConstantTimeCompare.
 func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
-	masterKeyBytes := []byte(masterKey)
+	// Pre-compute once at startup.
+	expectedMAC := masterKeyMAC(masterKey)
+
 	return func(c *gin.Context) {
 		key := extractKey(c)
 		if key == "" {
@@ -24,9 +37,9 @@ func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
 			return
 		}
 
-		// Master key short-circuit (for initial setup only).
-		// Use constant-time compare to prevent timing-based brute-force.
-		if masterKey != "" && subtle.ConstantTimeCompare([]byte(key), masterKeyBytes) == 1 {
+		// Master key check: HMAC both sides to a fixed-length value so the
+		// comparison is constant-time regardless of candidate length (L-1).
+		if masterKey != "" && subtle.ConstantTimeCompare(masterKeyMAC(key), expectedMAC) == 1 {
 			c.Set(actorKey, "master")
 			c.Next()
 			return
@@ -39,6 +52,18 @@ func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
 		}
 
 		c.Set(actorKey, apiKey.Name)
+		c.Next()
+	}
+}
+
+// RequireMasterKey rejects requests where the caller is not authenticated with
+// the master key. Must be applied after APIKeyAuth in the middleware chain (L-8).
+func RequireMasterKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if Actor(c) != "master" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "master key required"})
+			return
+		}
 		c.Next()
 	}
 }

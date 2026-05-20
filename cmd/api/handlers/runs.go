@@ -36,13 +36,8 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	session, err := dbpkg.GetSession(c.Request.Context(), rh.h.db, sessionID)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	if !ok {
 		return
 	}
 	if session.StoppedAt != nil {
@@ -101,13 +96,8 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	session, err := dbpkg.GetSession(c.Request.Context(), rh.h.db, sessionID)
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
+	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	if !ok {
 		return
 	}
 	if session.StoppedAt != nil {
@@ -171,6 +161,9 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		if run.ExitCode != nil {
 			doneEvent["exit_code"] = *run.ExitCode
 		}
+		if run.OutputTruncated {
+			doneEvent["output_truncated"] = true
+		}
 	}
 	writeSSEEvent(c.Writer, flusher, doneEvent)
 }
@@ -181,9 +174,7 @@ func (rh *RunHandler) ListBySession(c *gin.Context) {
 	if !ok {
 		return
 	}
-
-	if _, err := dbpkg.GetSession(c.Request.Context(), rh.h.db, sessionID); err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	if _, ok := rh.h.checkSessionAccess(c, sessionID); !ok {
 		return
 	}
 

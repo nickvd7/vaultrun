@@ -20,3 +20,8 @@ apps/frontend/.next/
 # OS
 .DS_Store
 *.swp
+# Python build artifacts
+sdk/python/*.egg-info/
+sdk/python/__pycache__/
+sdk/python/**/__pycache__/
+sdk/python/**/*.pyc

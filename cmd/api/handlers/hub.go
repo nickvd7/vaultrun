@@ -11,6 +11,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -23,6 +24,7 @@ type Hub struct {
 	runner *runner.Runner
 	audit  *audit.Logger
 	cfg    *config.Config
+	policy policy.Hook
 }
 
 func NewHub(
@@ -32,8 +34,12 @@ func NewHub(
 	runner *runner.Runner,
 	audit *audit.Logger,
 	cfg *config.Config,
+	pol policy.Hook,
 ) *Hub {
-	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg}
+	if pol == nil {
+		pol = policy.AllowAll{}
+	}
+	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol}
 }
 
 type paginationParams struct {

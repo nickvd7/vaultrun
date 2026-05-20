@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -207,6 +208,17 @@ func ListAPIKeys(ctx context.Context, db *sqlx.DB) ([]*models.APIKey, error) {
 	var keys []*models.APIKey
 	err := db.SelectContext(ctx, &keys, `SELECT * FROM api_keys ORDER BY created_at DESC`)
 	return keys, err
+}
+
+func RevokeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
+	res, err := db.ExecContext(ctx, `UPDATE api_keys SET active = FALSE WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // ListActiveSessions returns sessions that are still running (for cleanup jobs).

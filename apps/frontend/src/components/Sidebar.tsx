@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, LayoutDashboard, Terminal, FileText, ScrollText } from "lucide-react";
+import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/sessions", label: "Sessions", icon: Terminal },
+  { href: "/keys", label: "API Keys", icon: KeyRound },
   { href: "/audit", label: "Audit Logs", icon: ScrollText },
 ];
 

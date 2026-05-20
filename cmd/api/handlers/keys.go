@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
@@ -69,4 +71,32 @@ func (kh *KeyHandler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"api_keys": keys})
+}
+
+// DELETE /api/v1/keys/:id
+func (kh *KeyHandler) Revoke(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	if err := dbpkg.RevokeAPIKey(c.Request.Context(), kh.h.db, id); err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke key"})
+		return
+	}
+
+	actor := middleware.Actor(c)
+	kh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:  actor,
+		Action: models.ActionAPIKeyRevoked,
+		Metadata: models.JSONB{
+			"key_id": id.String(),
+		},
+	})
+
+	c.Status(http.StatusNoContent)
 }

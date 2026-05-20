@@ -13,6 +13,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -29,11 +30,9 @@ func newRouter(
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	// Limit multipart memory to prevent memory exhaustion
 	r.MaxMultipartMemory = cfg.Workspace.MaxFileMB * 1024 * 1024
 
 	// CORS: only allow explicitly configured origins.
-	// An empty list means no cross-origin access (same-origin only).
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
@@ -44,7 +43,6 @@ func newRouter(
 	if len(cfg.Server.CORSOrigins) > 0 {
 		corsConfig.AllowOrigins = cfg.Server.CORSOrigins
 	} else {
-		// No explicit origins: block all cross-origin requests.
 		corsConfig.AllowOriginFunc = func(origin string) bool { return false }
 	}
 	r.Use(cors.New(corsConfig))
@@ -58,47 +56,53 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg)
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, policy.AllowAll{})
 
-	// Health — no auth, intentionally minimal (no DB internals exposed)
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
 
 	api := r.Group("/api/v1")
+	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey)
 
-	// Key management (master key required to bootstrap)
-	keys := handlers.NewKeyHandler(hub)
-	api.POST("/keys", middleware.APIKeyAuth(db, cfg.Auth.MasterKey), keys.Create)
-	api.GET("/keys", middleware.APIKeyAuth(db, cfg.Auth.MasterKey), keys.List)
-
-	// All remaining routes require a valid API key.
-	// Rate-limit is applied when configured (> 0).
-	groupMiddleware := []gin.HandlerFunc{middleware.APIKeyAuth(db, cfg.Auth.MasterKey)}
-	if cfg.Server.RateLimit > 0 {
-		groupMiddleware = append([]gin.HandlerFunc{middleware.RateLimit(cfg.Server.RateLimit)}, groupMiddleware...)
+	// Build a middleware slice that optionally prepends the rate limiter.
+	buildMW := func(extra ...gin.HandlerFunc) []gin.HandlerFunc {
+		var mw []gin.HandlerFunc
+		if cfg.Server.RateLimit > 0 {
+			mw = append(mw, middleware.RateLimit(cfg.Server.RateLimit))
+		}
+		mw = append(mw, authMW)
+		return append(mw, extra...)
 	}
-	authGroup := api.Group("/", groupMiddleware...)
 
-	sessions := handlers.NewSessionHandler(hub)
-	authGroup.POST("/sessions", sessions.Create)
-	authGroup.GET("/sessions", sessions.List)
-	authGroup.GET("/sessions/:id", sessions.Get)
-	authGroup.DELETE("/sessions/:id", sessions.Delete)
+	// Key management — same rate limit + master key auth
+	keysH := handlers.NewKeyHandler(hub)
+	api.POST("/keys", buildMW(keysH.Create)...)
+	api.GET("/keys", buildMW(keysH.List)...)
+	api.DELETE("/keys/:id", buildMW(keysH.Revoke)...)
 
-	files := handlers.NewFileHandler(hub)
-	authGroup.POST("/sessions/:id/files", files.Upload)
-	authGroup.GET("/sessions/:id/files", files.List)
-	authGroup.GET("/sessions/:id/files/*path", files.Download)
+	// All remaining routes — rate-limited + any valid API key
+	authGroup := api.Group("/", buildMW()...)
 
-	runs := handlers.NewRunHandler(hub)
-	authGroup.POST("/sessions/:id/run", runs.Execute)
-	authGroup.GET("/sessions/:id/runs", runs.ListBySession)
-	authGroup.GET("/runs/:id", runs.Get)
+	sessH := handlers.NewSessionHandler(hub)
+	authGroup.POST("/sessions", sessH.Create)
+	authGroup.GET("/sessions", sessH.List)
+	authGroup.GET("/sessions/:id", sessH.Get)
+	authGroup.DELETE("/sessions/:id", sessH.Delete)
+
+	filesH := handlers.NewFileHandler(hub)
+	authGroup.POST("/sessions/:id/files", filesH.Upload)
+	authGroup.GET("/sessions/:id/files", filesH.List)
+	authGroup.GET("/sessions/:id/files/*path", filesH.Download)
+
+	runsH := handlers.NewRunHandler(hub)
+	authGroup.POST("/sessions/:id/run", runsH.Execute)
+	authGroup.POST("/sessions/:id/run/stream", runsH.Stream)
+	authGroup.GET("/sessions/:id/runs", runsH.ListBySession)
+	authGroup.GET("/runs/:id", runsH.Get)
 
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)
 
-	// Catch-all 404 — don't leak route structure
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	})

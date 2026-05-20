@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
 )
 
 // ExecConfig holds parameters for running a command inside a container.
@@ -26,16 +25,49 @@ type ExecConfig struct {
 // ExecResult is the result of an exec invocation.
 type ExecResult struct {
 	ExitCode   int
-	Stdout     string
-	Stderr     string
+	Stdout     string // populated by Exec; empty when using ExecStream
+	Stderr     string // populated by Exec; empty when using ExecStream
 	DurationMS int64
 	TimedOut   bool
 }
 
-// Exec runs a command inside the sandbox container. It is deliberately
-// NOT shell-invoked — command and args are passed as separate fields to
-// the Docker exec API, preventing shell injection.
+// Exec runs a command inside the sandbox container and buffers full output.
+// It is deliberately NOT shell-invoked — command and args are passed as
+// separate fields to the Docker exec API, preventing shell injection.
 func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) {
+	maxBytes := cfg.MaxOutputBytes
+	if maxBytes <= 0 {
+		maxBytes = 10 * 1024 * 1024
+	}
+	var stdoutBuf, stderrBuf bytes.Buffer
+	result, err := c.execInternal(ctx, cfg,
+		&limitedWriter{w: &stdoutBuf, limit: maxBytes},
+		&limitedWriter{w: &stderrBuf, limit: maxBytes},
+	)
+	if err != nil {
+		return result, err
+	}
+	result.Stdout = stdoutBuf.String()
+	result.Stderr = stderrBuf.String()
+	return result, nil
+}
+
+// ExecStream runs a command and writes output chunks to stdout/stderr as they
+// arrive. The ExecResult's Stdout and Stderr fields are empty — data is
+// written directly to the provided writers.
+func (c *Client) ExecStream(ctx context.Context, cfg ExecConfig, stdout, stderr io.Writer) (*ExecResult, error) {
+	maxBytes := cfg.MaxOutputBytes
+	if maxBytes <= 0 {
+		maxBytes = 10 * 1024 * 1024
+	}
+	return c.execInternal(ctx, cfg,
+		&limitedWriter{w: stdout, limit: maxBytes},
+		&limitedWriter{w: stderr, limit: maxBytes},
+	)
+}
+
+// execInternal is the shared implementation for Exec and ExecStream.
+func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stderr io.Writer) (*ExecResult, error) {
 	cmd := append([]string{cfg.Command}, cfg.Args...)
 
 	env := make([]string, 0, len(cfg.Env))
@@ -66,7 +98,6 @@ func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) 
 	}
 	defer resp.Close()
 
-	// Apply timeout
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -74,28 +105,19 @@ func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	maxBytes := cfg.MaxOutputBytes
-	if maxBytes <= 0 {
-		maxBytes = 10 * 1024 * 1024 // 10 MB default
-	}
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdoutWriter := &limitedWriter{w: &stdoutBuf, limit: maxBytes}
-	stderrWriter := &limitedWriter{w: &stderrBuf, limit: maxBytes}
-
 	start := time.Now()
 
 	done := make(chan error, 1)
 	go func() {
-		done <- demuxDockerStream(resp.Reader, stdoutWriter, stderrWriter)
+		done <- demuxDockerStream(resp.Reader, stdout, stderr)
 	}()
 
 	timedOut := false
 	select {
 	case <-timeoutCtx.Done():
 		timedOut = true
-		// Kill the exec process
-		_ = c.inner.ContainerExecResize(ctx, execID.ID, container.ResizeOptions{})
+		resp.Close() // close attach connection to unblock the demux goroutine
+		<-done
 	case <-done:
 	}
 
@@ -104,14 +126,11 @@ func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) 
 	if timedOut {
 		return &ExecResult{
 			ExitCode:   -1,
-			Stdout:     stdoutBuf.String(),
-			Stderr:     stderrBuf.String() + "\n[process killed: timeout]",
 			DurationMS: durationMS,
 			TimedOut:   true,
 		}, nil
 	}
 
-	// Inspect to get exit code
 	inspect, err := c.inner.ContainerExecInspect(ctx, execID.ID)
 	if err != nil {
 		return nil, fmt.Errorf("exec inspect: %w", err)
@@ -119,8 +138,6 @@ func (c *Client) Exec(ctx context.Context, cfg ExecConfig) (*ExecResult, error) 
 
 	return &ExecResult{
 		ExitCode:   inspect.ExitCode,
-		Stdout:     stdoutBuf.String(),
-		Stderr:     stderrBuf.String(),
 		DurationMS: durationMS,
 	}, nil
 }

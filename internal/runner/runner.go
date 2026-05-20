@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/models"
+	"github.com/nickvd7/vaultrun/internal/policy"
 )
 
 const maxOutputBytes = 10 * 1024 * 1024 // 10 MB
@@ -23,10 +25,14 @@ type Runner struct {
 	db     *sqlx.DB
 	docker *dockerpkg.Client
 	audit  *audit.Logger
+	hook   policy.Hook
 }
 
-func New(db *sqlx.DB, docker *dockerpkg.Client, audit *audit.Logger) *Runner {
-	return &Runner{db: db, docker: docker, audit: audit}
+func New(db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, hook policy.Hook) *Runner {
+	if hook == nil {
+		hook = policy.AllowAll{}
+	}
+	return &Runner{db: db, docker: docker, audit: al, hook: hook}
 }
 
 type RunRequest struct {
@@ -41,15 +47,113 @@ type RunRequest struct {
 }
 
 // Execute runs a command inside the sandbox container, persists the run record,
-// and emits audit events.
+// and emits audit events. Output is buffered and returned in the Run model.
 func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, error) {
+	run, err := r.prepareRun(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	startedAt := time.Now().UTC()
+	result, execErr := r.docker.Exec(ctx, dockerpkg.ExecConfig{
+		ContainerID:    req.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		WorkingDir:     run.WorkingDir,
+		TimeoutSeconds: run.TimeoutSeconds,
+		MaxOutputBytes: maxOutputBytes,
+	})
+	finishedAt := time.Now().UTC()
+
+	status := resolveStatus(execErr, result)
+	durationMS := result.DurationMS
+
+	params := dbpkg.UpdateRunParams{
+		ID:         run.ID,
+		Status:     status,
+		StartedAt:  &startedAt,
+		FinishedAt: &finishedAt,
+		DurationMS: &durationMS,
+	}
+	if execErr == nil {
+		params.ExitCode = &result.ExitCode
+		params.Stdout = &result.Stdout
+		params.Stderr = &result.Stderr
+	}
+
+	if err := dbpkg.UpdateRun(ctx, r.db, params); err != nil {
+		slog.Error("update run record", "run_id", run.ID, "err", err)
+	}
+
+	r.emitFinish(ctx, req, run, status, durationMS)
+
+	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
+	if err != nil {
+		return run, nil
+	}
+	return updated, nil
+}
+
+// Stream runs a command and writes stdout/stderr chunks to the provided writers
+// as they arrive. Useful for SSE streaming to the client.
+func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.Writer) (*models.Run, error) {
+	run, err := r.prepareRun(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	startedAt := time.Now().UTC()
+	result, execErr := r.docker.ExecStream(ctx, dockerpkg.ExecConfig{
+		ContainerID:    req.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		WorkingDir:     run.WorkingDir,
+		TimeoutSeconds: run.TimeoutSeconds,
+		MaxOutputBytes: maxOutputBytes,
+	}, stdout, stderr)
+	finishedAt := time.Now().UTC()
+
+	status := resolveStatus(execErr, result)
+	durationMS := result.DurationMS
+
+	params := dbpkg.UpdateRunParams{
+		ID:         run.ID,
+		Status:     status,
+		StartedAt:  &startedAt,
+		FinishedAt: &finishedAt,
+		DurationMS: &durationMS,
+	}
+	if execErr == nil {
+		params.ExitCode = &result.ExitCode
+	}
+
+	if err := dbpkg.UpdateRun(ctx, r.db, params); err != nil {
+		slog.Error("update run record", "run_id", run.ID, "err", err)
+	}
+
+	r.emitFinish(ctx, req, run, status, durationMS)
+
+	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
+	if err != nil {
+		return run, nil
+	}
+	return updated, nil
+}
+
+// prepareRun validates the request, enforces policy, creates the DB record,
+// and emits the start audit event. Shared between Execute and Stream.
+func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, error) {
 	if req.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
-
-	// Validate command — no shell metacharacters at the binary level.
 	if strings.ContainsAny(req.Command, ";|&$`\\<>{}()") {
 		return nil, fmt.Errorf("command contains disallowed characters")
+	}
+
+	if d := r.hook.EvalCommand(ctx, req.SessionID, req.Command, req.Args); !d.Allowed {
+		return nil, fmt.Errorf("command denied by policy: %s", d.Reason)
 	}
 
 	timeout := req.TimeoutSeconds
@@ -58,26 +162,28 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 	}
 
 	now := time.Now().UTC()
+	envMap := models.JSONB{}
+	for k, v := range req.Env {
+		envMap[k] = v
+	}
+
+	workingDir := req.WorkingDir
+	if workingDir == "" {
+		workingDir = "/workspace"
+	}
+
 	run := &models.Run{
 		ID:             uuid.New(),
 		SessionID:      req.SessionID,
 		Command:        req.Command,
 		Args:           models.StringArray(req.Args),
-		WorkingDir:     req.WorkingDir,
+		Env:            envMap,
+		WorkingDir:     workingDir,
 		Status:         models.RunStatusPending,
 		TimeoutSeconds: timeout,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if run.WorkingDir == "" {
-		run.WorkingDir = "/workspace"
-	}
-
-	envMap := models.JSONB{}
-	for k, v := range req.Env {
-		envMap[k] = v
-	}
-	run.Env = envMap
 
 	if err := dbpkg.CreateRun(ctx, r.db, run); err != nil {
 		return nil, fmt.Errorf("persist run: %w", err)
@@ -89,75 +195,37 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 		SessionID: &sidCopy,
 		RunID:     &run.ID,
 		Action:    models.ActionCommandStarted,
-		Metadata: models.JSONB{
-			"command": req.Command,
-			"args":    req.Args,
-		},
+		Metadata:  models.JSONB{"command": req.Command, "args": req.Args},
 	})
 
-	startedAt := time.Now().UTC()
-	result, execErr := r.docker.Exec(ctx, dockerpkg.ExecConfig{
-		ContainerID:    req.ContainerID,
-		Command:        req.Command,
-		Args:           req.Args,
-		Env:            req.Env,
-		WorkingDir:     req.WorkingDir,
-		TimeoutSeconds: timeout,
-		MaxOutputBytes: maxOutputBytes,
-	})
+	return run, nil
+}
 
-	finishedAt := time.Now().UTC()
-
-	// Determine final status
-	status := models.RunStatusCompleted
-	if execErr != nil {
-		status = models.RunStatusFailed
-		slog.Error("exec error", "run_id", run.ID, "err", execErr)
-	} else if result.TimedOut {
-		status = models.RunStatusTimeout
-	} else if result.ExitCode != 0 {
-		status = models.RunStatusFailed
-	}
-
-	durationMS := result.DurationMS
-	updateParams := dbpkg.UpdateRunParams{
-		ID:         run.ID,
-		Status:     status,
-		StartedAt:  &startedAt,
-		FinishedAt: &finishedAt,
-		DurationMS: &durationMS,
-	}
-
-	if execErr == nil {
-		updateParams.ExitCode = &result.ExitCode
-		updateParams.Stdout = &result.Stdout
-		updateParams.Stderr = &result.Stderr
-	}
-
-	if err := dbpkg.UpdateRun(ctx, r.db, updateParams); err != nil {
-		slog.Error("update run record", "run_id", run.ID, "err", err)
-	}
-
-	auditAction := models.ActionCommandFinished
+func (r *Runner) emitFinish(ctx context.Context, req RunRequest, run *models.Run, status string, durationMS int64) {
+	sidCopy := req.SessionID
+	action := models.ActionCommandFinished
 	if status == models.RunStatusFailed || status == models.RunStatusTimeout {
-		auditAction = models.ActionCommandFailed
+		action = models.ActionCommandFailed
 	}
-
 	r.audit.Log(ctx, audit.Event{
 		Actor:     req.Actor,
 		SessionID: &sidCopy,
 		RunID:     &run.ID,
-		Action:    auditAction,
-		Metadata: models.JSONB{
-			"status":      status,
-			"duration_ms": durationMS,
-		},
+		Action:    action,
+		Metadata:  models.JSONB{"status": status, "duration_ms": durationMS},
 	})
+}
 
-	// Reload updated run
-	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
-	if err != nil {
-		return run, nil
+func resolveStatus(execErr error, result *dockerpkg.ExecResult) string {
+	if execErr != nil {
+		slog.Error("exec error", "err", execErr)
+		return models.RunStatusFailed
 	}
-	return updated, nil
+	if result.TimedOut {
+		return models.RunStatusTimeout
+	}
+	if result.ExitCode != 0 {
+		return models.RunStatusFailed
+	}
+	return models.RunStatusCompleted
 }

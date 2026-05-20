@@ -59,6 +59,11 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 
 	maxBytes := fh.h.cfg.Workspace.MaxFileMB * 1024 * 1024
 
+	if d := fh.h.policy.EvalFileAccess(c.Request.Context(), sessionID, userPath, true); !d.Allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "file access denied by policy"})
+		return
+	}
+
 	f, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open upload"})
@@ -140,6 +145,11 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	// Verify session exists
 	if _, err := dbpkg.GetSession(c.Request.Context(), fh.h.db, sessionID); err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	if d := fh.h.policy.EvalFileAccess(c.Request.Context(), sessionID, userPath, false); !d.Allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "file access denied by policy"})
 		return
 	}
 

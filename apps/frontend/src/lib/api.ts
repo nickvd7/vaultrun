@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API_KEY =
@@ -125,6 +125,20 @@ export const api = {
         (r) => r.audit_logs
       );
     },
+  },
+
+  keys: {
+    list: () =>
+      request<{ api_keys: APIKey[] }>("/keys").then((r) => r.api_keys),
+
+    create: (name: string) =>
+      request<CreatedKey>("/keys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+
+    revoke: (id: string) =>
+      request<void>(`/keys/${id}`, { method: "DELETE" }),
   },
 };
 

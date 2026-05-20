@@ -62,7 +62,7 @@ func main() {
 	}
 
 	al := audit.New(db)
-	rnr := runner.New(db, docker, al)
+	rnr := runner.New(db, docker, al, nil) // nil → AllowAll policy (no-op for MVP)
 
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

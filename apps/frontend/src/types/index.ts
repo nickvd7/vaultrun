@@ -55,3 +55,18 @@ export interface Pagination {
   offset: number;
   page: number;
 }
+
+export interface APIKey {
+  id: string;
+  name: string;
+  prefix: string;
+  active: boolean;
+  created_at: string;
+  last_used_at?: string;
+  expires_at?: string;
+}
+
+// Returned once on creation — includes the plaintext key
+export interface CreatedKey extends APIKey {
+  key: string;
+}

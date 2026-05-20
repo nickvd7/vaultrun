@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -37,8 +37,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // Sessions
 export const api = {
   sessions: {
-    list: () =>
-      request<{ sessions: Session[] }>("/sessions").then((r) => r.sessions),
+    list: (page = 1, limit = 20) =>
+      request<{ sessions: Session[]; pagination: Pagination }>(
+        `/sessions?page=${page}&limit=${limit}`
+      ),
 
     get: (id: string) => request<Session>(`/sessions/${id}`),
 

@@ -14,7 +14,7 @@ export default function DashboardPage() {
   useEffect(() => {
     api.sessions
       .list()
-      .then(setSessions)
+      .then(({ sessions }) => setSessions(sessions))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

@@ -60,7 +60,8 @@ type WorkspaceConfig struct {
 }
 
 type AuthConfig struct {
-	MasterKey string
+	MasterKey     string
+	OPAPolicyFile string // optional path to a Rego policy file; empty = AllowAll
 }
 
 // Limits caps applied to session creation requests.
@@ -125,7 +126,8 @@ func Load() (*Config, error) {
 			MaxOutputMB: maxOutputMB,
 		},
 		Auth: AuthConfig{
-			MasterKey: getEnv("MASTER_API_KEY", ""),
+			MasterKey:     getEnv("MASTER_API_KEY", ""),
+			OPAPolicyFile: getEnv("OPA_POLICY_FILE", ""),
 		},
 	}
 

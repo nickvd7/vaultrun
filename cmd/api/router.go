@@ -18,6 +18,8 @@ import (
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
+
+
 func newRouter(
 	cfg *config.Config,
 	db *sqlx.DB,
@@ -25,6 +27,7 @@ func newRouter(
 	ws *workspace.Manager,
 	rnr *runner.Runner,
 	al *audit.Logger,
+	pol policy.Hook,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -56,7 +59,7 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, policy.AllowAll{})
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol)
 
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)

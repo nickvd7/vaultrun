@@ -17,6 +17,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -62,7 +63,20 @@ func main() {
 	}
 
 	al := audit.New(db)
-	rnr := runner.New(db, docker, al, nil) // nil → AllowAll policy (no-op for MVP)
+
+	// Load OPA policy if OPA_POLICY_FILE is configured; fall back to AllowAll.
+	var policyHook policy.Hook = policy.AllowAll{}
+	if policyFile := cfg.Auth.OPAPolicyFile; policyFile != "" {
+		h, err := policy.NewOPAHookFromFile(context.Background(), policyFile)
+		if err != nil {
+			slog.Error("load opa policy", "file", policyFile, "err", err)
+			os.Exit(1)
+		}
+		policyHook = h
+		slog.Info("opa policy loaded", "file", policyFile)
+	}
+
+	rnr := runner.New(db, docker, al, policyHook)
 
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
@@ -70,7 +84,7 @@ func main() {
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, 5*time.Minute, idleFor)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

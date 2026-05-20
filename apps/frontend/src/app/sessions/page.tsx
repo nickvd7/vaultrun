@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, Trash2, RefreshCw, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { Session } from "@/types";
 
+const PAGE_LIMIT = 20;
+
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
@@ -20,16 +25,25 @@ export default function SessionsPage() {
     network: false,
   });
 
-  const load = () => {
-    setLoading(true);
-    api.sessions
-      .list()
-      .then(setSessions)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  };
+  const loadPage = useCallback(async (p: number, append: boolean) => {
+    if (append) setLoadingMore(true); else setLoading(true);
+    try {
+      const { sessions: rows } = await api.sessions.list(p, PAGE_LIMIT);
+      setSessions((prev) => append ? [...prev, ...rows] : rows);
+      setHasMore(rows.length === PAGE_LIMIT);
+      setPage(p);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (append) setLoadingMore(false); else setLoading(false);
+    }
+  }, []);
 
-  useEffect(load, []);
+  useEffect(() => { loadPage(1, false); }, [loadPage]);
+
+  const handleLoadMore = () => loadPage(page + 1, true);
+
+  const handleRefresh = () => loadPage(1, false);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -42,7 +56,7 @@ export default function SessionsPage() {
         network_enabled: form.network,
       });
       setShowForm(false);
-      load();
+      loadPage(1, false);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : "Create failed");
     } finally {
@@ -53,7 +67,8 @@ export default function SessionsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this session?")) return;
     await api.sessions.delete(id).catch(console.error);
-    load();
+    // Remove locally without full reload to preserve scroll position
+    setSessions((prev) => prev.filter((s) => s.id !== id));
   };
 
   return (
@@ -67,10 +82,12 @@ export default function SessionsPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={load}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -84,9 +101,7 @@ export default function SessionsPage() {
       {/* Create form */}
       {showForm && (
         <div className="bg-[#0f0f1a] border border-slate-700 rounded-lg p-5 space-y-4">
-          <h2 className="text-sm font-medium text-slate-300">
-            Create New Session
-          </h2>
+          <h2 className="text-sm font-medium text-slate-300">Create New Session</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-slate-500 mb-1">Name (optional)</label>
@@ -106,28 +121,18 @@ export default function SessionsPage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                CPU Limit (cores)
-              </label>
+              <label className="block text-xs text-slate-500 mb-1">CPU Limit (cores)</label>
               <input
-                type="number"
-                min="0.1"
-                max="8"
-                step="0.1"
+                type="number" min="0.1" max="8" step="0.1"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={form.cpu}
                 onChange={(e) => setForm({ ...form, cpu: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                Memory (MB)
-              </label>
+              <label className="block text-xs text-slate-500 mb-1">Memory (MB)</label>
               <input
-                type="number"
-                min="64"
-                max="32768"
-                step="64"
+                type="number" min="64" max="32768" step="64"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={form.mem}
                 onChange={(e) => setForm({ ...form, mem: e.target.value })}
@@ -136,20 +141,15 @@ export default function SessionsPage() {
           </div>
           <div className="flex items-center gap-2">
             <input
-              type="checkbox"
-              id="network"
-              checked={form.network}
+              type="checkbox" id="network" checked={form.network}
               onChange={(e) => setForm({ ...form, network: e.target.checked })}
               className="rounded"
             />
-            <label htmlFor="network" className="text-sm text-slate-400">
-              Enable network access
-            </label>
+            <label htmlFor="network" className="text-sm text-slate-400">Enable network access</label>
           </div>
           <div className="flex gap-2 pt-2">
             <button
-              onClick={handleCreate}
-              disabled={creating}
+              onClick={handleCreate} disabled={creating}
               className="px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50"
             >
               {creating ? "Creating…" : "Create Session"}
@@ -173,59 +173,74 @@ export default function SessionsPage() {
             No sessions. Click &quot;New Session&quot; to create one.
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
-                <th className="px-4 py-3 text-left">ID</th>
-                <th className="px-4 py-3 text-left">Name</th>
-                <th className="px-4 py-3 text-left">Image</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Resources</th>
-                <th className="px-4 py-3 text-left">Created</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {sessions.map((s) => (
-                <tr
-                  key={s.id}
-                  className="hover:bg-slate-800/20 transition-colors"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/sessions/${s.id}`}
-                      className="font-mono text-indigo-400 hover:text-indigo-300 text-xs"
-                    >
-                      {s.id.slice(0, 8)}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300 text-xs">
-                    {s.name || <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-400">
-                    {s.image}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={s.status} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 font-mono">
-                    {s.cpu_limit}CPU / {s.memory_limit_mb}MB
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {new Date(s.created_at).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(s.id)}
-                      className="text-slate-600 hover:text-red-400 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+                  <th className="px-4 py-3 text-left">ID</th>
+                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left">Image</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Resources</th>
+                  <th className="px-4 py-3 text-left">Created</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {sessions.map((s) => (
+                  <tr key={s.id} className="hover:bg-slate-800/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/sessions/${s.id}`}
+                        className="font-mono text-indigo-400 hover:text-indigo-300 text-xs"
+                      >
+                        {s.id.slice(0, 8)}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300 text-xs">
+                      {s.name || <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{s.image}</td>
+                    <td className="px-4 py-3"><StatusBadge status={s.status} /></td>
+                    <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                      {s.cpu_limit}CPU / {s.memory_limit_mb}MB
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {new Date(s.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(s.id)}
+                        className="text-slate-600 hover:text-red-400 transition-colors"
+                        title="Delete session"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Load more */}
+            {hasMore && (
+              <div className="border-t border-slate-800 px-4 py-3 flex items-center justify-between">
+                <p className="text-xs text-slate-600">{sessions.length} sessions loaded</p>
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 border border-slate-700 rounded hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

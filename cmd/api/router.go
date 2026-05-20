@@ -107,6 +107,10 @@ func newRouter(
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)
 
+	polH := handlers.NewPolicyHandler(hub)
+	authGroup.GET("/policy", polH.Get)
+	authGroup.POST("/policy/eval", polH.Eval)
+
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	})

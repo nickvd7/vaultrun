@@ -70,3 +70,16 @@ export interface APIKey {
 export interface CreatedKey extends APIKey {
   key: string;
 }
+
+export interface PolicyStatus {
+  enabled: boolean;
+  file_path?: string;
+  content?: string;
+  error?: string;
+}
+
+export interface PolicyEvalResult {
+  allowed: boolean;
+  type: string;
+  reason?: string;
+}

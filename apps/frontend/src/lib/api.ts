@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -132,6 +132,23 @@ export const api = {
 
     revoke: (id: string) =>
       request<void>(`/keys/${id}`, { method: "DELETE" }),
+  },
+
+  policy: {
+    get: () => request<PolicyStatus>("/policy"),
+
+    eval: (body: {
+      type: "command" | "file";
+      session_id?: string;
+      command?: string;
+      args?: string[];
+      path?: string;
+      write?: boolean;
+    }) =>
+      request<PolicyEvalResult>("/policy/eval", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
 };
 

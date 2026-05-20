@@ -42,6 +42,12 @@ func NewHub(
 	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol}
 }
 
+// Policy exposes the active policy hook (for the policy handler).
+func (h *Hub) Policy() policy.Hook { return h.policy }
+
+// PolicyFile returns the configured OPA policy file path (empty = AllowAll).
+func (h *Hub) PolicyFile() string { return h.cfg.Auth.OPAPolicyFile }
+
 type paginationParams struct {
 	limit  int
 	offset int

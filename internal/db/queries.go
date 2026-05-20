@@ -198,7 +198,12 @@ func CreateAPIKey(ctx context.Context, db *sqlx.DB, k *models.APIKey) error {
 
 func GetAPIKeyByHash(ctx context.Context, db *sqlx.DB, keyHash string) (*models.APIKey, error) {
 	var k models.APIKey
-	err := db.GetContext(ctx, &k, `SELECT * FROM api_keys WHERE key_hash = $1 AND active = TRUE`, keyHash)
+	err := db.GetContext(ctx, &k,
+		`SELECT * FROM api_keys
+		 WHERE key_hash = $1
+		   AND active = TRUE
+		   AND (expires_at IS NULL OR expires_at > NOW())`,
+		keyHash)
 	if err != nil {
 		return nil, err
 	}

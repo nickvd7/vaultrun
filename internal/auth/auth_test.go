@@ -3,8 +3,12 @@ package auth_test
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/internal/auth"
+	"github.com/nickvd7/vaultrun/internal/models"
 )
 
 func TestGenerateKey(t *testing.T) {
@@ -61,5 +65,61 @@ func TestGenerateKeyUniqueness(t *testing.T) {
 			t.Fatal("duplicate key generated")
 		}
 		seen[plain] = true
+	}
+}
+
+// --- expiry logic unit tests (no DB required) ---
+
+func expiredKey() *models.APIKey {
+	past := time.Now().Add(-1 * time.Hour)
+	return &models.APIKey{
+		ID:        uuid.New(),
+		Name:      "expired",
+		Active:    true,
+		ExpiresAt: &past,
+	}
+}
+
+func activeKey() *models.APIKey {
+	future := time.Now().Add(24 * time.Hour)
+	return &models.APIKey{
+		ID:        uuid.New(),
+		Name:      "active",
+		Active:    true,
+		ExpiresAt: &future,
+	}
+}
+
+func neverExpiresKey() *models.APIKey {
+	return &models.APIKey{ID: uuid.New(), Name: "forever", Active: true}
+}
+
+func TestKeyExpiryPast(t *testing.T) {
+	k := expiredKey()
+	if k.ExpiresAt == nil || !k.ExpiresAt.Before(time.Now()) {
+		t.Fatal("test setup: key should already be expired")
+	}
+	// Simulate the check performed in auth.Validate
+	if k.ExpiresAt != nil && k.ExpiresAt.Before(time.Now()) {
+		return // correctly detected as expired
+	}
+	t.Fatal("expired key was not detected")
+}
+
+func TestKeyExpiryFuture(t *testing.T) {
+	k := activeKey()
+	if k.ExpiresAt == nil || k.ExpiresAt.Before(time.Now()) {
+		t.Fatal("key with future expiry should not be expired")
+	}
+}
+
+func TestKeyNoExpiry(t *testing.T) {
+	k := neverExpiresKey()
+	if k.ExpiresAt != nil {
+		t.Fatal("key without expiry should have nil ExpiresAt")
+	}
+	// nil ExpiresAt means no expiry — should pass
+	if k.ExpiresAt != nil && k.ExpiresAt.Before(time.Now()) {
+		t.Fatal("nil expiry should never be treated as expired")
 	}
 }

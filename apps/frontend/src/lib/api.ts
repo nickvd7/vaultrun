@@ -1,19 +1,20 @@
 import type { Session, Run, File, AuditLog, APIKey, CreatedKey } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const API_KEY =
-  typeof window !== "undefined"
+
+function getApiKey(): string {
+  return typeof window !== "undefined"
     ? localStorage.getItem("vaultrun_api_key") || ""
     : "";
+}
+
+// Keep a named export for components that need the raw key (e.g. streaming fetch)
+export function getStoredApiKey(): string { return getApiKey(); }
 
 function getHeaders(): HeadersInit {
-  const key =
-    typeof window !== "undefined"
-      ? localStorage.getItem("vaultrun_api_key") || ""
-      : "";
   return {
     "Content-Type": "application/json",
-    "X-API-Key": key,
+    "X-API-Key": getApiKey(),
   };
 }
 
@@ -89,14 +90,9 @@ export const api = {
       form.append("file", file);
       form.append("path", path);
 
-      const key =
-        typeof window !== "undefined"
-          ? localStorage.getItem("vaultrun_api_key") || ""
-          : "";
-
       const resp = await fetch(`${API_BASE}/api/v1/sessions/${sessionId}/files`, {
         method: "POST",
-        headers: { "X-API-Key": key },
+        headers: { "X-API-Key": getApiKey() },
         body: form,
       });
 
@@ -107,15 +103,10 @@ export const api = {
       return resp.json() as Promise<File>;
     },
 
-    download: (sessionId: string, path: string) => {
-      const key =
-        typeof window !== "undefined"
-          ? localStorage.getItem("vaultrun_api_key") || ""
-          : "";
-      return fetch(`${API_BASE}/api/v1/sessions/${sessionId}/files/${path}`, {
-        headers: { "X-API-Key": key },
-      });
-    },
+    download: (sessionId: string, path: string) =>
+      fetch(`${API_BASE}/api/v1/sessions/${sessionId}/files/${path}`, {
+        headers: { "X-API-Key": getApiKey() },
+      }),
   },
 
   audit: {
@@ -142,4 +133,3 @@ export const api = {
   },
 };
 
-export { API_KEY };

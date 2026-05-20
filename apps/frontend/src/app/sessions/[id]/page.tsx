@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Play, Upload, FileText, ScrollText, Trash2 } from "lucide-react";
+import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square } from "lucide-react";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, getStoredApiKey } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
 import type { Session, Run, File } from "@/types";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 type Tab = "runs" | "files" | "audit";
 
@@ -26,27 +28,46 @@ export default function SessionDetailPage() {
   const [args, setArgs] = useState("");
   const [runTimeout, setRunTimeout] = useState("30");
   const [executing, setExecuting] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+
+  // Live stream output
+  const [streamOutput, setStreamOutput] = useState<{ kind: "out" | "err"; text: string }[]>([]);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const streamEndRef = useRef<HTMLDivElement | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const loadSession = useCallback(() => {
     api.sessions.get(id).then(setSession).catch(console.error);
-    api.runs.list(id).then(setRuns).catch(console.error);
-    api.files.list(id).then(setFiles).catch(console.error);
   }, [id]);
 
+  const loadRuns = useCallback(() => {
+    api.runs.list(id).then(setRuns).catch(console.error);
+  }, [id]);
+
+  useEffect(() => {
+    loadSession();
+    loadRuns();
+    api.files.list(id).then(setFiles).catch(console.error);
+  }, [id, loadSession, loadRuns]);
+
+  // Auto-scroll stream output
+  useEffect(() => {
+    streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [streamOutput]);
+
+  const buildRunBody = () => ({
+    command: cmd,
+    args: args.split(" ").map((a) => a.trim()).filter(Boolean),
+    timeout_seconds: parseInt(runTimeout) || 30,
+  });
+
+  // Blocking run — waits for full output
   const handleRun = async () => {
     if (!cmd) return;
     setExecuting(true);
     try {
-      const result = await api.runs.execute(id, {
-        command: cmd,
-        args: args
-          .split(" ")
-          .map((a) => a.trim())
-          .filter(Boolean),
-        timeout_seconds: parseInt(runTimeout) || 30,
-      });
+      const result = await api.runs.execute(id, buildRunBody());
       setRuns((prev) => [result, ...prev]);
       setSelectedRun(result);
       setTab("runs");
@@ -55,6 +76,74 @@ export default function SessionDetailPage() {
     } finally {
       setExecuting(false);
     }
+  };
+
+  // Streaming run — live SSE output
+  const handleStream = async () => {
+    if (!cmd) return;
+    setStreaming(true);
+    setStreamOutput([]);
+    setSelectedRun(null);
+
+    const abort = new AbortController();
+    streamAbortRef.current = abort;
+
+    try {
+      const resp = await fetch(`${API_BASE}/api/v1/sessions/${id}/run/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": getStoredApiKey(),
+          "Accept": "text/event-stream",
+        },
+        body: JSON.stringify(buildRunBody()),
+        signal: abort.signal,
+      });
+
+      if (!resp.ok || !resp.body) {
+        const msg = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(msg.error || `HTTP ${resp.status}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const ev: { type: string; data?: string; status?: string; exit_code?: number } =
+              JSON.parse(line.slice(6));
+            if (ev.type === "stdout" && ev.data) {
+              setStreamOutput((p) => [...p, { kind: "out", text: ev.data! }]);
+            } else if (ev.type === "stderr" && ev.data) {
+              setStreamOutput((p) => [...p, { kind: "err", text: ev.data! }]);
+            } else if (ev.type === "done") {
+              loadRuns(); // refresh run list to pick up the new record
+            }
+          } catch { /* ignore malformed events */ }
+        }
+      }
+    } catch (e: unknown) {
+      if ((e as Error).name !== "AbortError") {
+        setStreamOutput((p) => [...p, { kind: "err", text: `\n[error: ${(e as Error).message}]` }]);
+      }
+    } finally {
+      setStreaming(false);
+      streamAbortRef.current = null;
+    }
+  };
+
+  const handleStopStream = () => {
+    streamAbortRef.current?.abort();
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,20 +173,17 @@ export default function SessionDetailPage() {
   };
 
   if (!session) {
-    return (
-      <div className="text-slate-600 text-sm p-8">Loading session…</div>
-    );
+    return <div className="text-slate-600 text-sm p-8">Loading session…</div>;
   }
+
+  const canRun = session.status === "running" && !executing && !streaming;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Link
-            href="/sessions"
-            className="text-slate-500 hover:text-slate-300"
-          >
+          <Link href="/sessions" className="text-slate-500 hover:text-slate-300">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
@@ -124,24 +210,18 @@ export default function SessionDetailPage() {
           { label: "Image", value: session.image },
           { label: "CPU", value: `${session.cpu_limit} core(s)` },
           { label: "Memory", value: `${session.memory_limit_mb} MB` },
-          {
-            label: "Network",
-            value: session.network_enabled ? "Enabled" : "Disabled",
-          },
+          { label: "Network", value: session.network_enabled ? "Enabled" : "Disabled" },
         ].map(({ label, value }) => (
-          <div
-            key={label}
-            className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3"
-          >
+          <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3">
             <div className="text-xs text-slate-500 mb-1">{label}</div>
             <div className="text-sm text-slate-200 font-mono">{value}</div>
           </div>
         ))}
       </div>
 
-      {/* Execute command */}
-      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4">
-        <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-3">
+      {/* Execute panel */}
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
+        <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide">
           Execute Command
         </h2>
         <div className="flex gap-2">
@@ -166,13 +246,47 @@ export default function SessionDetailPage() {
           />
           <button
             onClick={handleRun}
-            disabled={executing || session.status !== "running"}
+            disabled={!canRun}
             className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-40"
+            title="Run and wait for full output"
           >
             <Play className="w-3.5 h-3.5" />
             {executing ? "Running…" : "Run"}
           </button>
+          {streaming ? (
+            <button
+              onClick={handleStopStream}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-red-700 rounded hover:bg-red-600"
+            >
+              <Square className="w-3.5 h-3.5" /> Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleStream}
+              disabled={!canRun}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-emerald-700 rounded hover:bg-emerald-600 disabled:opacity-40"
+              title="Stream live output"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              Stream
+            </button>
+          )}
         </div>
+
+        {/* Live stream terminal */}
+        {(streaming || streamOutput.length > 0) && (
+          <div className="bg-black/60 border border-slate-700 rounded-md p-3 max-h-72 overflow-auto font-mono text-xs leading-relaxed">
+            {streamOutput.map((line, i) => (
+              <span key={i} className={line.kind === "err" ? "text-red-400" : "text-green-300"}>
+                {line.text}
+              </span>
+            ))}
+            {streaming && (
+              <span className="inline-block w-2 h-3 bg-green-400 animate-pulse ml-0.5" />
+            )}
+            <div ref={streamEndRef} />
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -188,26 +302,16 @@ export default function SessionDetailPage() {
                   : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              {t === "runs" && (
-                <Play className="w-3.5 h-3.5 inline mr-1" />
-              )}
-              {t === "files" && (
-                <FileText className="w-3.5 h-3.5 inline mr-1" />
-              )}
-              {t === "audit" && (
-                <ScrollText className="w-3.5 h-3.5 inline mr-1" />
-              )}
+              {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" />}
+              {t === "files" && <FileText className="w-3.5 h-3.5 inline mr-1" />}
+              {t === "audit" && <ScrollText className="w-3.5 h-3.5 inline mr-1" />}
               {t}
             </button>
           ))}
         </div>
 
         {tab === "runs" && (
-          <RunsTab
-            runs={runs}
-            selectedRun={selectedRun}
-            setSelectedRun={setSelectedRun}
-          />
+          <RunsTab runs={runs} selectedRun={selectedRun} setSelectedRun={setSelectedRun} />
         )}
         {tab === "files" && (
           <FilesTab
@@ -237,9 +341,7 @@ function RunsTab({
     <div className="space-y-4">
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {runs.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 text-sm">
-            No runs yet.
-          </div>
+          <div className="p-6 text-center text-slate-600 text-sm">No runs yet.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -256,9 +358,7 @@ function RunsTab({
               {runs.map((r) => (
                 <tr
                   key={r.id}
-                  onClick={() =>
-                    setSelectedRun(selectedRun?.id === r.id ? null : r)
-                  }
+                  onClick={() => setSelectedRun(selectedRun?.id === r.id ? null : r)}
                   className={`cursor-pointer hover:bg-slate-800/20 transition-colors ${
                     selectedRun?.id === r.id ? "bg-slate-800/30" : ""
                   }`}
@@ -288,7 +388,6 @@ function RunsTab({
         )}
       </div>
 
-      {/* Log viewer */}
       {selectedRun && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
@@ -299,20 +398,16 @@ function RunsTab({
           </div>
           {selectedRun.stdout && (
             <div className="mb-3">
-              <div className="text-xs text-green-600 mb-1 uppercase tracking-wide">
-                stdout
-              </div>
-              <pre className="log-output text-green-300 bg-black/30 rounded p-3 max-h-64 overflow-auto">
+              <div className="text-xs text-green-600 mb-1 uppercase tracking-wide">stdout</div>
+              <pre className="text-green-300 bg-black/30 rounded p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedRun.stdout}
               </pre>
             </div>
           )}
           {selectedRun.stderr && (
             <div>
-              <div className="text-xs text-red-600 mb-1 uppercase tracking-wide">
-                stderr
-              </div>
-              <pre className="log-output text-red-300 bg-black/30 rounded p-3 max-h-64 overflow-auto">
+              <div className="text-xs text-red-600 mb-1 uppercase tracking-wide">stderr</div>
+              <pre className="text-red-300 bg-black/30 rounded p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedRun.stderr}
               </pre>
             </div>
@@ -351,20 +446,12 @@ function FilesTab({
       <div className="flex justify-end">
         <label className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded cursor-pointer hover:bg-slate-800">
           <Upload className="w-3.5 h-3.5" /> Upload File
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            onChange={handleUpload}
-          />
+          <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
         </label>
       </div>
-
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {files.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 text-sm">
-            No files uploaded.
-          </div>
+          <div className="p-6 text-center text-slate-600 text-sm">No files uploaded.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -379,18 +466,10 @@ function FilesTab({
             <tbody className="divide-y divide-slate-800/50">
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-800/20">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
-                    {f.path}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
-                    {formatBytes(f.size_bytes)}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">
-                    {f.content_type}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
-                    {formatDate(f.updated_at)}
-                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">{f.path}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">{formatBytes(f.size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">{f.content_type}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">{formatDate(f.updated_at)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       onClick={() => handleDownload(f.path)}
@@ -412,13 +491,7 @@ function FilesTab({
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 function AuditTab({ sessionId }: { sessionId: string }) {
   const [logs, setLogs] = useState<
-    Array<{
-      id: string;
-      timestamp: string;
-      actor: string;
-      action: string;
-      metadata: Record<string, unknown>;
-    }>
+    Array<{ id: string; timestamp: string; actor: string; action: string; metadata: Record<string, unknown> }>
   >([]);
 
   useEffect(() => {
@@ -428,9 +501,7 @@ function AuditTab({ sessionId }: { sessionId: string }) {
   return (
     <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
       {logs.length === 0 ? (
-        <div className="p-6 text-center text-slate-600 text-sm">
-          No audit logs.
-        </div>
+        <div className="p-6 text-center text-slate-600 text-sm">No audit logs.</div>
       ) : (
         <table className="w-full text-sm">
           <thead>
@@ -444,15 +515,9 @@ function AuditTab({ sessionId }: { sessionId: string }) {
           <tbody className="divide-y divide-slate-800/50">
             {logs.map((l) => (
               <tr key={l.id} className="hover:bg-slate-800/20">
-                <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">
-                  {formatDate(l.timestamp)}
-                </td>
-                <td className="px-4 py-2.5 text-xs text-slate-400">
-                  {l.actor}
-                </td>
-                <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">
-                  {l.action}
-                </td>
+                <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">{formatDate(l.timestamp)}</td>
+                <td className="px-4 py-2.5 text-xs text-slate-400">{l.actor}</td>
+                <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">{l.action}</td>
                 <td className="px-4 py-2.5 text-xs text-slate-500 font-mono truncate max-w-xs">
                   {JSON.stringify(l.metadata)}
                 </td>

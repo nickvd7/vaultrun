@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound } from "lucide-react";
+import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useApiKey } from "@/components/ApiKeyGate";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -14,6 +15,7 @@ const nav = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { apiKey, clearApiKey } = useApiKey();
 
   return (
     <aside className="w-56 shrink-0 flex flex-col bg-[#0d0d14] border-r border-slate-800">
@@ -42,9 +44,22 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Settings / version */}
-      <div className="px-4 py-3 border-t border-slate-800 text-xs text-slate-600">
-        <div className="flex items-center gap-1.5">
+      {/* Footer */}
+      <div className="px-2 py-3 border-t border-slate-800 space-y-1">
+        {/* Connected key indicator */}
+        {apiKey && (
+          <div className="px-3 py-1.5 text-xs text-slate-600 font-mono truncate">
+            {apiKey.slice(0, 12)}…
+          </div>
+        )}
+        <button
+          onClick={clearApiKey}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-500 hover:bg-slate-800/50 hover:text-slate-300 transition-colors"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Disconnect
+        </button>
+        <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-700">
           <FileText className="w-3 h-3" />
           <span>MVP v0.1.0</span>
         </div>

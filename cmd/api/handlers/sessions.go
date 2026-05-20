@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,7 +40,9 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Defaults
+	limits := sh.h.cfg.SessionLimits()
+
+	// Apply defaults for zero values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage
 	}
@@ -51,6 +54,26 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	}
 	if req.TimeoutSeconds <= 0 {
 		req.TimeoutSeconds = 300
+	}
+
+	// Enforce hard upper bounds to prevent resource exhaustion
+	if req.CPULimit > limits.MaxCPU {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cpu_limit exceeds maximum of %.1f", limits.MaxCPU)})
+		return
+	}
+	if req.MemoryLimitMB > limits.MaxMemoryMB {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("memory_limit_mb exceeds maximum of %d", limits.MaxMemoryMB)})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
+		return
+	}
+
+	// Enforce image allowlist (when configured)
+	if !sh.h.cfg.ImageAllowed(req.Image) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image not permitted"})
+		return
 	}
 
 	sessionID := uuid.New()
@@ -97,9 +120,8 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		ContainerName:  containerName,
 	})
 	if err != nil {
-		// Session exists but container failed — mark as error
 		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})
 		return
 	}
 
@@ -115,11 +137,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		SessionID: &sessionID,
 		Action:    models.ActionSessionCreated,
 		Metadata: models.JSONB{
-			"image":            req.Image,
-			"network_enabled":  req.NetworkEnabled,
-			"cpu_limit":        req.CPULimit,
-			"memory_limit_mb":  req.MemoryLimitMB,
-			"timeout_seconds":  req.TimeoutSeconds,
+			"image":           req.Image,
+			"network_enabled": req.NetworkEnabled,
+			"cpu_limit":       req.CPULimit,
+			"memory_limit_mb": req.MemoryLimitMB,
+			"timeout_seconds": req.TimeoutSeconds,
 		},
 	})
 
@@ -131,7 +153,7 @@ func (sh *SessionHandler) List(c *gin.Context) {
 	pg := pagination(c)
 	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, pg.limit, pg.offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions, "pagination": pg})
@@ -150,7 +172,7 @@ func (sh *SessionHandler) Get(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
 
@@ -170,23 +192,28 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
 
-	// Stop container
+	// Stop container — log failure but continue to clean up DB and workspace.
 	if session.ContainerID != nil {
 		if err := sh.h.docker.StopSandbox(c.Request.Context(), *session.ContainerID); err != nil {
-			// Log but continue — we still want to clean up the DB record
-			_ = err
+			slog.Warn("container stop failed during session delete",
+				"session_id", id,
+				"container_id", *session.ContainerID,
+				"err", err,
+			)
 		}
 	}
 
 	// Remove workspace
-	_ = sh.h.ws.Delete(id)
+	if err := sh.h.ws.Delete(id); err != nil {
+		slog.Warn("workspace delete failed", "session_id", id, "err", err)
+	}
 
 	if err := dbpkg.StopSession(c.Request.Context(), sh.h.db, id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to stop session"})
 		return
 	}
 
@@ -200,4 +227,3 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "session deleted"})
 }
-

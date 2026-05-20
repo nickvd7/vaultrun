@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -26,13 +29,38 @@ func newRouter(
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
 
-	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowAllOrigins = true
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "X-API-Key"}
+	// Limit multipart memory to prevent memory exhaustion
+	r.MaxMultipartMemory = cfg.Workspace.MaxFileMB * 1024 * 1024
+
+	// CORS: only allow explicitly configured origins.
+	// An empty list means no cross-origin access (same-origin only).
+	corsConfig := cors.Config{
+		AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
+		ExposeHeaders:    []string{"Content-Disposition"},
+		MaxAge:           12 * time.Hour,
+		AllowCredentials: false,
+	}
+	if len(cfg.Server.CORSOrigins) > 0 {
+		corsConfig.AllowOrigins = cfg.Server.CORSOrigins
+	} else {
+		// No explicit origins: block all cross-origin requests.
+		corsConfig.AllowOriginFunc = func(origin string) bool { return false }
+	}
 	r.Use(cors.New(corsConfig))
+
+	// Security response headers
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("Content-Security-Policy", "default-src 'none'")
+		c.Next()
+	})
 
 	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg)
 
+	// Health — no auth, intentionally minimal (no DB internals exposed)
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
 
@@ -44,26 +72,31 @@ func newRouter(
 	api.GET("/keys", middleware.APIKeyAuth(db, cfg.Auth.MasterKey), keys.List)
 
 	// All remaining routes require a valid API key
-	auth := api.Group("/", middleware.APIKeyAuth(db, cfg.Auth.MasterKey))
+	authGroup := api.Group("/", middleware.APIKeyAuth(db, cfg.Auth.MasterKey))
 
 	sessions := handlers.NewSessionHandler(hub)
-	auth.POST("/sessions", sessions.Create)
-	auth.GET("/sessions", sessions.List)
-	auth.GET("/sessions/:id", sessions.Get)
-	auth.DELETE("/sessions/:id", sessions.Delete)
+	authGroup.POST("/sessions", sessions.Create)
+	authGroup.GET("/sessions", sessions.List)
+	authGroup.GET("/sessions/:id", sessions.Get)
+	authGroup.DELETE("/sessions/:id", sessions.Delete)
 
 	files := handlers.NewFileHandler(hub)
-	auth.POST("/sessions/:id/files", files.Upload)
-	auth.GET("/sessions/:id/files", files.List)
-	auth.GET("/sessions/:id/files/*path", files.Download)
+	authGroup.POST("/sessions/:id/files", files.Upload)
+	authGroup.GET("/sessions/:id/files", files.List)
+	authGroup.GET("/sessions/:id/files/*path", files.Download)
 
 	runs := handlers.NewRunHandler(hub)
-	auth.POST("/sessions/:id/run", runs.Execute)
-	auth.GET("/sessions/:id/runs", runs.ListBySession)
-	auth.GET("/runs/:id", runs.Get)
+	authGroup.POST("/sessions/:id/run", runs.Execute)
+	authGroup.GET("/sessions/:id/runs", runs.ListBySession)
+	authGroup.GET("/runs/:id", runs.Get)
 
 	auditH := handlers.NewAuditHandler(hub)
-	auth.GET("/audit", auditH.List)
+	authGroup.GET("/audit", auditH.List)
+
+	// Catch-all 404 — don't leak route structure
+	r.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	})
 
 	return r
 }

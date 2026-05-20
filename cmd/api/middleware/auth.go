@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -13,8 +14,9 @@ import (
 const actorKey = "actor"
 
 // APIKeyAuth validates Bearer or X-API-Key tokens against the database.
-// It also supports a master key (set via MASTER_API_KEY env var) for bootstrapping.
+// The master key path uses constant-time comparison to prevent timing attacks.
 func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
+	masterKeyBytes := []byte(masterKey)
 	return func(c *gin.Context) {
 		key := extractKey(c)
 		if key == "" {
@@ -22,8 +24,9 @@ func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
 			return
 		}
 
-		// Master key short-circuit (for initial setup only)
-		if masterKey != "" && key == masterKey {
+		// Master key short-circuit (for initial setup only).
+		// Use constant-time compare to prevent timing-based brute-force.
+		if masterKey != "" && subtle.ConstantTimeCompare([]byte(key), masterKeyBytes) == 1 {
 			c.Set(actorKey, "master")
 			c.Next()
 			return

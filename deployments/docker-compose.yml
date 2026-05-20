@@ -1,5 +1,11 @@
 version: "3.9"
 
+# Required environment variables (set in .env before running):
+#   MASTER_API_KEY  — bootstrap key for creating the first API key
+#   POSTGRES_PASSWORD — database password
+#
+# See .env.example for all available options.
+
 services:
   api:
     build:
@@ -9,16 +15,18 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       - PORT=8080
-      - DATABASE_URL=postgres://vaultrun:vaultrun@postgres:5432/vaultrun?sslmode=disable
+      - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable
       - REDIS_ADDR=redis:6379
       - WORKSPACE_BASE_DIR=/data/workspaces
       - MIGRATIONS_PATH=/app/migrations
-      - MASTER_API_KEY=${MASTER_API_KEY:-changeme-master-key}
+      - MASTER_API_KEY=${MASTER_API_KEY:?MASTER_API_KEY must be set}
       - DOCKER_HOST=unix:///var/run/docker.sock
       - DOCKER_CONTAINER_PREFIX=vaultrun
-      - MAX_FILE_MB=100
-      - MAX_OUTPUT_MB=10
+      - MAX_FILE_MB=${MAX_FILE_MB:-100}
+      - MAX_OUTPUT_MB=${MAX_OUTPUT_MB:-10}
       - GIN_MODE=${GIN_MODE:-release}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - DOCKER_IMAGE_ALLOWLIST=${DOCKER_IMAGE_ALLOWLIST:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/data/workspaces
@@ -52,7 +60,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=vaultrun
-      - POSTGRES_PASSWORD=vaultrun
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       - POSTGRES_DB=vaultrun
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -67,7 +75,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --loglevel warning ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
     ports:

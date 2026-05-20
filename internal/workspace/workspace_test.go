@@ -167,6 +167,31 @@ func TestWriteFileCreatesSubdirs(t *testing.T) {
 	}
 }
 
+func TestSymlinkEscapePrevention(t *testing.T) {
+	m, base := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+
+	// Create a file outside the workspace to be the symlink target
+	secret, _ := os.CreateTemp(base, "secret-*.txt")
+	secret.WriteString("secret data")
+	secret.Close()
+
+	// Create a symlink inside the workspace pointing outside
+	sp := m.SessionPath(id)
+	symlinkPath := filepath.Join(sp, "escape-link")
+	if err := os.Symlink(secret.Name(), symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	// Opening via the API should be rejected
+	f, err := m.OpenFile(id, "escape-link")
+	if err == nil {
+		f.Close()
+		t.Error("OpenFile should reject a symlink that escapes the workspace")
+	}
+}
+
 // sessionPath is exposed via SessionPath
 func TestSessionPathExposed(t *testing.T) {
 	m, base := newManager(t)

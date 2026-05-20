@@ -2,11 +2,12 @@ package handlers
 
 import (
 	"database/sql"
-	"fmt"
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -36,7 +37,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
 	if session.StoppedAt != nil {
@@ -60,7 +61,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 
 	f, err := fileHeader.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "open upload: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open upload"})
 		return
 	}
 	defer f.Close()
@@ -84,7 +85,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		UpdatedAt:   now,
 	}
 	if err := dbpkg.UpsertFile(c.Request.Context(), fh.h.db, fileMeta); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist file metadata: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist file metadata"})
 		return
 	}
 
@@ -116,7 +117,7 @@ func (fh *FileHandler) List(c *gin.Context) {
 
 	files, err := dbpkg.ListFiles(c.Request.Context(), fh.h.db, sessionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list files"})
 		return
 	}
 
@@ -150,7 +151,11 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	defer f.Close()
 
 	ct := detectContentType(userPath, "")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(userPath)))
+
+	// Sanitize filename for Content-Disposition to prevent header injection.
+	// RFC 6266: only allow safe ASCII; strip control characters and quotes.
+	safeName := sanitizeFilename(filepath.Base(userPath))
+	c.Header("Content-Disposition", `attachment; filename="`+safeName+`"`)
 
 	actor := middleware.Actor(c)
 	fh.h.audit.Log(c.Request.Context(), audit.Event{
@@ -161,6 +166,24 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	})
 
 	c.DataFromReader(http.StatusOK, -1, ct, f, nil)
+}
+
+// sanitizeFilename strips control characters, quotes, and non-printable
+// runes from a filename for safe use in HTTP headers.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if r == '"' || r == '\\' || r == '\r' || r == '\n' || !unicode.IsPrint(r) {
+			b.WriteRune('_')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	s := b.String()
+	if s == "" {
+		return "file"
+	}
+	return s
 }
 
 func detectContentType(path, provided string) string {

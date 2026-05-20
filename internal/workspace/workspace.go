@@ -20,9 +20,10 @@ func New(baseDir string) *Manager {
 }
 
 // Create initializes an isolated workspace directory for a session.
+// Mode 0o700: only the API process can access workspace directories.
 func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 	path := m.sessionPath(sessionID)
-	if err := os.MkdirAll(path, 0o750); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		return "", fmt.Errorf("create workspace dir: %w", err)
 	}
 	return path, nil
@@ -34,9 +35,9 @@ func (m *Manager) Delete(sessionID uuid.UUID) error {
 	return os.RemoveAll(path)
 }
 
-// SafePath resolves a user-provided path within the workspace, preventing
-// path traversal. Returns an error if the path contains ".." components or
-// if the resolved path escapes the workspace root.
+// SafePath resolves a user-provided path within the workspace, enforcing:
+//  1. No ".." components (after URL-decoding)
+//  2. Resolved path stays inside the workspace root
 func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
 	// URL-decode first to catch encoded traversals like %2e%2e%2f
 	decoded, err := url.PathUnescape(userPath)
@@ -44,17 +45,17 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 		decoded = userPath
 	}
 
-	// Reject any path that explicitly contains ".." in any form
+	// Reject any path containing ".." in raw or decoded form
 	if strings.Contains(decoded, "..") || strings.Contains(userPath, "..") {
 		return "", fmt.Errorf("path traversal detected")
 	}
 
 	root := m.sessionPath(sessionID)
-	// Normalize: strip leading slashes and clean
+	// Normalize: prepend "/" so Clean can't produce "../" prefixes, then join with root
 	cleaned := filepath.Clean("/" + decoded)
 	resolved := filepath.Join(root, cleaned)
 
-	// Final check: resolved path must still be inside root
+	// Belt-and-suspenders: verify resolved path is still inside root
 	if !strings.HasPrefix(resolved, root+string(os.PathSeparator)) && resolved != root {
 		return "", fmt.Errorf("path traversal detected")
 	}
@@ -62,19 +63,43 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 	return resolved, nil
 }
 
+// safeReadPath extends SafePath with a symlink escape check.
+// Used for reads, where the target file already exists.
+func (m *Manager) safeReadPath(sessionID uuid.UUID, userPath string) (string, error) {
+	resolved, err := m.SafePath(sessionID, userPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Resolve symlinks to their ultimate target and verify it's still inside root.
+	// This prevents a container creating /workspace/escape -> /etc/passwd.
+	real, err := filepath.EvalSymlinks(resolved)
+	if err != nil {
+		// File doesn't exist or symlink target is broken — treat as not found
+		return "", fmt.Errorf("file not found or inaccessible")
+	}
+
+	root := m.sessionPath(sessionID)
+	if !strings.HasPrefix(real, root+string(os.PathSeparator)) && real != root {
+		return "", fmt.Errorf("symlink escape detected")
+	}
+
+	return real, nil
+}
+
 // WriteFile writes data to a safe path inside the workspace, creating
-// intermediate directories as needed.
+// intermediate directories as needed. Mode 0o600: owner-only access.
 func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, maxBytes int64) (int64, error) {
 	dest, err := m.SafePath(sessionID, userPath)
 	if err != nil {
 		return 0, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
 
-	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o640)
+	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return 0, fmt.Errorf("open file for write: %w", err)
 	}
@@ -94,8 +119,9 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 }
 
 // OpenFile opens a file inside the workspace for reading.
+// Symlink targets are validated to remain inside the workspace.
 func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, error) {
-	dest, err := m.SafePath(sessionID, userPath)
+	dest, err := m.safeReadPath(sessionID, userPath)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type ServerConfig struct {
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration
 	ShutdownTimeout time.Duration
+	CORSOrigins     []string // allowed CORS origins; empty = same-origin only
 }
 
 type DatabaseConfig struct {
@@ -38,13 +40,16 @@ type RedisConfig struct {
 }
 
 type DockerConfig struct {
-	Host              string
-	TLSVerify         bool
-	CertPath          string
-	NetworkName       string
-	DefaultImage      string
-	ContainerPrefix   string
-	IdleTimeoutMins   int
+	Host            string
+	TLSVerify       bool
+	CertPath        string
+	NetworkName     string
+	DefaultImage    string
+	ContainerPrefix string
+	IdleTimeoutMins int
+	// ImageAllowlist is an optional set of permitted images.
+	// An empty slice means all images are allowed.
+	ImageAllowlist []string
 }
 
 type WorkspaceConfig struct {
@@ -55,6 +60,13 @@ type WorkspaceConfig struct {
 
 type AuthConfig struct {
 	MasterKey string
+}
+
+// Limits caps applied to session creation requests.
+type SessionLimits struct {
+	MaxCPU        float64
+	MaxMemoryMB   int
+	MaxTimeoutSec int
 }
 
 func Load() (*Config, error) {
@@ -70,6 +82,12 @@ func Load() (*Config, error) {
 	maxFileMB, _ := strconv.ParseInt(getEnv("MAX_FILE_MB", "100"), 10, 64)
 	maxOutputMB, _ := strconv.ParseInt(getEnv("MAX_OUTPUT_MB", "10"), 10, 64)
 
+	// CORS origins: comma-separated list; empty string means deny all cross-origin requests
+	corsOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", ""))
+
+	// Optional image allowlist: comma-separated; empty = allow all
+	imageAllowlist := splitAndTrim(getEnv("DOCKER_IMAGE_ALLOWLIST", ""))
+
 	cfg := &Config{
 		Server: ServerConfig{
 			Host:            getEnv("HOST", "0.0.0.0"),
@@ -77,6 +95,7 @@ func Load() (*Config, error) {
 			ReadTimeout:     30 * time.Second,
 			WriteTimeout:    120 * time.Second,
 			ShutdownTimeout: 15 * time.Second,
+			CORSOrigins:     corsOrigins,
 		},
 		Database: DatabaseConfig{
 			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),
@@ -95,6 +114,7 @@ func Load() (*Config, error) {
 			DefaultImage:    getEnv("DOCKER_DEFAULT_IMAGE", "python:3.12-slim"),
 			ContainerPrefix: getEnv("DOCKER_CONTAINER_PREFIX", "vaultrun"),
 			IdleTimeoutMins: idleTimeout,
+			ImageAllowlist:  imageAllowlist,
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:     getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
@@ -109,6 +129,37 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// SessionLimits returns the hard caps for session resource requests.
+func (c *Config) SessionLimits() SessionLimits {
+	maxCPU, _ := strconv.ParseFloat(getEnv("MAX_SESSION_CPU", "8"), 64)
+	maxMem, _ := strconv.Atoi(getEnv("MAX_SESSION_MEMORY_MB", "8192"))
+	maxTO, _ := strconv.Atoi(getEnv("MAX_SESSION_TIMEOUT_SEC", "86400"))
+	if maxCPU <= 0 {
+		maxCPU = 8
+	}
+	if maxMem <= 0 {
+		maxMem = 8192
+	}
+	if maxTO <= 0 {
+		maxTO = 86400
+	}
+	return SessionLimits{MaxCPU: maxCPU, MaxMemoryMB: maxMem, MaxTimeoutSec: maxTO}
+}
+
+// ImageAllowed returns true if the given image is permitted.
+// When the allowlist is empty, any image is allowed.
+func (c *Config) ImageAllowed(image string) bool {
+	if len(c.Docker.ImageAllowlist) == 0 {
+		return true
+	}
+	for _, allowed := range c.Docker.ImageAllowlist {
+		if allowed == image {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Config) ServerAddr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
 }
@@ -118,4 +169,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func splitAndTrim(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }

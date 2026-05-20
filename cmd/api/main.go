@@ -53,8 +53,8 @@ func main() {
 
 	ws := workspace.New(cfg.Workspace.BaseDir)
 
-	// Ensure base workspace dir exists
-	if err := os.MkdirAll(cfg.Workspace.BaseDir, 0o750); err != nil {
+	// Ensure base workspace dir exists (0o700 = owner-only; no group/world read)
+	if err := os.MkdirAll(cfg.Workspace.BaseDir, 0o700); err != nil {
 		slog.Error("create workspace base dir", "err", err)
 		os.Exit(1)
 	}

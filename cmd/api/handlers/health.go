@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,29 +12,15 @@ type HealthHandler struct {
 
 func NewHealthHandler(h *Hub) *HealthHandler { return &HealthHandler{h: h} }
 
-// GET /health
+// GET /health — minimal response; no internal component status exposed to
+// unauthenticated callers. Liveness only: the process is up and the DB is reachable.
 func (hh *HealthHandler) Health(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	dbOK := hh.h.db.PingContext(ctx) == nil
-
-	status := "ok"
-	code := http.StatusOK
-	if !dbOK {
-		status = "degraded"
-		code = http.StatusServiceUnavailable
+	if err := hh.h.db.PingContext(ctx); err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "degraded"})
+		return
 	}
 
-	c.JSON(code, gin.H{
-		"status":    status,
-		"time":      time.Now().UTC(),
-		"db":        boolStatus(dbOK),
-	})
-}
-
-func boolStatus(ok bool) string {
-	if ok {
-		return "ok"
-	}
-	return "error"
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

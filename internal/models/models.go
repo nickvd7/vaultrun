@@ -34,6 +34,7 @@ const (
 	ActionCommandStarted  = "command.started"
 	ActionCommandFinished = "command.finished"
 	ActionCommandFailed   = "command.failed"
+	ActionAPIKeyCreated   = "apikey.created"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.

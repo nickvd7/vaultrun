@@ -5,8 +5,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/audit"
 	authpkg "github.com/nickvd7/vaultrun/internal/auth"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/models"
 )
 
 type KeyHandler struct {
@@ -34,15 +37,26 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 	}
 
 	if err := dbpkg.CreateAPIKey(c.Request.Context(), kh.h.db, key); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist key failed"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist key"})
 		return
 	}
+
+	actor := middleware.Actor(c)
+	kh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:  actor,
+		Action: models.ActionAPIKeyCreated,
+		Metadata: models.JSONB{
+			"key_id":   key.ID.String(),
+			"key_name": key.Name,
+			"prefix":   key.Prefix,
+		},
+	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"id":         key.ID,
 		"name":       key.Name,
 		"prefix":     key.Prefix,
-		"key":        plaintext, // shown exactly once
+		"key":        plaintext, // shown exactly once — caller must save it
 		"created_at": key.CreatedAt,
 	})
 }
@@ -51,7 +65,7 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 func (kh *KeyHandler) List(c *gin.Context) {
 	keys, err := dbpkg.ListAPIKeys(c.Request.Context(), kh.h.db)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list keys"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"api_keys": keys})

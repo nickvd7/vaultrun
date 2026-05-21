@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
 
@@ -32,8 +33,24 @@ func (ah *AuditHandler) List(c *gin.Context) {
 	}
 
 	// C-2: Non-master callers only see their own audit logs.
-	// Master gets an empty string which means "all actors" in the query.
+	// When a session_id filter is provided, verify the caller owns that session
+	// before listing — prevents cross-tenant audit log enumeration via UUID guessing.
 	actor := middleware.Actor(c)
+	if actor != "master" && sessionIDPtr != nil {
+		session, err := dbpkg.GetSession(c.Request.Context(), ah.h.db, *sessionIDPtr)
+		if err == sql.ErrNoRows || (err == nil && session.CreatedBy != actor) {
+			// Return an empty list (not 404) so the caller cannot use error
+			// shape to confirm whether the session UUID exists at all.
+			c.JSON(http.StatusOK, gin.H{"audit_logs": []any{}, "pagination": pg})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify session"})
+			return
+		}
+	}
+
+	// Master gets an empty string which means "all actors" in the query.
 	auditActor := actor
 	if actor == "master" {
 		auditActor = ""

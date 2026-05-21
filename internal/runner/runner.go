@@ -207,7 +207,10 @@ func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, e
 	}
 
 	if err := dbpkg.CreateRun(ctx, r.db, run); err != nil {
-		return nil, fmt.Errorf("persist run: %w", err)
+		// Log full error server-side; return a generic message so internal
+		// DB details (table names, constraints) don't reach the caller.
+		slog.Error("runner: persist run record", "err", err)
+		return nil, fmt.Errorf("internal error: could not create run record")
 	}
 
 	sidCopy := req.SessionID

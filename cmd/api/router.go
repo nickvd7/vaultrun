@@ -82,11 +82,15 @@ func newRouter(
 		return append(mw, extra...)
 	}
 
-	// Key management — same rate limit + master key auth
+	// Key management — rate-limited + master key required (L-8).
+	// Only the master key may create, enumerate, or revoke API keys.
+	// Any authenticated non-master key must NOT be able to mint new keys
+	// or revoke keys it doesn't own.
+	masterMWKeys := middleware.RequireMasterKey()
 	keysH := handlers.NewKeyHandler(hub)
-	api.POST("/keys", buildMW(keysH.Create)...)
-	api.GET("/keys", buildMW(keysH.List)...)
-	api.DELETE("/keys/:id", buildMW(keysH.Revoke)...)
+	api.POST("/keys", buildMW(masterMWKeys, keysH.Create)...)
+	api.GET("/keys", buildMW(masterMWKeys, keysH.List)...)
+	api.DELETE("/keys/:id", buildMW(masterMWKeys, keysH.Revoke)...)
 
 	// All remaining routes — rate-limited + any valid API key
 	authGroup := api.Group("/", buildMW()...)

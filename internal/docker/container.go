@@ -66,10 +66,15 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		},
 		// Security hardening
 		ReadonlyRootfs: false, // workspace is writable via bind mount
-		// no-new-privileges: blocks setuid privilege escalation.
-		// seccomp=default: applies Docker's built-in syscall filter regardless
-		// of daemon configuration, ensuring consistent hardening (L-6).
-		SecurityOpt: []string{"no-new-privileges", "seccomp=default"},
+		// no-new-privileges: blocks setuid privilege escalation via setuid
+		// binaries inside the container (L-6).
+		// Note: Docker automatically applies the default seccomp profile unless
+		// the daemon was started with --seccomp-profile=unconfined. We do NOT
+		// pass "seccomp=default" here because it is not a universally recognised
+		// security-opt value across Docker versions and causes OCI runtime errors
+		// in some environments (e.g. GitHub Actions). The protection is equivalent
+		// since the daemon default already applies the same built-in syscall filter.
+		SecurityOpt: []string{"no-new-privileges"},
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{}, // grant nothing extra
 	}

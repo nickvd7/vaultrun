@@ -137,6 +137,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		ContainerName:  containerName,
 	})
 	if err != nil {
+		slog.Error("container creation failed",
+			"session_id", sessionID,
+			"image", req.Image,
+			"err", err,
+		)
 		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})
 		return

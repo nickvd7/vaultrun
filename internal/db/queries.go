@@ -35,8 +35,9 @@ func GetSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Session
 
 // ListSessions returns active sessions. When actor is non-empty only that
 // actor's sessions are returned (tenant isolation). Master key passes "".
+// Initialises the slice to non-nil so JSON always encodes [] instead of null.
 func ListSessions(ctx context.Context, db *sqlx.DB, actor string, limit, offset int) ([]*models.Session, error) {
-	var sessions []*models.Session
+	sessions := make([]*models.Session, 0)
 	var err error
 	if actor != "" {
 		err = db.SelectContext(ctx, &sessions,
@@ -89,7 +90,7 @@ func GetRun(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Run, error)
 }
 
 func ListRuns(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, limit, offset int) ([]*models.Run, error) {
-	var runs []*models.Run
+	runs := make([]*models.Run, 0)
 	err := db.SelectContext(ctx, &runs,
 		`SELECT * FROM runs WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 		sessionID, limit, offset,
@@ -149,7 +150,7 @@ func GetFile(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, path string)
 }
 
 func ListFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) ([]*models.File, error) {
-	var files []*models.File
+	files := make([]*models.File, 0)
 	err := db.SelectContext(ctx, &files,
 		`SELECT * FROM files WHERE session_id = $1 ORDER BY path ASC`,
 		sessionID,
@@ -182,8 +183,9 @@ func CreateAuditLog(ctx context.Context, db *sqlx.DB, a *models.AuditLog) error 
 // ListAuditLogs returns audit log entries. When actor is non-empty only
 // that actor's log entries are returned (tenant isolation). When sessionID
 // is set it takes precedence. Master key passes actor="".
+// Initialises the slice to non-nil so JSON always encodes [] instead of null.
 func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string, limit, offset int) ([]*models.AuditLog, error) {
-	var logs []*models.AuditLog
+	logs := make([]*models.AuditLog, 0)
 	if sessionID != nil {
 		err := db.SelectContext(ctx, &logs,
 			`SELECT * FROM audit_logs WHERE session_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
@@ -236,7 +238,7 @@ func UpdateAPIKeyLastUsed(ctx context.Context, db *sqlx.DB, id uuid.UUID) error 
 }
 
 func ListAPIKeys(ctx context.Context, db *sqlx.DB) ([]*models.APIKey, error) {
-	var keys []*models.APIKey
+	keys := make([]*models.APIKey, 0)
 	err := db.SelectContext(ctx, &keys, `SELECT * FROM api_keys ORDER BY created_at DESC`)
 	return keys, err
 }

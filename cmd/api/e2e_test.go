@@ -138,11 +138,15 @@ func TestE2ESmoke(t *testing.T) {
 			t.Fatalf("create_session: want status=running, got %q", status)
 		}
 		t.Logf("session %s running", sessionID)
+	})
 
-		// Register cleanup: stop the container when the test ends.
-		t.Cleanup(func() {
+	// Register cleanup on the PARENT test so the session stays alive for all
+	// subsequent subtests. t.Cleanup on the subtest's t fires the moment that
+	// subtest returns — before upload_file, execute_run, etc. ever run.
+	t.Cleanup(func() {
+		if sessionID != "" {
 			c.deleteRaw("/api/v1/sessions/" + sessionID)
-		})
+		}
 	})
 
 	if t.Failed() || sessionID == "" {

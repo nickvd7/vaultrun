@@ -92,7 +92,7 @@ func TestE2ESmoke(t *testing.T) {
 	al := audit.New(db)
 	ws := workspace.New(wsDir)
 	rnr := runner.New(db, dockerClient, al, policy.AllowAll{})
-	queue := jobqueue.New(rnr, 2, 64)
+	queue := jobqueue.New(rnr, 2, 64, "")
 	r := newRouter(cfg, db, dockerClient, ws, rnr, al, policy.AllowAll{}, queue)
 
 	srv := httptest.NewServer(r)

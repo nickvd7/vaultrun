@@ -2,6 +2,11 @@
 // execution. Jobs are submitted by the async run endpoint and executed by a
 // fixed pool of goroutines. On completion an optional webhook callback is fired.
 //
+// Webhook security: when a WEBHOOK_SECRET is configured every callback POST
+// carries an X-VaultRun-Signature header of the form "sha256=<hex>", computed
+// as HMAC-SHA256 of the raw request body. Receivers should verify this before
+// processing the payload.
+//
 // Limitations: the queue is in-memory. Pending jobs are lost if the process
 // restarts. For durable queuing consider an external broker (Redis Streams,
 // PostgreSQL LISTEN/NOTIFY, etc.).
@@ -10,6 +15,9 @@ package jobqueue
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -31,14 +39,16 @@ type Job struct {
 
 // Queue is a bounded in-process worker pool.
 type Queue struct {
-	ch         chan Job
-	runner     *runner.Runner
-	httpClient *http.Client
+	ch            chan Job
+	runner        *runner.Runner
+	httpClient    *http.Client
+	webhookSecret string // empty = no signing
 }
 
 // New creates a Queue with workers concurrent goroutines and a buffer of
-// bufSize pending jobs. Sensible defaults: workers=4, bufSize=256.
-func New(rnr *runner.Runner, workers, bufSize int) *Queue {
+// bufSize pending jobs. webhookSecret is used to HMAC-sign callback payloads
+// (pass "" to disable signing).
+func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) *Queue {
 	if workers <= 0 {
 		workers = 4
 	}
@@ -46,9 +56,10 @@ func New(rnr *runner.Runner, workers, bufSize int) *Queue {
 		bufSize = 256
 	}
 	q := &Queue{
-		ch:         make(chan Job, bufSize),
-		runner:     rnr,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		ch:            make(chan Job, bufSize),
+		runner:        rnr,
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		webhookSecret: webhookSecret,
 	}
 	for i := 0; i < workers; i++ {
 		go q.work()
@@ -82,6 +93,8 @@ func (q *Queue) work() {
 }
 
 // sendCallback fires a one-shot HTTP POST to the configured callback URL.
+// When a webhookSecret is set the request includes an X-VaultRun-Signature
+// header: "sha256=<hmac-hex>" computed over the raw JSON body.
 // Failures are logged but do not affect the run result.
 func (q *Queue) sendCallback(callbackURL string, run *models.Run, execErr error) {
 	type payload struct {
@@ -111,7 +124,21 @@ func (q *Queue) sendCallback(callbackURL string, run *models.Run, execErr error)
 		return
 	}
 
-	resp, err := q.httpClient.Post(callbackURL, "application/json", bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(b))
+	if err != nil {
+		slog.Warn("jobqueue: build callback request", "url", callbackURL, "err", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// HMAC-SHA256 signature so receivers can verify authenticity.
+	if q.webhookSecret != "" {
+		mac := hmac.New(sha256.New, []byte(q.webhookSecret))
+		mac.Write(b)
+		req.Header.Set("X-VaultRun-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+
+	resp, err := q.httpClient.Do(req)
 	if err != nil {
 		slog.Warn("jobqueue: callback POST failed",
 			"url", callbackURL, "err", err)

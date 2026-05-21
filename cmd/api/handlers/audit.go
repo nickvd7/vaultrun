@@ -62,6 +62,6 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list audit logs"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "pagination": pg})
+	total, _ := dbpkg.CountAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor)
+	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "pagination": pg.response(total)})
 }

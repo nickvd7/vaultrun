@@ -69,8 +69,9 @@ type AuthConfig struct {
 
 // ObservabilityConfig groups logging and metrics knobs.
 type ObservabilityConfig struct {
-	LogLevel               string // LOG_LEVEL: debug|info|warn|error (default: info)
-	StopContainersOnShutdown bool  // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
+	LogLevel                 string // LOG_LEVEL: debug|info|warn|error (default: info)
+	StopContainersOnShutdown bool   // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
+	WebhookSecret            string // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
 }
 
 // Limits caps applied to session creation requests.
@@ -147,6 +148,7 @@ func Load() (*Config, error) {
 		Observability: ObservabilityConfig{
 			LogLevel:                 getEnv("LOG_LEVEL", "info"),
 			StopContainersOnShutdown: stopOnShutdown,
+			WebhookSecret:            getEnv("WEBHOOK_SECRET", ""),
 		},
 	}
 

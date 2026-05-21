@@ -103,7 +103,7 @@ func main() {
 	// Async run worker pool: 4 workers, buffer up to 256 pending jobs.
 	asyncWorkers, _ := strconv.Atoi(getEnvMain("ASYNC_WORKERS", "4"))
 	asyncBufSize, _ := strconv.Atoi(getEnvMain("ASYNC_QUEUE_SIZE", "256"))
-	queue := jobqueue.New(rnr, asyncWorkers, asyncBufSize)
+	queue := jobqueue.New(rnr, asyncWorkers, asyncBufSize, cfg.Observability.WebhookSecret)
 
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

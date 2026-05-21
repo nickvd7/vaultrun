@@ -74,6 +74,17 @@ func pagination(c *gin.Context) paginationParams {
 	return paginationParams{limit: limit, offset: offset, page: page}
 }
 
+// response builds the JSON-serialisable pagination envelope with a total count.
+// Usage: gin.H{"sessions": sessions, "pagination": pg.response(total)}
+func (p paginationParams) response(total int) gin.H {
+	return gin.H{
+		"page":   p.page,
+		"limit":  p.limit,
+		"offset": p.offset,
+		"total":  total,
+	}
+}
+
 func parseUUID(c *gin.Context, param string) (uuid.UUID, bool) {
 	id, err := uuid.Parse(c.Param(param))
 	if err != nil {

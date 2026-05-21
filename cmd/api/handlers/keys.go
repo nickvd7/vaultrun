@@ -95,7 +95,8 @@ func (kh *KeyHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list keys"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"api_keys": keys})
+	total, _ := dbpkg.CountAPIKeys(c.Request.Context(), kh.h.db)
+	c.JSON(http.StatusOK, gin.H{"api_keys": keys, "total": total})
 }
 
 // DELETE /api/v1/keys/:id

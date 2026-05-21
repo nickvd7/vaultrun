@@ -312,6 +312,31 @@ func CountSessions(ctx context.Context, db *sqlx.DB) (int, error) {
 	return n, err
 }
 
+// CountSessionsFiltered returns the number of active sessions matching the same
+// filters as ListSessions (actor + optional label key/value).
+func CountSessionsFiltered(ctx context.Context, db *sqlx.DB, actor, labelKey, labelValue string) (int, error) {
+	var n int
+	var err error
+	switch {
+	case actor != "" && labelKey != "":
+		err = db.GetContext(ctx, &n,
+			`SELECT COUNT(*) FROM sessions WHERE stopped_at IS NULL AND created_by = $1
+			   AND labels @> jsonb_build_object($2::text, $3::text)`,
+			actor, labelKey, labelValue)
+	case actor != "":
+		err = db.GetContext(ctx, &n,
+			`SELECT COUNT(*) FROM sessions WHERE stopped_at IS NULL AND created_by = $1`, actor)
+	case labelKey != "":
+		err = db.GetContext(ctx, &n,
+			`SELECT COUNT(*) FROM sessions WHERE stopped_at IS NULL
+			   AND labels @> jsonb_build_object($1::text, $2::text)`,
+			labelKey, labelValue)
+	default:
+		err = db.GetContext(ctx, &n, `SELECT COUNT(*) FROM sessions WHERE stopped_at IS NULL`)
+	}
+	return n, err
+}
+
 func CountRuns(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (int, error) {
 	var n int
 	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM runs WHERE session_id = $1`, sessionID)
@@ -321,5 +346,33 @@ func CountRuns(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (int, erro
 func CountRunsGlobal(ctx context.Context, db *sqlx.DB) (int, error) {
 	var n int
 	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM runs`)
+	return n, err
+}
+
+func CountFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (int, error) {
+	var n int
+	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM files WHERE session_id = $1`, sessionID)
+	return n, err
+}
+
+// CountAuditLogs mirrors the filter logic of ListAuditLogs for accurate totals.
+func CountAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string) (int, error) {
+	var n int
+	var err error
+	if sessionID != nil {
+		err = db.GetContext(ctx, &n,
+			`SELECT COUNT(*) FROM audit_logs WHERE session_id = $1`, sessionID)
+	} else if actor != "" {
+		err = db.GetContext(ctx, &n,
+			`SELECT COUNT(*) FROM audit_logs WHERE actor = $1`, actor)
+	} else {
+		err = db.GetContext(ctx, &n, `SELECT COUNT(*) FROM audit_logs`)
+	}
+	return n, err
+}
+
+func CountAPIKeys(ctx context.Context, db *sqlx.DB) (int, error) {
+	var n int
+	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM api_keys`)
 	return n, err
 }

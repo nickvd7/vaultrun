@@ -185,8 +185,8 @@ func (rh *RunHandler) ListBySession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list runs"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"runs": runs, "pagination": pg})
+	total, _ := dbpkg.CountRuns(c.Request.Context(), rh.h.db, sessionID)
+	c.JSON(http.StatusOK, gin.H{"runs": runs, "pagination": pg.response(total)})
 }
 
 // GET /api/v1/runs/:id

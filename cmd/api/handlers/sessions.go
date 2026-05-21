@@ -209,7 +209,8 @@ func (sh *SessionHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"sessions": sessions, "pagination": pg})
+	total, _ := dbpkg.CountSessionsFiltered(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue)
+	c.JSON(http.StatusOK, gin.H{"sessions": sessions, "pagination": pg.response(total)})
 }
 
 // GET /api/v1/sessions/:id

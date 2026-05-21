@@ -137,8 +137,8 @@ func (fh *FileHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list files"})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"files": files})
+	total, _ := dbpkg.CountFiles(c.Request.Context(), fh.h.db, sessionID)
+	c.JSON(http.StatusOK, gin.H{"files": files, "total": total})
 }
 
 // GET /api/v1/sessions/:id/files/*path

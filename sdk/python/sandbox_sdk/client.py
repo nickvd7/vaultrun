@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import io
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO, Any, Optional
+from typing import IO, Any, Generator, Iterator, Optional
 
 import requests
 
@@ -29,6 +32,7 @@ class Session:
     memory_limit_mb: int
     timeout_seconds: int
     created_at: str
+    labels: dict[str, str] = field(default_factory=dict)
     name: Optional[str] = None
     container_id: Optional[str] = None
     stopped_at: Optional[str] = None
@@ -47,8 +51,17 @@ class Run:
     stdout: Optional[str] = None
     stderr: Optional[str] = None
     duration_ms: Optional[int] = None
+    output_truncated: bool = False
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+
+
+@dataclass
+class AsyncRunResult:
+    """Returned by run_async — contains the pending run's ID."""
+    run_id: str
+    status: str
+    message: str
 
 
 @dataclass
@@ -115,6 +128,7 @@ class Client:
         cpu_limit: float = 1.0,
         memory_limit_mb: int = 512,
         timeout_seconds: int = 300,
+        labels: dict[str, str] | None = None,
     ) -> Session:
         """Create a new sandbox session."""
         body: dict[str, Any] = {
@@ -126,6 +140,8 @@ class Client:
         }
         if name:
             body["name"] = name
+        if labels:
+            body["labels"] = labels
 
         data = self._post("/api/v1/sessions", body)
         return self._parse_session(data)
@@ -134,14 +150,38 @@ class Client:
         """Get a session by ID."""
         return self._parse_session(self._get(f"/api/v1/sessions/{session_id}"))
 
-    def list_sessions(self, *, page: int = 1, limit: int = 20) -> list[Session]:
-        """List sessions, newest first. Use page/limit to paginate."""
-        data = self._get(f"/api/v1/sessions?page={page}&limit={limit}")
+    def list_sessions(
+        self,
+        *,
+        page: int = 1,
+        limit: int = 20,
+        label: str = "",
+    ) -> list[Session]:
+        """List sessions, newest first. Use page/limit to paginate.
+
+        Pass label="key:value" to filter by a specific label.
+        """
+        url = f"/api/v1/sessions?page={page}&limit={limit}"
+        if label:
+            url += f"&label={label}"
+        data = self._get(url)
         return [self._parse_session(s) for s in data.get("sessions", [])]
 
     def delete_session(self, session_id: str) -> None:
         """Delete a session and its container."""
         self._delete(f"/api/v1/sessions/{session_id}")
+
+    def update_labels(
+        self,
+        session_id: str,
+        labels: dict[str, str],
+    ) -> dict[str, str]:
+        """Replace the label set on a session. Pass {} to clear all labels."""
+        data = self._patch(
+            f"/api/v1/sessions/{session_id}/labels",
+            {"labels": labels},
+        )
+        return data.get("labels", {})
 
     # --- Command execution ---
 
@@ -155,7 +195,7 @@ class Client:
         working_dir: str = "",
         timeout_seconds: int = 30,
     ) -> Run:
-        """Execute a command inside a session and return the result."""
+        """Execute a command inside a session and return the result (blocking)."""
         body: dict[str, Any] = {
             "command": command,
             "args": args or [],
@@ -168,6 +208,41 @@ class Client:
 
         data = self._post(f"/api/v1/sessions/{session_id}/run", body)
         return self._parse_run(data)
+
+    def run_async(
+        self,
+        session_id: str,
+        *,
+        command: str,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        working_dir: str = "",
+        timeout_seconds: int = 30,
+        callback_url: str = "",
+    ) -> AsyncRunResult:
+        """Submit a command for non-blocking (async) execution.
+
+        Returns immediately with the pending run's ID. Poll get_run() to check
+        for completion, or supply a callback_url to receive a webhook when done.
+        """
+        body: dict[str, Any] = {
+            "command": command,
+            "args": args or [],
+            "timeout_seconds": timeout_seconds,
+        }
+        if env:
+            body["env"] = env
+        if working_dir:
+            body["working_dir"] = working_dir
+        if callback_url:
+            body["callback_url"] = callback_url
+
+        data = self._post(f"/api/v1/sessions/{session_id}/run/async", body)
+        return AsyncRunResult(
+            run_id=data.get("run_id", ""),
+            status=data.get("status", "pending"),
+            message=data.get("message", ""),
+        )
 
     def get_run(self, run_id: str) -> Run:
         """Get a run by ID."""
@@ -190,7 +265,6 @@ class Client:
         if isinstance(content, (str, Path)):
             content = open(content, "rb")
         if isinstance(content, bytes):
-            import io
             content = io.BytesIO(content)
 
         files = {"file": (Path(remote_path).name, content)}
@@ -206,10 +280,20 @@ class Client:
         return self._parse_file(resp.json())
 
     def download_file(self, session_id: str, remote_path: str) -> bytes:
-        """Download a file from a session workspace."""
+        """Download a single file from a session workspace."""
+        clean = remote_path.lstrip("/")
         resp = self._session.get(
-            self.base_url + f"/api/v1/sessions/{session_id}/files/{remote_path}",
+            self.base_url + f"/api/v1/sessions/{session_id}/files/{clean}",
             timeout=self._timeout,
+        )
+        self._raise_for_status(resp)
+        return resp.content
+
+    def download_workspace(self, session_id: str) -> bytes:
+        """Download the entire session workspace as a ZIP archive."""
+        resp = self._session.get(
+            self.base_url + f"/api/v1/sessions/{session_id}/workspace.zip",
+            timeout=0,  # no timeout — workspace may be large
         )
         self._raise_for_status(resp)
         return resp.content
@@ -232,7 +316,7 @@ class Client:
         *,
         expires_at: Optional[datetime] = None,
     ) -> CreatedKey:
-        """Create a new API key.  The plaintext key is only available in the returned object."""
+        """Create a new API key. The plaintext key is only available in the returned object."""
         body: dict[str, Any] = {"name": name}
         if expires_at is not None:
             if expires_at.tzinfo is None:
@@ -245,6 +329,42 @@ class Client:
         """Revoke an API key by ID."""
         self._delete(f"/api/v1/keys/{key_id}")
 
+    # --- Webhook signature verification ---
+
+    @staticmethod
+    def verify_webhook_signature(
+        payload: bytes,
+        signature_header: str,
+        secret: str,
+    ) -> bool:
+        """Verify the X-VaultRun-Signature header on a callback POST.
+
+        Args:
+            payload: raw request body bytes
+            signature_header: value of the X-VaultRun-Signature header
+            secret: the WEBHOOK_SECRET configured on the server
+
+        Returns True when the signature is valid, False otherwise.
+
+        Example (Flask)::
+
+            @app.route("/webhook", methods=["POST"])
+            def webhook():
+                if not Client.verify_webhook_signature(
+                    request.data,
+                    request.headers.get("X-VaultRun-Signature", ""),
+                    os.environ["WEBHOOK_SECRET"],
+                ):
+                    abort(401)
+                ...
+        """
+        if not signature_header.startswith("sha256="):
+            return False
+        expected = signature_header[7:]
+        mac = hmac.new(secret.encode(), payload, hashlib.sha256)
+        computed = mac.hexdigest()
+        return hmac.compare_digest(computed, expected)
+
     # --- Internal helpers ---
 
     def _get(self, path: str) -> dict:
@@ -254,6 +374,11 @@ class Client:
 
     def _post(self, path: str, body: dict) -> dict:
         resp = self._session.post(self.base_url + path, json=body, timeout=self._timeout)
+        self._raise_for_status(resp)
+        return resp.json()
+
+    def _patch(self, path: str, body: dict) -> dict:
+        resp = self._session.patch(self.base_url + path, json=body, timeout=self._timeout)
         self._raise_for_status(resp)
         return resp.json()
 
@@ -297,6 +422,8 @@ class Client:
 
     @staticmethod
     def _parse_session(d: dict) -> Session:
+        raw_labels = d.get("labels") or {}
+        labels = {str(k): str(v) for k, v in raw_labels.items()}
         return Session(
             id=d["id"],
             name=d.get("name"),
@@ -307,6 +434,7 @@ class Client:
             cpu_limit=d["cpu_limit"],
             memory_limit_mb=d["memory_limit_mb"],
             timeout_seconds=d["timeout_seconds"],
+            labels=labels,
             created_at=d["created_at"],
             stopped_at=d.get("stopped_at"),
         )
@@ -323,6 +451,7 @@ class Client:
             stdout=d.get("stdout"),
             stderr=d.get("stderr"),
             duration_ms=d.get("duration_ms"),
+            output_truncated=d.get("output_truncated", False),
             timeout_seconds=d["timeout_seconds"],
             created_at=d["created_at"],
             started_at=d.get("started_at"),

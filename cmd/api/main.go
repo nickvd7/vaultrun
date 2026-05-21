@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +31,20 @@ func main() {
 		slog.Error("load config", "err", err)
 		os.Exit(1)
 	}
+
+	// Configure structured log level from LOG_LEVEL env (default: info).
+	var logLevel slog.Level
+	switch strings.ToLower(cfg.Observability.LogLevel) {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "warn", "warning":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
 	db, err := dbpkg.Connect(cfg.Database)
 	if err != nil {
@@ -99,10 +114,19 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("vaultrun api starting", "addr", cfg.ServerAddr())
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "err", err)
-			os.Exit(1)
+		if cfg.TLSEnabled() {
+			slog.Info("vaultrun api starting (TLS)", "addr", cfg.ServerAddr(),
+				"cert", cfg.Server.TLSCertFile)
+			if err := srv.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile); err != nil && err != http.ErrServerClosed {
+				slog.Error("server error", "err", err)
+				os.Exit(1)
+			}
+		} else {
+			slog.Info("vaultrun api starting", "addr", cfg.ServerAddr())
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("server error", "err", err)
+				os.Exit(1)
+			}
 		}
 	}()
 
@@ -113,6 +137,26 @@ func main() {
 	slog.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
+
+	// Gracefully stop all running containers before exiting (when configured).
+	if cfg.Observability.StopContainersOnShutdown {
+		slog.Info("stopping active containers on shutdown")
+		if sessions, err := dbpkg.ListActiveSessions(ctx, db); err != nil {
+			slog.Error("shutdown: list active sessions", "err", err)
+		} else {
+			for _, s := range sessions {
+				if s.ContainerID == nil {
+					continue
+				}
+				slog.Info("shutdown: stopping container",
+					"session_id", s.ID, "container_id", *s.ContainerID)
+				if err := docker.StopSandbox(ctx, *s.ContainerID); err != nil {
+					slog.Warn("shutdown: stop container failed",
+						"session_id", s.ID, "err", err)
+				}
+			}
+		}
+	}
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("forced shutdown", "err", err)

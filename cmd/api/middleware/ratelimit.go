@@ -104,3 +104,25 @@ func RateLimit(requestsPerMinute int) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// ActorRateLimit returns middleware that limits requests per authenticated actor
+// (API-key name). Must run AFTER APIKeyAuth so that Actor(c) is populated.
+// The master actor is always exempt — it should never be throttled.
+func ActorRateLimit(requestsPerMinute int) gin.HandlerFunc {
+	l := newLimiter(requestsPerMinute)
+	return func(c *gin.Context) {
+		actor := Actor(c)
+		// Master key and unauthenticated (already rejected by auth) are exempt.
+		if actor == "master" || actor == "unknown" {
+			c.Next()
+			return
+		}
+		if !l.allow(actor) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error": "rate limit exceeded",
+			})
+			return
+		}
+		c.Next()
+	}
+}

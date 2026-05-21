@@ -7,12 +7,14 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/nickvd7/vaultrun/cmd/api/handlers"
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
@@ -32,6 +34,7 @@ func newRouter(
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
+	r.Use(metrics.HTTPMiddleware())
 
 	// Do not trust X-Forwarded-For from arbitrary proxies; prevents rate-limit
 	// bypass via IP spoofing. Operators behind a known proxy should configure
@@ -61,6 +64,10 @@ func newRouter(
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("Content-Security-Policy", "default-src 'none'")
+		if cfg.TLSEnabled() {
+			// Tell browsers to use HTTPS for the next year (max-age=31536000).
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		c.Next()
 	})
 
@@ -68,9 +75,15 @@ func newRouter(
 
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
+	// Prometheus metrics endpoint — unauthenticated but only bound on loopback
+	// in production (or protected by an external gateway).
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	api := r.Group("/api/v1")
 	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey)
+
+	// Per-actor rate limit (after auth, so we know the actor identity).
+	actorLimit := cfg.ActorRateLimitPerMin()
 
 	// Build a middleware slice that optionally prepends the rate limiter.
 	buildMW := func(extra ...gin.HandlerFunc) []gin.HandlerFunc {
@@ -79,6 +92,9 @@ func newRouter(
 			mw = append(mw, middleware.RateLimit(cfg.Server.RateLimit))
 		}
 		mw = append(mw, authMW)
+		if actorLimit > 0 {
+			mw = append(mw, middleware.ActorRateLimit(actorLimit))
+		}
 		return append(mw, extra...)
 	}
 

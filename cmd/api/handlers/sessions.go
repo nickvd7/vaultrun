@@ -14,6 +14,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
@@ -171,6 +172,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		},
 	})
 
+	metrics.ActiveSessions.Inc()
 	c.JSON(http.StatusCreated, session)
 }
 
@@ -243,5 +245,6 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 		Metadata:  models.JSONB{},
 	})
 
+	metrics.ActiveSessions.Dec()
 	c.JSON(http.StatusOK, gin.H{"message": "session deleted"})
 }

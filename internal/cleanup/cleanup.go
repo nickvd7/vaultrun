@@ -13,6 +13,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
@@ -98,6 +99,8 @@ func (cl *cleaner) stopSession(ctx context.Context, s *models.Session) {
 		slog.Error("cleanup: mark session stopped", "session_id", s.ID, "err", err)
 		return
 	}
+
+	metrics.ActiveSessions.Dec()
 
 	// Emit audit event so forensic trail is complete (H-4).
 	if cl.audit != nil {

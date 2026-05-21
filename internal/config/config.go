@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	Server    ServerConfig
-	Database  DatabaseConfig
-	Redis     RedisConfig
-	Docker    DockerConfig
-	Workspace WorkspaceConfig
-	Auth      AuthConfig
+	Server        ServerConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	Docker        DockerConfig
+	Workspace     WorkspaceConfig
+	Auth          AuthConfig
+	Observability ObservabilityConfig
 }
 
 type ServerConfig struct {
@@ -25,6 +26,10 @@ type ServerConfig struct {
 	ShutdownTimeout time.Duration
 	CORSOrigins     []string // allowed CORS origins; empty = same-origin only
 	RateLimit       int      // max requests per minute per IP (0 = disabled)
+	ActorRateLimit  int      // max requests per minute per actor/API-key (0 = same as RateLimit; -1 = disabled)
+	// TLS: when both are set the server listens over HTTPS.
+	TLSCertFile string // TLS_CERT_FILE — PEM certificate chain
+	TLSKeyFile  string // TLS_KEY_FILE  — PEM private key
 }
 
 type DatabaseConfig struct {
@@ -62,6 +67,12 @@ type AuthConfig struct {
 	OPAPolicyFile string // optional path to a Rego policy file; empty = AllowAll
 }
 
+// ObservabilityConfig groups logging and metrics knobs.
+type ObservabilityConfig struct {
+	LogLevel               string // LOG_LEVEL: debug|info|warn|error (default: info)
+	StopContainersOnShutdown bool  // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
+}
+
 // Limits caps applied to session creation requests.
 type SessionLimits struct {
 	MaxCPU              float64
@@ -83,6 +94,8 @@ func Load() (*Config, error) {
 	maxFileMB, _ := strconv.ParseInt(getEnv("MAX_FILE_MB", "100"), 10, 64)
 	maxOutputMB, _ := strconv.ParseInt(getEnv("MAX_OUTPUT_MB", "10"), 10, 64)
 	rateLimit, _ := strconv.Atoi(getEnv("RATE_LIMIT_PER_MIN", "120"))
+	actorRateLimit, _ := strconv.Atoi(getEnv("ACTOR_RATE_LIMIT_PER_MIN", "0")) // 0 = inherit RateLimit
+	stopOnShutdown, _ := strconv.ParseBool(getEnv("STOP_CONTAINERS_ON_SHUTDOWN", "false"))
 
 	// CORS origins: comma-separated list; empty string means deny all cross-origin requests
 	corsOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", ""))
@@ -99,6 +112,9 @@ func Load() (*Config, error) {
 			ShutdownTimeout: 15 * time.Second,
 			CORSOrigins:     corsOrigins,
 			RateLimit:       rateLimit,
+			ActorRateLimit:  actorRateLimit,
+			TLSCertFile:     getEnv("TLS_CERT_FILE", ""),
+			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
 		},
 		Database: DatabaseConfig{
 			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),
@@ -128,9 +144,27 @@ func Load() (*Config, error) {
 			MasterKey:     getEnv("MASTER_API_KEY", ""),
 			OPAPolicyFile: getEnv("OPA_POLICY_FILE", ""),
 		},
+		Observability: ObservabilityConfig{
+			LogLevel:                 getEnv("LOG_LEVEL", "info"),
+			StopContainersOnShutdown: stopOnShutdown,
+		},
 	}
 
 	return cfg, nil
+}
+
+// TLSEnabled returns true when both a certificate and key file are configured.
+func (c *Config) TLSEnabled() bool {
+	return c.Server.TLSCertFile != "" && c.Server.TLSKeyFile != ""
+}
+
+// ActorRateLimitPerMin returns the effective per-actor rate limit.
+// When ActorRateLimit is 0 it inherits RateLimit; -1 disables it.
+func (c *Config) ActorRateLimitPerMin() int {
+	if c.Server.ActorRateLimit == 0 {
+		return c.Server.RateLimit
+	}
+	return c.Server.ActorRateLimit
 }
 
 // SessionLimits returns the hard caps for session resource requests.

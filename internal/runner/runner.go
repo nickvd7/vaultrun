@@ -14,6 +14,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
 )
@@ -87,6 +88,7 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 	}
 
 	r.emitFinish(ctx, req, run, status, durationMS)
+	metrics.ObserveRun(status, durationMS)
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
@@ -138,6 +140,7 @@ func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.W
 	}
 
 	r.emitFinish(ctx, req, run, status, durationMS)
+	metrics.ObserveRun(status, durationMS)
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {

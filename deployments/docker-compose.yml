@@ -27,6 +27,18 @@ services:
       - GIN_MODE=${GIN_MODE:-release}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
       - DOCKER_IMAGE_ALLOWLIST=${DOCKER_IMAGE_ALLOWLIST:-}
+      # Seccomp + cosign (optional but recommended in production)
+      - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
+      - COSIGN_PUBLIC_KEY=${COSIGN_PUBLIC_KEY:-}
+      # Database TLS (set to require or verify-full in production)
+      - DB_SSL_MODE=${DB_SSL_MODE:-}
+      - DB_SSL_ROOT_CERT=${DB_SSL_ROOT_CERT:-}
+      - DB_SSL_CERT=${DB_SSL_CERT:-}
+      - DB_SSL_KEY=${DB_SSL_KEY:-}
+    # NET_ADMIN is required for host-side iptables egress filtering when
+    # AllowedHosts is set on sessions. Remove if you don't use AllowedHosts.
+    cap_add:
+      - NET_ADMIN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/data/workspaces

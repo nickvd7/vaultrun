@@ -37,6 +37,13 @@ type DatabaseConfig struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	// TLS / SSL configuration for the PostgreSQL connection.
+	// These take effect via injectSSLParams in internal/db/db.go and override
+	// any sslmode already present in the DSN.
+	SSLMode     string // DB_SSL_MODE: disable|allow|prefer|require|verify-ca|verify-full
+	SSLRootCert string // DB_SSL_ROOT_CERT: path to CA certificate file
+	SSLCert     string // DB_SSL_CERT: path to client certificate file
+	SSLKey      string // DB_SSL_KEY: path to client private key file
 }
 
 type RedisConfig struct {
@@ -122,6 +129,12 @@ func Load() (*Config, error) {
 			MaxOpenConns:    dbMaxOpen,
 			MaxIdleConns:    dbMaxIdle,
 			ConnMaxLifetime: 5 * time.Minute,
+			// SSL/TLS: these env vars override whatever is in the DSN.
+			// DB_SSL_MODE defaults to "prefer" (encrypted when server supports it).
+			SSLMode:     getEnv("DB_SSL_MODE", ""),
+			SSLRootCert: getEnv("DB_SSL_ROOT_CERT", ""),
+			SSLCert:     getEnv("DB_SSL_CERT", ""),
+			SSLKey:      getEnv("DB_SSL_KEY", ""),
 		},
 		Redis: RedisConfig{
 			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),

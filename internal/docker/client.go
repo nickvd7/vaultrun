@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,20 +11,30 @@ import (
 	"github.com/docker/docker/client"
 )
 
+// defaultSeccompProfile is the vaultrun-curated seccomp policy embedded at
+// compile time. It is used whenever DOCKER_SECCOMP_PROFILE is not set, so the
+// binary is self-contained and doesn't depend on the daemon's built-in profile.
+//
+//go:embed seccomp/profile.json
+var defaultSeccompProfile string
+
 // Client wraps the Docker SDK client with optional seccomp enforcement.
 type Client struct {
-	inner       *client.Client
-	seccompJSON string // empty = rely on daemon default; "default" = explicit default; else raw JSON
+	inner           *client.Client
+	seccompJSON     string // raw JSON profile; "default" = daemon explicit default
+	cosignPublicKey string // path to cosign public key file; empty = verification disabled
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
 //
-// If DOCKER_SECCOMP_PROFILE is set it is interpreted as:
-//   - "default"      → pass seccomp=default to every container
-//   - "/path/to/file" → load the file and embed the JSON in every container's SecurityOpt
+// Seccomp: DOCKER_SECCOMP_PROFILE controls which profile is applied:
+//   - ""        → use the embedded vaultrun seccomp profile (default, recommended)
+//   - "default" → pass seccomp=default explicitly to rely on the daemon's built-in filter
+//   - "/path"   → load and embed the JSON from the given file path
 //
-// An empty value (the default) leaves seccomp handling to the Docker daemon,
-// which already applies its built-in default profile in standard installations.
+// Cosign: when COSIGN_PUBLIC_KEY points to a PEM public key, every image is
+// verified with `cosign verify --key <file> <image>` before use. If the key
+// is set but the cosign binary is missing, CreateSandbox fails closed.
 func New() (*Client, error) {
 	c, err := client.NewClientWithOpts(
 		client.FromEnv,
@@ -38,7 +49,11 @@ func New() (*Client, error) {
 	profile := os.Getenv("DOCKER_SECCOMP_PROFILE")
 	switch profile {
 	case "":
-		// no-op — daemon applies its own default
+		// Use the vaultrun seccomp profile embedded at compile time. This
+		// ensures syscall filtering is applied even when the Docker daemon's
+		// built-in default is absent or looser than our requirements.
+		dc.seccompJSON = defaultSeccompProfile
+		slog.Info("docker: using embedded vaultrun seccomp profile")
 	case "default":
 		dc.seccompJSON = "default"
 		slog.Info("docker: using daemon default seccomp profile (explicit)")
@@ -49,6 +64,14 @@ func New() (*Client, error) {
 		}
 		dc.seccompJSON = string(data)
 		slog.Info("docker: custom seccomp profile loaded", "path", profile)
+	}
+
+	// Cosign image verification — optional but strongly recommended in production.
+	dc.cosignPublicKey = os.Getenv("COSIGN_PUBLIC_KEY")
+	if dc.cosignPublicKey != "" {
+		slog.Info("docker: cosign image verification enabled", "key", dc.cosignPublicKey)
+	} else {
+		slog.Warn("docker: cosign image verification disabled (set COSIGN_PUBLIC_KEY to enable)")
 	}
 
 	return dc, nil

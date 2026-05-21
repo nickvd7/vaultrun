@@ -100,10 +100,28 @@ func main() {
 
 	rnr := runner.New(db, docker, al, policyHook)
 
-	// Async run worker pool: 4 workers, buffer up to 256 pending jobs.
+	// Async run worker pool.
+	// When REDIS_ADDR is set, use the durable Redis Streams backend.
+	// Otherwise fall back to the in-process bounded channel (jobs lost on restart).
 	asyncWorkers, _ := strconv.Atoi(getEnvMain("ASYNC_WORKERS", "4"))
 	asyncBufSize, _ := strconv.Atoi(getEnvMain("ASYNC_QUEUE_SIZE", "256"))
-	queue := jobqueue.New(rnr, asyncWorkers, asyncBufSize, cfg.Observability.WebhookSecret)
+
+	var queue jobqueue.Queue
+	if cfg.Redis.Addr != "" {
+		q, err := jobqueue.NewRedis(
+			rnr, db,
+			cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB,
+			asyncWorkers, cfg.Observability.WebhookSecret,
+		)
+		if err != nil {
+			slog.Error("create redis job queue", "addr", cfg.Redis.Addr, "err", err)
+			os.Exit(1)
+		}
+		queue = q
+	} else {
+		slog.Info("async job queue: using in-memory (set REDIS_ADDR for durable queue)")
+		queue = jobqueue.New(rnr, asyncWorkers, asyncBufSize, cfg.Observability.WebhookSecret)
+	}
 
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

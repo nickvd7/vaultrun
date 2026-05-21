@@ -4,16 +4,26 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 
 	"github.com/docker/docker/client"
 )
 
-// Client wraps the Docker SDK client.
+// Client wraps the Docker SDK client with optional seccomp enforcement.
 type Client struct {
-	inner *client.Client
+	inner       *client.Client
+	seccompJSON string // empty = rely on daemon default; "default" = explicit default; else raw JSON
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
+//
+// If DOCKER_SECCOMP_PROFILE is set it is interpreted as:
+//   - "default"      → pass seccomp=default to every container
+//   - "/path/to/file" → load the file and embed the JSON in every container's SecurityOpt
+//
+// An empty value (the default) leaves seccomp handling to the Docker daemon,
+// which already applies its built-in default profile in standard installations.
 func New() (*Client, error) {
 	c, err := client.NewClientWithOpts(
 		client.FromEnv,
@@ -22,7 +32,26 @@ func New() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}
-	return &Client{inner: c}, nil
+
+	dc := &Client{inner: c}
+
+	profile := os.Getenv("DOCKER_SECCOMP_PROFILE")
+	switch profile {
+	case "":
+		// no-op — daemon applies its own default
+	case "default":
+		dc.seccompJSON = "default"
+		slog.Info("docker: using daemon default seccomp profile (explicit)")
+	default:
+		data, err := os.ReadFile(profile)
+		if err != nil {
+			return nil, fmt.Errorf("load seccomp profile %q: %w", profile, err)
+		}
+		dc.seccompJSON = string(data)
+		slog.Info("docker: custom seccomp profile loaded", "path", profile)
+	}
+
+	return dc, nil
 }
 
 func (c *Client) Inner() *client.Client {

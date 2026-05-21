@@ -31,7 +31,7 @@ func newRouter(
 	rnr *runner.Runner,
 	al *audit.Logger,
 	pol policy.Hook,
-	queue *jobqueue.Queue,
+	queue jobqueue.Queue,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -81,6 +81,19 @@ func newRouter(
 	// Prometheus metrics endpoint — unauthenticated but only bound on loopback
 	// in production (or protected by an external gateway).
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// API documentation — unauthenticated, read-only.
+	// /docs/openapi.yaml  → raw OpenAPI 3.1 spec
+	// /docs               → Redoc interactive UI (references openapi.yaml)
+	r.Static("/docs", "docs")
+	r.GET("/docs/", func(c *gin.Context) {
+		// Override CSP for the docs page: Redoc needs inline scripts and styles.
+		c.Header("Content-Security-Policy",
+			"default-src 'none'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "+
+				"style-src 'self' 'unsafe-inline' fonts.googleapis.com; "+
+				"font-src fonts.gstatic.com; img-src 'self' data:")
+		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
+	})
 
 	api := r.Group("/api/v1")
 	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey)

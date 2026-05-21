@@ -230,6 +230,11 @@ func (rh *RunHandler) Get(c *gin.Context) {
 // Optional "callback_url" field in the request body receives an HTTP POST with
 // the completed Run when finished.
 func (rh *RunHandler) Async(c *gin.Context) {
+	if rh.h.queue == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "async runs not configured"})
+		return
+	}
+
 	sessionID, ok := parseUUID(c, "id")
 	if !ok {
 		return

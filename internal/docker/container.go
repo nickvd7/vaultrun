@@ -42,6 +42,19 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	nanoCPUs := int64(cfg.CPULimit * 1e9)
 	memoryBytes := int64(cfg.MemoryLimitMB) * 1024 * 1024
 
+	// Build SecurityOpt list. Always enforce no-new-privileges; append the
+	// seccomp profile when one is configured on the client (c.seccompJSON).
+	securityOpt := []string{"no-new-privileges"}
+	switch c.seccompJSON {
+	case "":
+		// Rely on daemon default — already applies Docker's built-in filter.
+	case "default":
+		securityOpt = append(securityOpt, "seccomp=default")
+	default:
+		// Embed the custom JSON profile directly into SecurityOpt.
+		securityOpt = append(securityOpt, "seccomp="+c.seccompJSON)
+	}
+
 	hostCfg := &container.HostConfig{
 		NetworkMode: networkMode,
 		Mounts: []mount.Mount{
@@ -64,19 +77,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 			// from exhausting the host PID namespace (L-5).
 			PidsLimit: int64Ptr(512),
 		},
-		// Security hardening
+		// Security hardening: no-new-privileges + optional seccomp profile.
+		// CapDrop ALL ensures the container starts with zero Linux capabilities.
 		ReadonlyRootfs: false, // workspace is writable via bind mount
-		// no-new-privileges: blocks setuid privilege escalation via setuid
-		// binaries inside the container (L-6).
-		// Note: Docker automatically applies the default seccomp profile unless
-		// the daemon was started with --seccomp-profile=unconfined. We do NOT
-		// pass "seccomp=default" here because it is not a universally recognised
-		// security-opt value across Docker versions and causes OCI runtime errors
-		// in some environments (e.g. GitHub Actions). The protection is equivalent
-		// since the daemon default already applies the same built-in syscall filter.
-		SecurityOpt: []string{"no-new-privileges"},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{}, // grant nothing extra
+		SecurityOpt:    securityOpt,
+		CapDrop:        []string{"ALL"},
+		CapAdd:         []string{}, // grant nothing extra
 	}
 
 	resp, err := c.inner.ContainerCreate(ctx,

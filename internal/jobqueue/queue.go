@@ -1,15 +1,18 @@
-// Package jobqueue provides an in-process worker pool for asynchronous run
+// Package jobqueue provides worker pool implementations for asynchronous run
 // execution. Jobs are submitted by the async run endpoint and executed by a
 // fixed pool of goroutines. On completion an optional webhook callback is fired.
+//
+// Two implementations are available:
+//   - MemQueue   — in-process bounded channel (default; jobs lost on restart)
+//   - RedisQueue — Redis Streams backed (durable; jobs survive restarts)
+//
+// Use New() for the in-memory variant and NewRedis() for the Redis variant.
+// Both satisfy the Queue interface consumed by the rest of the codebase.
 //
 // Webhook security: when a WEBHOOK_SECRET is configured every callback POST
 // carries an X-VaultRun-Signature header of the form "sha256=<hex>", computed
 // as HMAC-SHA256 of the raw request body. Receivers should verify this before
 // processing the payload.
-//
-// Limitations: the queue is in-memory. Pending jobs are lost if the process
-// restarts. For durable queuing consider an external broker (Redis Streams,
-// PostgreSQL LISTEN/NOTIFY, etc.).
 package jobqueue
 
 import (
@@ -27,6 +30,14 @@ import (
 	"github.com/nickvd7/vaultrun/internal/runner"
 )
 
+// Queue is the interface satisfied by both MemQueue and RedisQueue.
+type Queue interface {
+	// Submit enqueues a job. Returns false (job dropped) when at capacity.
+	Submit(j Job) bool
+	// Len returns the approximate number of pending jobs.
+	Len() int
+}
+
 // Job is one unit of async work.
 type Job struct {
 	// Req is the run request to execute.
@@ -37,25 +48,17 @@ type Job struct {
 	CallbackURL string
 }
 
-// Queue is a bounded in-process worker pool.
-type Queue struct {
-	ch            chan Job
-	runner        *runner.Runner
-	httpClient    *http.Client
-	webhookSecret string // empty = no signing
-}
-
-// New creates a Queue with workers concurrent goroutines and a buffer of
-// bufSize pending jobs. webhookSecret is used to HMAC-sign callback payloads
-// (pass "" to disable signing).
-func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) *Queue {
+// New creates an in-memory Queue with workers concurrent goroutines and a
+// buffer of bufSize pending jobs. webhookSecret is used to HMAC-sign callback
+// payloads (pass "" to disable signing).
+func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) Queue {
 	if workers <= 0 {
 		workers = 4
 	}
 	if bufSize <= 0 {
 		bufSize = 256
 	}
-	q := &Queue{
+	q := &memQueue{
 		ch:            make(chan Job, bufSize),
 		runner:        rnr,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
@@ -67,9 +70,17 @@ func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) *Queue 
 	return q
 }
 
+// memQueue is the in-process, bounded channel implementation of Queue.
+type memQueue struct {
+	ch            chan Job
+	runner        *runner.Runner
+	httpClient    *http.Client
+	webhookSecret string
+}
+
 // Submit enqueues a job. Returns false (job dropped) when the buffer is full.
 // The caller should return HTTP 503 in that case.
-func (q *Queue) Submit(j Job) bool {
+func (q *memQueue) Submit(j Job) bool {
 	select {
 	case q.ch <- j:
 		return true
@@ -81,13 +92,13 @@ func (q *Queue) Submit(j Job) bool {
 }
 
 // Len returns the number of jobs currently waiting in the buffer.
-func (q *Queue) Len() int { return len(q.ch) }
+func (q *memQueue) Len() int { return len(q.ch) }
 
-func (q *Queue) work() {
+func (q *memQueue) work() {
 	for j := range q.ch {
 		run, err := q.runner.ExecutePrepared(context.Background(), j.Req, j.Run)
 		if j.CallbackURL != "" {
-			q.sendCallback(j.CallbackURL, run, err)
+			sendCallback(q.httpClient, q.webhookSecret, j.CallbackURL, run, err)
 		}
 	}
 }
@@ -96,7 +107,7 @@ func (q *Queue) work() {
 // When a webhookSecret is set the request includes an X-VaultRun-Signature
 // header: "sha256=<hmac-hex>" computed over the raw JSON body.
 // Failures are logged but do not affect the run result.
-func (q *Queue) sendCallback(callbackURL string, run *models.Run, execErr error) {
+func sendCallback(httpClient *http.Client, webhookSecret, callbackURL string, run *models.Run, execErr error) {
 	type payload struct {
 		RunID    string      `json:"run_id,omitempty"`
 		Status   string      `json:"status"`
@@ -132,16 +143,15 @@ func (q *Queue) sendCallback(callbackURL string, run *models.Run, execErr error)
 	req.Header.Set("Content-Type", "application/json")
 
 	// HMAC-SHA256 signature so receivers can verify authenticity.
-	if q.webhookSecret != "" {
-		mac := hmac.New(sha256.New, []byte(q.webhookSecret))
+	if webhookSecret != "" {
+		mac := hmac.New(sha256.New, []byte(webhookSecret))
 		mac.Write(b)
 		req.Header.Set("X-VaultRun-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
 
-	resp, err := q.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		slog.Warn("jobqueue: callback POST failed",
-			"url", callbackURL, "err", err)
+		slog.Warn("jobqueue: callback POST failed", "url", callbackURL, "err", err)
 		return
 	}
 	resp.Body.Close()

@@ -30,7 +30,7 @@ type Hub struct {
 	audit  *audit.Logger
 	cfg    *config.Config
 	policy policy.Hook
-	queue  *jobqueue.Queue
+	queue  jobqueue.Queue // interface — nil when async not configured
 }
 
 func NewHub(
@@ -41,7 +41,7 @@ func NewHub(
 	audit *audit.Logger,
 	cfg *config.Config,
 	pol policy.Hook,
-	queue *jobqueue.Queue,
+	queue jobqueue.Queue,
 ) *Hub {
 	if pol == nil {
 		pol = policy.AllowAll{}

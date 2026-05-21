@@ -22,10 +22,15 @@ func New(baseDir string) *Manager {
 }
 
 // Create initializes an isolated workspace directory for a session.
-// Mode 0o700: only the API process can access workspace directories.
+// Mode 0o777: the directory is bind-mounted into the sandbox container
+// which runs as an unprivileged user (e.g. nobody, UID 65534). That
+// user must be able to read uploaded files and create output files inside
+// the workspace. The security boundary is the container itself; the base
+// workspace directory (one level up) retains tighter permissions so
+// other host processes cannot enumerate session UUIDs.
 func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 	path := m.sessionPath(sessionID)
-	if err := os.MkdirAll(path, 0o700); err != nil {
+	if err := os.MkdirAll(path, 0o777); err != nil {
 		return "", fmt.Errorf("create workspace dir: %w", err)
 	}
 	return path, nil
@@ -108,7 +113,9 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 	root := m.sessionPath(sessionID)
 	parentDir := filepath.Dir(dest)
 
-	if err := os.MkdirAll(parentDir, 0o700); err != nil {
+	// 0o777 so container processes (running as nobody) can traverse and create
+	// files in subdirectories they didn't explicitly create.
+	if err := os.MkdirAll(parentDir, 0o777); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
 
@@ -127,7 +134,9 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 
 	// O_NOFOLLOW: if the final path component is a symlink the open returns
 	// ELOOP, preventing a race between the parent check above and this open.
-	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+	// Mode 0o644: world-readable so container processes (nobody) can read
+	// uploaded files; only the API process owner can overwrite them.
+	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
 			return 0, fmt.Errorf("write target is a symlink — rejected")

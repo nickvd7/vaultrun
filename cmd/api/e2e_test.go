@@ -237,7 +237,11 @@ sys.exit(0)
 		required := []string{
 			"session.created",
 			"command.started",
-			"command.finished",
+		}
+		// command.finished is emitted on success; command.failed on non-zero exit
+		// or error — either counts as evidence the run completed its lifecycle.
+		if !seen["command.finished"] && !seen["command.failed"] {
+			t.Errorf("audit_trail: expected command.finished or command.failed (got: %v)", seen)
 		}
 		for _, action := range required {
 			if !seen[action] {

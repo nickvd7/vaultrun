@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // Status constants
@@ -65,27 +66,23 @@ func (j *JSONB) Scan(src interface{}) error {
 }
 
 // StringArray handles Postgres text[] arrays.
+// Delegates to pq.StringArray which serialises to/from the native Postgres
+// array literal format {"a","b"} — NOT JSON ["a","b"]. The previous
+// json.Marshal implementation produced JSON which caused
+// "pq: malformed array literal" errors at INSERT time.
 type StringArray []string
 
 func (a StringArray) Value() (driver.Value, error) {
-	if len(a) == 0 {
-		return "{}", nil
-	}
-	b, err := json.Marshal(a)
-	return string(b), err
+	return pq.StringArray(a).Value()
 }
 
 func (a *StringArray) Scan(src interface{}) error {
-	switch v := src.(type) {
-	case []byte:
-		return json.Unmarshal(v, a)
-	case string:
-		return json.Unmarshal([]byte(v), a)
-	case nil:
-		*a = StringArray{}
-		return nil
+	tmp := pq.StringArray(*a)
+	if err := tmp.Scan(src); err != nil {
+		return err
 	}
-	return fmt.Errorf("unsupported StringArray source type %T", src)
+	*a = StringArray(tmp)
+	return nil
 }
 
 type APIKey struct {

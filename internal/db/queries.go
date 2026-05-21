@@ -378,3 +378,27 @@ func CountAPIKeys(ctx context.Context, db *sqlx.DB) (int, error) {
 	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM api_keys`)
 	return n, err
 }
+
+// FailStalePendingRuns marks as "failed" any runs that are still in the
+// "pending" state and were created before the given cutoff timestamp.
+//
+// This is called at startup to clean up runs that were mid-flight when the
+// previous server instance was killed (e.g., a crash or SIGKILL during an
+// in-memory queue drain). Without this cleanup, such runs sit in "pending"
+// forever and are never surfaced to callers as failures.
+//
+// For the Redis Streams backend, the reaper goroutine handles re-delivery;
+// this function is a last-resort safety net for both queue backends.
+func FailStalePendingRuns(ctx context.Context, db *sqlx.DB, before time.Time) (int64, error) {
+	result, err := db.ExecContext(ctx, `
+		UPDATE runs
+		SET    status     = 'failed',
+		       updated_at = NOW()
+		WHERE  status     = 'pending'
+		AND    created_at < $1
+	`, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

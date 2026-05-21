@@ -15,34 +15,39 @@ VaultRun is a self-hosted secure runtime for AI agents. It provides isolated exe
 │                        API Server (Go + Gin)                    │
 │                                                                 │
 │   POST /sessions   GET /sessions/:id    DELETE /sessions/:id   │
-│   POST /sessions/:id/run                                        │
+│   POST /sessions/:id/run  (sync + stream + async)              │
 │   POST /sessions/:id/files  GET /sessions/:id/files/*path      │
-│   GET  /audit                                                   │
+│   GET  /audit   GET /policy   POST /policy/eval                │
+│   GET  /metrics (Prometheus)   GET /health                     │
 │                                                                 │
 │   ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│   │  Auth MW    │  │  Audit Log   │  │  Policy Hook (noop)  │  │
+│   │  Auth MW    │  │  Audit Log   │  │  OPA Policy Hook     │  │
 │   └─────────────┘  └──────────────┘  └──────────────────────┘  │
 └──────┬──────────────────────┬──────────────────────────────────┘
        │                      │
        ▼                      ▼
 ┌──────────────┐    ┌──────────────────────────────────────────┐
 │  PostgreSQL  │    │         Docker Runtime                   │
-│  - sessions  │    │                                          │
-│  - runs      │    │   Session A Container                    │
-│  - files     │    │   ┌────────────────────────────────┐     │
-│  - audit_logs│    │   │ python:3.12-slim               │     │
-│  - api_keys  │    │   │ User: nobody                   │     │
-└──────────────┘    │   │ Network: none                  │     │
+│  (TLS opt.)  │    │                                          │
+│  - sessions  │    │   Session A Container                    │
+│  - runs      │    │   ┌────────────────────────────────┐     │
+│  - files     │    │   │ python:3.12-slim               │     │
+│  - audit_logs│    │   │ User: nobody  CapDrop: ALL     │     │
+│  - api_keys  │    │   │ Seccomp: embedded vaultrun     │     │
+└──────────────┘    │   │ Network: none (or bridge+ipt.) │     │
                     │   │ Workspace: /data/workspaces/   │     │
 ┌──────────────┐    │   │          {session_id}/         │     │
 │   Redis      │    │   │ CPU: 1 core  Memory: 512MB     │     │
-│  (future)    │    │   └────────────────────────────────┘     │
-└──────────────┘    │                                          │
-                    │   Session B Container                    │
+│  (Streams    │    │   └────────────────────────────────┘     │
+│   job queue) │    │                                          │
+└──────────────┘    │   Session B Container                    │
                     │   ┌────────────────────────────────┐     │
-                    │   │ node:20-slim  ...               │     │
-                    │   └────────────────────────────────┘     │
-                    └──────────────────────────────────────────┘
+┌──────────────┐    │   │ node:20-slim  ...               │     │
+│  Cleanup svc │    │   └────────────────────────────────┘     │
+│  (idle       │    └──────────────────────────────────────────┘
+│   session    │
+│   reaper)    │
+└──────────────┘
 ```
 
 ## Core Concepts
@@ -70,7 +75,10 @@ Each session gets an isolated directory on the host that is bind-mounted into th
 - Safe path validation to prevent traversal attacks
 
 ### Artifact
-Any file produced inside `/workspace` during a run. Currently accessed via the file API after execution. Future: automatic artifact detection and tagging.
+Any file produced inside `/workspace` during a run. After each run, the runner
+snapshots workspace mtimes before execution and walks the directory afterwards;
+any new or modified file is automatically upserted into the `files` table and
+becomes accessible via the Files API without requiring an explicit upload.
 
 ### Audit Log
 Every security-relevant event (session creation/deletion, file access, command execution) is persisted as an immutable audit log entry.
@@ -117,24 +125,27 @@ Response
 | Component | Package | Responsibility |
 |---|---|---|
 | API Server | `cmd/api` | HTTP handlers, routing, request parsing |
-| Auth Middleware | `internal/auth` | API key hashing, validation |
+| Auth Middleware | `internal/auth` | API key hashing, validation, per-actor rate limiting |
 | Audit Logger | `internal/audit` | Structured event persistence |
-| Docker Client | `internal/docker` | Container lifecycle, secure exec |
+| Docker Client | `internal/docker` | Container lifecycle, secure exec, seccomp, cosign, iptables egress |
 | Workspace Manager | `internal/workspace` | File I/O with path traversal prevention |
-| Runner | `internal/runner` | Orchestrates exec + persistence |
-| Policy Hook | `internal/policy` | Pluggable policy interface (noop MVP) |
-| DB Layer | `internal/db` | Postgres queries via sqlx |
+| Runner | `internal/runner` | Orchestrates exec + persistence, artifact detection |
+| Job Queue | `internal/jobqueue` | Async run workers: in-memory (MemQueue) or Redis Streams (RedisQueue) |
+| Cleanup Service | `internal/cleanup` | Background goroutine: stops idle session containers |
+| Policy Hook | `internal/policy` | Pluggable allow/deny interface; OPA/Rego or AllowAll |
+| DB Layer | `internal/db` | Postgres queries via sqlx; TLS injection |
 | Config | `internal/config` | Environment-based configuration |
+| Metrics | `internal/metrics` | Prometheus counters, gauges, histograms |
 
 ## Future Extension Points
 
 | Feature | Extension Point |
 |---|---|
-| Kubernetes runners | Replace `internal/docker` with a Runner interface |
-| Firecracker VMs | Alternative Runner implementation |
-| Open Policy Agent | Replace `internal/policy.AllowAll` |
-| Secrets broker | New `internal/secrets` package |
-| Multi-tenancy | Add `org_id` column to sessions/runs/files |
+| Kubernetes runners | Replace `internal/docker` with a `Sandbox` interface |
+| Firecracker VMs | Alternative `Sandbox` implementation |
+| Secrets broker | New `internal/secrets` package; inject into `RunRequest.Env` |
+| Multi-tenancy | Add `org_id` column to sessions/runs/files; scope all queries |
 | Persistent snapshots | Workspace versioning in `internal/workspace` |
-| Network allowlists | Docker network policy in `internal/docker` |
-| Enterprise audit export | Audit log streaming adapter |
+| Enterprise audit export | Implement a streaming adapter in `internal/audit` |
+| SAML/SSO | Add an `internal/sso` package; replace API key auth for human users |
+| GPU runners | Add `GPURequest` to `SandboxConfig`; wire to Docker `DeviceRequests` |

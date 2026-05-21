@@ -103,9 +103,17 @@ func (q *memQueue) work() {
 	}
 }
 
-// sendCallback fires a one-shot HTTP POST to the configured callback URL.
-// When a webhookSecret is set the request includes an X-VaultRun-Signature
-// header: "sha256=<hmac-hex>" computed over the raw JSON body.
+const (
+	callbackMaxAttempts  = 3
+	callbackInitialDelay = 2 * time.Second
+)
+
+// sendCallback POSTs the run result to callbackURL with exponential-backoff
+// retry (up to callbackMaxAttempts attempts). Network errors and HTTP 5xx
+// responses trigger a retry; 4xx responses are logged and not retried.
+//
+// When a webhookSecret is set, every request includes an X-VaultRun-Signature
+// header of the form "sha256=<hmac-hex>" computed over the raw JSON body.
 // Failures are logged but do not affect the run result.
 func sendCallback(httpClient *http.Client, webhookSecret, callbackURL string, run *models.Run, execErr error) {
 	type payload struct {
@@ -135,28 +143,54 @@ func sendCallback(httpClient *http.Client, webhookSecret, callbackURL string, ru
 		return
 	}
 
-	req, err := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(b))
-	if err != nil {
-		slog.Warn("jobqueue: build callback request", "url", callbackURL, "err", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// HMAC-SHA256 signature so receivers can verify authenticity.
+	// Pre-compute the HMAC so it can be attached to every retry attempt.
+	var sig string
 	if webhookSecret != "" {
 		mac := hmac.New(sha256.New, []byte(webhookSecret))
 		mac.Write(b)
-		req.Header.Set("X-VaultRun-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		sig = "sha256=" + hex.EncodeToString(mac.Sum(nil))
 	}
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		slog.Warn("jobqueue: callback POST failed", "url", callbackURL, "err", err)
-		return
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		slog.Warn("jobqueue: callback returned error status",
-			"url", callbackURL, "status", resp.StatusCode)
+	backoff := callbackInitialDelay
+	for attempt := 1; attempt <= callbackMaxAttempts; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, callbackURL, bytes.NewReader(b))
+		if err != nil {
+			slog.Warn("jobqueue: build callback request", "url", callbackURL, "err", err)
+			return // non-retryable: bad URL
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if sig != "" {
+			req.Header.Set("X-VaultRun-Signature", sig)
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			if attempt < callbackMaxAttempts {
+				slog.Warn("jobqueue: callback POST failed, retrying",
+					"url", callbackURL, "attempt", attempt, "backoff", backoff, "err", err)
+				time.Sleep(backoff)
+				backoff *= 2
+				continue
+			}
+			slog.Error("jobqueue: callback POST failed after all attempts",
+				"url", callbackURL, "attempts", callbackMaxAttempts, "err", err)
+			return
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode >= 500 && attempt < callbackMaxAttempts {
+			// Retry on server errors.
+			slog.Warn("jobqueue: callback returned 5xx, retrying",
+				"url", callbackURL, "status", resp.StatusCode,
+				"attempt", attempt, "backoff", backoff)
+			time.Sleep(backoff)
+			backoff *= 2
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			slog.Warn("jobqueue: callback returned client error (not retrying)",
+				"url", callbackURL, "status", resp.StatusCode)
+		}
+		return // success (or non-retriable 4xx)
 	}
 }

@@ -66,6 +66,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Mark runs that were still "pending" at previous shutdown as "failed".
+	// These were in-flight when the server was killed and will never complete.
+	// For Redis-backed async runs the reaper goroutine will re-deliver them;
+	// this is a safety net that covers both queue backends and the in-memory case.
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if n, err := dbpkg.FailStalePendingRuns(startupCtx, db, time.Now().UTC()); err != nil {
+		slog.Error("startup: fail stale pending runs", "err", err)
+	} else if n > 0 {
+		slog.Warn("startup: marked stale pending runs as failed", "count", n)
+	}
+	startupCancel()
+
 	docker, err := dockerpkg.New()
 	if err != nil {
 		slog.Error("create docker client", "err", err)

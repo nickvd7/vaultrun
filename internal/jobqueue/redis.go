@@ -20,6 +20,13 @@ const (
 	redisStreamKey    = "vaultrun:jobs"
 	redisGroupName    = "vaultrun-workers"
 	redisBlockTimeout = 5 * time.Second
+
+	// reaperInterval is how often the reaper scans for stale pending messages.
+	reaperInterval = 30 * time.Second
+	// reaperMinIdle is how long a message must sit in the PEL (pending-entry list)
+	// before the reaper reclaims it. Must exceed the longest expected normal run
+	// to avoid double-processing live jobs.
+	reaperMinIdle = 2 * time.Minute
 )
 
 // RedisQueue is a durable, Redis Streams-backed Queue. Jobs survive process
@@ -109,6 +116,11 @@ func NewRedis(
 	for i := 0; i < workers; i++ {
 		go q.work(fmt.Sprintf("worker-%d", i))
 	}
+
+	// Launch the PEL reaper: periodically reclaims messages that have been
+	// pending for longer than reaperMinIdle (i.e. the owning consumer crashed
+	// before acknowledging). Uses XAUTOCLAIM (Redis ≥ 6.2).
+	go q.reap("reaper-0")
 
 	slog.Info("jobqueue: redis queue started",
 		"addr", redisAddr, "workers", workers, "stream", redisStreamKey)
@@ -254,5 +266,45 @@ func (q *RedisQueue) ack(msgID string) {
 	defer cancel()
 	if err := q.client.XAck(ctx, redisStreamKey, redisGroupName, msgID).Err(); err != nil {
 		slog.Warn("jobqueue redis: XACK failed", "msg_id", msgID, "err", err)
+	}
+}
+
+// reap is the PEL (Pending-Entry List) reaper goroutine. It periodically calls
+// XAUTOCLAIM to find messages that have been sitting unacknowledged for longer
+// than reaperMinIdle — a sign that the consumer that originally received them
+// crashed before processing or ACKing the message — and re-delivers them to
+// this consumer for processing.
+//
+// This implements the "reaper goroutine for production use" noted in the Redis
+// Streams design: without it, jobs owned by crashed workers stay stuck forever.
+func (q *RedisQueue) reap(consumerName string) {
+	ticker := time.NewTicker(reaperInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		cursor := "0-0"
+		for {
+			msgs, next, err := q.client.XAutoClaim(context.Background(), &redis.XAutoClaimArgs{
+				Stream:   redisStreamKey,
+				Group:    redisGroupName,
+				Consumer: consumerName,
+				MinIdle:  reaperMinIdle,
+				Start:    cursor,
+				Count:    10,
+			}).Result()
+			if err != nil {
+				slog.Warn("jobqueue redis: XAUTOCLAIM error in reaper", "err", err)
+				break
+			}
+			for _, msg := range msgs {
+				slog.Info("jobqueue redis: reaper reclaiming stale message", "msg_id", msg.ID)
+				q.processMessage(msg)
+			}
+			// XAUTOCLAIM returns "0-0" when there are no more pending messages.
+			if next == "0-0" || next == "" {
+				break
+			}
+			cursor = next
+		}
 	}
 }

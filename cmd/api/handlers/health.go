@@ -49,10 +49,21 @@ func (hh *HealthHandler) Health(c *gin.Context) {
 	}
 
 	// ── Job queue ─────────────────────────────────────────────────────────────
+	// Len() returns -1 when the backend (Redis) is unreachable. Surface this
+	// as a degraded status so operators can detect Redis failures via health checks.
 	if hh.h.queue != nil {
-		checks["job_queue"] = gin.H{
-			"status":  "ok",
-			"pending": hh.h.queue.Len(),
+		qLen := hh.h.queue.Len()
+		if qLen < 0 {
+			checks["job_queue"] = gin.H{
+				"status": "error",
+				"error":  "queue backend unreachable (check Redis connectivity)",
+			}
+			healthy = false
+		} else {
+			checks["job_queue"] = gin.H{
+				"status":  "ok",
+				"pending": qLen,
+			}
 		}
 	}
 

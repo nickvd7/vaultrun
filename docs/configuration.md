@@ -170,7 +170,8 @@ with HTTP 422.
 | Variable | Default | Description |
 |---|---|---|
 | `WORKSPACE_BASE_DIR` | `/data/workspaces` | Host directory for session workspaces, bind-mounted into containers at `/workspace`. Must be writable by the API process. |
-| `MAX_FILE_MB` | `100` | Maximum upload file size in megabytes |
+| `MAX_FILE_MB` | `100` | Maximum single upload file size in megabytes |
+| `MAX_WORKSPACE_MB` | `0` | Maximum total workspace size per session in megabytes. `0` = unlimited. Enforced at upload time — artifact writes by container runs are not capped here. |
 | `MAX_OUTPUT_MB` | `10` | Maximum run stdout+stderr capture (output is truncated beyond this; the run still completes) |
 
 ---
@@ -191,6 +192,7 @@ with HTTP 422.
 | `LOG_LEVEL` | `info` | Log verbosity: `debug` \| `info` \| `warn` \| `error` |
 | `WEBHOOK_SECRET` | | HMAC-SHA256 signing key for async run callback payloads. Sent as `X-VaultRun-Signature: sha256=<hex>`. Empty = no signing (insecure for internet-facing callbacks). |
 | `STOP_CONTAINERS_ON_SHUTDOWN` | `false` | When `true`, gracefully stop all running session containers on SIGTERM. |
+| `AUDIT_LOG_RETENTION_DAYS` | `90` | Delete audit log entries older than N days on each cleanup sweep. `0` = retain indefinitely. |
 
 Prometheus metrics are exposed at `GET /metrics`. The most important metrics:
 

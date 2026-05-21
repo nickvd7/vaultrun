@@ -64,9 +64,10 @@ type DockerConfig struct {
 }
 
 type WorkspaceConfig struct {
-	BaseDir     string
-	MaxFileMB   int64
-	MaxOutputMB int64
+	BaseDir        string
+	MaxFileMB      int64
+	MaxOutputMB    int64
+	MaxWorkspaceMB int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
 }
 
 type AuthConfig struct {
@@ -79,6 +80,7 @@ type ObservabilityConfig struct {
 	LogLevel                 string // LOG_LEVEL: debug|info|warn|error (default: info)
 	StopContainersOnShutdown bool   // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
 	WebhookSecret            string // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
+	AuditLogRetentionDays    int    // AUDIT_LOG_RETENTION_DAYS: delete audit logs older than N days (0 = keep forever)
 }
 
 // Limits caps applied to session creation requests.
@@ -150,9 +152,10 @@ func Load() (*Config, error) {
 			ImageAllowlist:  imageAllowlist,
 		},
 		Workspace: WorkspaceConfig{
-			BaseDir:     getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
-			MaxFileMB:   maxFileMB,
-			MaxOutputMB: maxOutputMB,
+			BaseDir:        getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
+			MaxFileMB:      maxFileMB,
+			MaxOutputMB:    maxOutputMB,
+			MaxWorkspaceMB: func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
 		},
 		Auth: AuthConfig{
 			MasterKey:     getEnv("MASTER_API_KEY", ""),
@@ -162,6 +165,7 @@ func Load() (*Config, error) {
 			LogLevel:                 getEnv("LOG_LEVEL", "info"),
 			StopContainersOnShutdown: stopOnShutdown,
 			WebhookSecret:            getEnv("WEBHOOK_SECRET", ""),
+			AuditLogRetentionDays:    func() int { n, _ := strconv.Atoi(getEnv("AUDIT_LOG_RETENTION_DAYS", "90")); return n }(),
 		},
 	}
 

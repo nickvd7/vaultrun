@@ -142,12 +142,25 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	hostCfg := &container.HostConfig{
 		NetworkMode: networkMode,
 		Mounts: []mount.Mount{
+			// Primary workspace — writable bind mount at /workspace.
 			{
 				Type:   mount.TypeBind,
 				Source: cfg.WorkspacePath,
 				Target: "/workspace",
 				BindOptions: &mount.BindOptions{
 					Propagation: mount.PropagationRPrivate,
+				},
+			},
+			// /tmp tmpfs — needed because HOME=/tmp and some tools write
+			// temp files there. The root filesystem is read-only, so without
+			// this mount any write to /tmp would fail. Size-limited to 64 MB
+			// to prevent tmpfs from consuming excessive host memory.
+			{
+				Type:   mount.TypeTmpfs,
+				Target: "/tmp",
+				TmpfsOptions: &mount.TmpfsOptions{
+					SizeBytes: 64 * 1024 * 1024, // 64 MB
+					Mode:      0o1777,            // sticky world-rwx, matching typical /tmp perms
 				},
 			},
 		},
@@ -160,7 +173,11 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 			// PidsLimit caps total process count to block fork-bomb attacks.
 			PidsLimit: int64Ptr(512),
 		},
-		ReadonlyRootfs: false, // workspace is writable via bind mount
+		// ReadonlyRootfs prevents any process inside the container from writing
+		// to the container image layers. Writes must go to /workspace (bind mount)
+		// or /tmp (tmpfs). This stops malicious code from modifying shared image
+		// state and makes the sandbox more deterministic across runs.
+		ReadonlyRootfs: true,
 		SecurityOpt:    securityOpt,
 		CapDrop:        []string{"ALL"},
 		CapAdd:         []string{},

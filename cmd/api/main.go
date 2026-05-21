@@ -149,7 +149,7 @@ func main() {
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
-	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor)
+	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
 
 	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue)
 

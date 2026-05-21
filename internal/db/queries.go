@@ -357,6 +357,15 @@ func CountFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (int, err
 	return n, err
 }
 
+// SumWorkspaceBytes returns the total size in bytes of all files tracked for
+// the given session. Used by the upload handler to enforce MAX_WORKSPACE_MB.
+func SumWorkspaceBytes(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (int64, error) {
+	var total int64
+	err := db.GetContext(ctx, &total,
+		`SELECT COALESCE(SUM(size_bytes), 0) FROM files WHERE session_id = $1`, sessionID)
+	return total, err
+}
+
 // CountAuditLogs mirrors the filter logic of ListAuditLogs for accurate totals.
 func CountAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string) (int, error) {
 	var n int
@@ -377,6 +386,18 @@ func CountAPIKeys(ctx context.Context, db *sqlx.DB) (int, error) {
 	var n int
 	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM api_keys`)
 	return n, err
+}
+
+// DeleteOldAuditLogs removes audit log entries whose timestamp is older than
+// the given cutoff. Returns the number of rows deleted.
+// Called by the background cleanup goroutine when AUDIT_LOG_RETENTION_DAYS > 0.
+func DeleteOldAuditLogs(ctx context.Context, db *sqlx.DB, before time.Time) (int64, error) {
+	result, err := db.ExecContext(ctx,
+		`DELETE FROM audit_logs WHERE timestamp < $1`, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // FailStalePendingRuns marks as "failed" any runs that are still in the

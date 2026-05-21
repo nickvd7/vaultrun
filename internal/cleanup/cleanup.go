@@ -1,5 +1,6 @@
-// Package cleanup provides a background goroutine that stops containers for
-// sessions that have been idle (no completed runs) beyond the configured timeout.
+// Package cleanup provides background goroutines that:
+//  1. Stop containers for sessions idle beyond the configured timeout.
+//  2. Purge audit log entries older than the configured retention window.
 package cleanup
 
 import (
@@ -30,7 +31,10 @@ type cleaner struct {
 // Start launches the idle-session cleanup loop. It runs until ctx is cancelled.
 // interval controls how frequently the sweep runs; idleFor is how long a session
 // must have been quiet before its container is stopped (workspace is preserved).
-func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, interval, idleFor time.Duration) {
+//
+// When retentionDays > 0, audit logs older than that many days are also pruned
+// on every sweep. Set to 0 to retain audit logs indefinitely.
+func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, interval, idleFor time.Duration, retentionDays int) {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
@@ -38,7 +42,11 @@ func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit
 		idleFor = 30 * time.Minute
 	}
 
-	slog.Info("idle cleanup started", "interval", interval, "idle_threshold", idleFor)
+	slog.Info("idle cleanup started",
+		"interval", interval,
+		"idle_threshold", idleFor,
+		"audit_retention_days", retentionDays,
+	)
 
 	cl := &cleaner{db: db, docker: docker, audit: al}
 
@@ -51,6 +59,9 @@ func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit
 			return
 		case <-ticker.C:
 			cl.sweep(ctx, idleFor)
+			if retentionDays > 0 {
+				cl.pruneAuditLogs(ctx, retentionDays)
+			}
 		}
 	}
 }
@@ -75,6 +86,23 @@ func (cl *cleaner) sweep(ctx context.Context, idleFor time.Duration) {
 		if shouldStop(s, cutoff) {
 			cl.stopSession(ctx, s)
 		}
+	}
+}
+
+// pruneAuditLogs deletes audit log rows older than retentionDays days.
+// Runs after every sweep tick when a retention window is configured.
+func (cl *cleaner) pruneAuditLogs(ctx context.Context, retentionDays int) {
+	before := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	n, err := dbpkg.DeleteOldAuditLogs(ctx, cl.db, before)
+	if err != nil {
+		slog.Error("cleanup: prune audit logs", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("cleanup: pruned old audit logs",
+			"deleted", n,
+			"older_than", before.Format(time.DateOnly),
+		)
 	}
 }
 

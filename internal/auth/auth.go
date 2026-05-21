@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +16,21 @@ import (
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
-const keyLength = 32
+const (
+	keyLength = 32
+
+	// lastUsedWriteInterval is the minimum time between last_used_at DB writes
+	// for the same API key. Without this, every authenticated request would
+	// issue a write query, adding unnecessary DB load at high request rates.
+	lastUsedWriteInterval = 60 * time.Second
+)
+
+// lastUsedCache stores the most-recent time we wrote last_used_at to the DB
+// for each key ID. Reads and writes are protected by lastUsedMu.
+var (
+	lastUsedMu    sync.Mutex
+	lastUsedCache = make(map[uuid.UUID]time.Time)
+)
 
 // GenerateKey creates a cryptographically random API key with a readable prefix.
 // Returns the plaintext key (shown once) and a models.APIKey ready to persist.
@@ -54,7 +69,8 @@ func sha256Key(s string) string {
 }
 
 // Validate looks up and validates the key, returning the matching APIKey record.
-// It updates last_used_at as a side effect.
+// It updates last_used_at as a side effect, throttled to at most once per
+// lastUsedWriteInterval per key to reduce write pressure on the database.
 func Validate(ctx context.Context, db *sqlx.DB, plaintext string) (*models.APIKey, error) {
 	hash := sha256Key(plaintext)
 
@@ -67,8 +83,19 @@ func Validate(ctx context.Context, db *sqlx.DB, plaintext string) (*models.APIKe
 		return nil, fmt.Errorf("api key expired")
 	}
 
-	// best-effort last_used update
-	_ = dbpkg.UpdateAPIKeyLastUsed(ctx, db, key.ID)
+	// Coalesce last_used_at writes: only hit the DB if we haven't written for
+	// this key in the last lastUsedWriteInterval. This avoids a write per request
+	// at high throughput while still keeping the field reasonably up-to-date.
+	now := time.Now().UTC()
+	lastUsedMu.Lock()
+	lastWrite, seen := lastUsedCache[key.ID]
+	if !seen || now.Sub(lastWrite) >= lastUsedWriteInterval {
+		lastUsedCache[key.ID] = now
+		lastUsedMu.Unlock()
+		_ = dbpkg.UpdateAPIKeyLastUsed(ctx, db, key.ID)
+	} else {
+		lastUsedMu.Unlock()
+	}
 
 	return key, nil
 }

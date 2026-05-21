@@ -54,3 +54,14 @@ func TestVerifyImageFailsClosedWhenBinaryMissing(t *testing.T) {
 		t.Error("expected error when cosign binary is missing, got nil")
 	}
 }
+
+// TestBridgeIfaceMatchesDockerConvention verifies that bridgeIface produces
+// the same naming convention Docker uses for custom bridge networks.
+func TestBridgeIfaceMatchesDockerConvention(t *testing.T) {
+	// Docker names a custom network's bridge interface "br-<networkID[:12]>"
+	networkID := "abc123def456789012345678"
+	want := "br-abc123def456"
+	if got := bridgeIface(networkID); got != want {
+		t.Errorf("bridgeIface(%q) = %q, want %q", networkID, got, want)
+	}
+}

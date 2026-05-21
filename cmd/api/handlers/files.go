@@ -65,6 +65,21 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 
 	maxBytes := fh.h.cfg.Workspace.MaxFileMB * 1024 * 1024
 
+	// Enforce total workspace size cap when MAX_WORKSPACE_MB > 0.
+	// We sum sizes of all existing files for the session (from the DB) and
+	// reject the upload if adding the new file would exceed the cap.
+	if cap := fh.h.cfg.Workspace.MaxWorkspaceMB; cap > 0 {
+		total, err := dbpkg.SumWorkspaceBytes(c.Request.Context(), fh.h.db, sessionID)
+		if err != nil {
+			slog.Warn("upload: workspace size check failed", "session_id", sessionID, "err", err)
+		} else if total+fileHeader.Size > cap*1024*1024 {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("workspace size cap of %d MB exceeded", cap),
+			})
+			return
+		}
+	}
+
 	if d := fh.h.policy.EvalFileAccess(c.Request.Context(), sessionID, userPath, true); !d.Allowed {
 		c.JSON(http.StatusForbidden, gin.H{"error": "file access denied by policy"})
 		return

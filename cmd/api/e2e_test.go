@@ -160,7 +160,12 @@ print("hello from vaultrun e2e")
 print("args:", sys.argv[1:])
 sys.exit(0)
 `
-		file := c.uploadFile(sessionID, "/workspace/hello.py", []byte(script))
+		// Upload to "hello.py" (relative to workspace root).
+		// SafePath joins this with the session dir, so the file lands at
+		// {session_dir}/hello.py on the host, which the Docker bind-mount
+		// exposes as /workspace/hello.py inside the container — exactly the
+		// path the execute_run step passes to Python.
+		file := c.uploadFile(sessionID, "hello.py", []byte(script))
 		if file["path"] == nil {
 			t.Fatal("upload_file: no path in response")
 		}

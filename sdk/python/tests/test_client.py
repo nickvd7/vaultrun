@@ -262,7 +262,7 @@ def test_download_file_success(client: Client) -> None:
     file_bytes = b"print('hello')\n"
     rsps.add(
         rsps.GET,
-        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/files//workspace/script.py",
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/files/workspace/script.py",
         body=file_bytes,
         status=200,
         content_type="application/octet-stream",
@@ -462,3 +462,216 @@ def test_revoke_key(client: Client) -> None:
     client.revoke_key(KEY_ID)
 
     assert len(rsps.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# test_get_session
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_get_session(client: Client) -> None:
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}",
+        json=SESSION_JSON,
+        status=200,
+    )
+
+    session = client.get_session(SESSION_ID)
+
+    assert isinstance(session, Session)
+    assert session.id == SESSION_ID
+    assert session.image == "python:3.12-slim"
+    assert session.status == "running"
+    assert len(rsps.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# test_run_async
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_run_async(client: Client) -> None:
+    from sandbox_sdk.client import AsyncRunResult
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/run/async",
+        json={"run_id": RUN_ID, "status": "pending", "message": "run enqueued"},
+        status=202,
+    )
+
+    result = client.run_async(SESSION_ID, command="python", args=["train.py"], timeout_seconds=60)
+
+    assert isinstance(result, AsyncRunResult)
+    assert result.run_id == RUN_ID
+    assert result.status == "pending"
+    assert result.message == "run enqueued"
+
+    body = rsps.calls[0].request.body
+    decoded = body.decode() if isinstance(body, bytes) else body
+    assert "python" in decoded
+    assert "train.py" in decoded
+
+
+# ---------------------------------------------------------------------------
+# test_update_labels
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_update_labels(client: Client) -> None:
+    new_labels = {"env": "prod", "team": "ml"}
+    rsps.add(
+        rsps.PATCH,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/labels",
+        json={"labels": new_labels},
+        status=200,
+    )
+
+    client.update_labels(SESSION_ID, new_labels)
+
+    assert len(rsps.calls) == 1
+    body = rsps.calls[0].request.body
+    decoded = body.decode() if isinstance(body, bytes) else body
+    assert "prod" in decoded
+    assert "ml" in decoded
+
+
+# ---------------------------------------------------------------------------
+# test_list_files
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_list_files(client: Client) -> None:
+    second_file = dict(FILE_JSON, id="file-zzz", path="/workspace/out.csv")
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/files",
+        json={"files": [FILE_JSON, second_file]},
+        status=200,
+    )
+
+    files = client.list_files(SESSION_ID)
+
+    assert len(files) == 2
+    assert all(isinstance(f, File) for f in files)
+    assert files[0].id == FILE_ID
+    assert files[1].path == "/workspace/out.csv"
+
+
+# ---------------------------------------------------------------------------
+# test_download_workspace
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_download_workspace(client: Client) -> None:
+    fake_zip = b"PK\x03\x04fake-zip-content"
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/workspace.zip",
+        body=fake_zip,
+        status=200,
+        content_type="application/zip",
+    )
+
+    data = client.download_workspace(SESSION_ID)
+
+    assert data == fake_zip
+    assert len(rsps.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# test_verify_webhook_signature_valid
+# ---------------------------------------------------------------------------
+
+def test_verify_webhook_signature_valid() -> None:
+    import hashlib
+    import hmac as _hmac
+
+    secret = "my-webhook-secret"
+    payload = b'{"run_id":"abc","status":"completed"}'
+    sig = "sha256=" + _hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+    assert Client.verify_webhook_signature(payload, sig, secret) is True
+
+
+def test_verify_webhook_signature_invalid() -> None:
+    secret = "my-webhook-secret"
+    payload = b'{"run_id":"abc","status":"completed"}'
+    bad_sig = "sha256=deadbeefdeadbeef"
+
+    assert Client.verify_webhook_signature(payload, bad_sig, secret) is False
+
+
+def test_verify_webhook_signature_missing_prefix() -> None:
+    # A signature without "sha256=" prefix should fail.
+    secret = "my-secret"
+    payload = b"data"
+    assert Client.verify_webhook_signature(payload, "badhex", secret) is False
+
+
+# ---------------------------------------------------------------------------
+# test_api_error_propagation
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_api_error_propagation(client: Client) -> None:
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/bad-id",
+        json={"error": "session not found"},
+        status=404,
+    )
+
+    with pytest.raises(VaultRunError) as exc_info:
+        client.get_session("bad-id")
+
+    assert exc_info.value.status_code == 404
+    assert "session not found" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# test_api_key_header_sent
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_api_key_header_sent(client: Client) -> None:
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}",
+        json=SESSION_JSON,
+        status=200,
+    )
+
+    client.get_session(SESSION_ID)
+
+    sent = rsps.calls[0].request.headers.get("X-API-Key")
+    assert sent == "vr_test_key"
+
+
+# ---------------------------------------------------------------------------
+# test_run_async_with_callback
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_run_async_with_callback(client: Client) -> None:
+    from sandbox_sdk.client import AsyncRunResult
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/run/async",
+        json={"run_id": RUN_ID, "status": "pending", "message": "run enqueued"},
+        status=202,
+    )
+
+    result = client.run_async(
+        SESSION_ID,
+        command="python",
+        callback_url="https://my.app/webhook",
+    )
+
+    assert isinstance(result, AsyncRunResult)
+    body = rsps.calls[0].request.body
+    decoded = body.decode() if isinstance(body, bytes) else body
+    assert "callback_url" in decoded
+    assert "my.app" in decoded

@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"mime"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -46,6 +50,7 @@ type RunRequest struct {
 	TimeoutSeconds int
 	Actor          string
 	CallbackURL    string // empty = no async callback
+	WorkspacePath  string // host path of the session workspace; used for artifact detection
 }
 
 // Execute runs a command inside the sandbox container, persists the run record,
@@ -84,6 +89,9 @@ func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.W
 
 // executeImpl is the shared synchronous execution path for Execute and ExecutePrepared.
 func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Run) (*models.Run, error) {
+	// Snapshot workspace before execution so we can detect new/modified files afterwards.
+	preSnap := snapshotDir(req.WorkspacePath)
+
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.Exec(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
@@ -119,6 +127,11 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 	r.emitFinish(ctx, req, run, status, durationMS)
 	metrics.ObserveRun(status, durationMS)
 
+	// Detect any files the run created or modified and record them in the DB.
+	if req.WorkspacePath != "" {
+		r.detectArtifacts(ctx, req.SessionID, req.WorkspacePath, preSnap)
+	}
+
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
 		return run, nil
@@ -132,6 +145,9 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 
 // streamImpl is the shared streaming execution path for Stream.
 func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run, stdout, stderr io.Writer) (*models.Run, error) {
+	// Snapshot workspace before execution so we can detect new/modified files afterwards.
+	preSnap := snapshotDir(req.WorkspacePath)
+
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.ExecStream(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
@@ -164,6 +180,11 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 
 	r.emitFinish(ctx, req, run, status, durationMS)
 	metrics.ObserveRun(status, durationMS)
+
+	// Detect any files the run created or modified and record them in the DB.
+	if req.WorkspacePath != "" {
+		r.detectArtifacts(ctx, req.SessionID, req.WorkspacePath, preSnap)
+	}
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
@@ -286,3 +307,80 @@ func resolveStatus(execErr error, result *dockerpkg.ExecResult) string {
 	}
 	return models.RunStatusCompleted
 }
+
+// ---------------------------------------------------------------------------
+// Artifact detection helpers
+// ---------------------------------------------------------------------------
+
+// snapshotDir returns a map of absolute file path → mtime for every regular
+// file currently in dir. Returns an empty map if dir is empty or doesn't exist.
+func snapshotDir(dir string) map[string]time.Time {
+	snap := make(map[string]time.Time)
+	if dir == "" {
+		return snap
+	}
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		snap[p] = info.ModTime()
+		return nil
+	})
+	return snap
+}
+
+// detectArtifacts walks the workspace directory and upserts any file that is
+// new or has a modification time later than its pre-run snapshot entry. This
+// makes files written by container processes visible through the Files API
+// without requiring an explicit upload.
+func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir string, preSnap map[string]time.Time) {
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		// Skip if the file existed before the run and hasn't changed.
+		if prev, existed := preSnap[p]; existed && !info.ModTime().After(prev) {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return nil
+		}
+		contentType := mime.TypeByExtension(filepath.Ext(p))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		now := time.Now().UTC()
+		f := &models.File{
+			ID:          uuid.New(),
+			SessionID:   sessionID,
+			Path:        rel,
+			SizeBytes:   info.Size(),
+			ContentType: contentType,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := dbpkg.UpsertFile(ctx, r.db, f); err != nil {
+			slog.Warn("artifact detection: failed to upsert file",
+				"session_id", sessionID,
+				"path", rel,
+				"err", err,
+			)
+		}
+		return nil
+	})
+}
+
+// snapshotDirForTest exposes snapshotDir for unit tests (same package).
+func snapshotDirForTest(dir string) map[string]time.Time { return snapshotDir(dir) }
+
+// deleteFileForTest exposes os.Remove for cleanup in tests.
+func deleteFileForTest(path string) error { return os.Remove(path) }

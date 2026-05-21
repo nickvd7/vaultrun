@@ -124,6 +124,11 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 	sessH := handlers.NewSessionHandler(hub)
 	api.GET("/sessions", sessH.List)
 	api.GET("/sessions/:id", sessH.Get)
+	api.PATCH("/sessions/:id/labels", sessH.UpdateLabels)
+
+	policyH := handlers.NewPolicyHandler(hub)
+	api.GET("/policy", policyH.Get)
+	api.POST("/policy/eval", policyH.Eval)
 
 	auditH := handlers.NewAuditHandler(hub)
 	api.GET("/audit", auditH.List)
@@ -465,5 +470,203 @@ func TestAuditRecordsKeyRevoke(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected apikey.revoked audit log after key revocation")
+	}
+}
+
+// ── session labels ────────────────────────────────────────────────────────────
+
+// insertFakeSession writes a minimal session directly to the DB for tests that
+// need a session record but don't want to spin up a Docker container.
+func insertFakeSession(t *testing.T, id, actor string) {
+	t.Helper()
+	_, err := testDB.ExecContext(context.Background(), `
+		INSERT INTO sessions (id, name, image, status, network_enabled, cpu_limit,
+		    memory_limit_mb, timeout_seconds, workspace_path, labels, allowed_hosts,
+		    created_by, created_at, updated_at)
+		VALUES ($1, NULL, 'python:3.12-slim', 'running', false, 1.0,
+		    512, 300, '/tmp/ws', '{}', '{}', $2, NOW(), NOW())`,
+		id, actor,
+	)
+	if err != nil {
+		t.Fatalf("insertFakeSession: %v", err)
+	}
+}
+
+func TestSessionUpdateLabels(t *testing.T) {
+	truncateAll(t)
+	sessID := "00000000-0000-0000-0000-000000000001"
+	insertFakeSession(t, sessID, "master")
+
+	r := newTestRouter(testDB)
+
+	// Set two labels
+	w := rec(r, "PATCH", "/api/v1/sessions/"+sessID+"/labels",
+		`{"labels":{"env":"prod","team":"ml"}}`, masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var resp1 struct {
+		Labels map[string]string `json:"labels"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp1)
+	if resp1.Labels["env"] != "prod" {
+		t.Errorf("want env=prod, got %v", resp1.Labels["env"])
+	}
+	if resp1.Labels["team"] != "ml" {
+		t.Errorf("want team=ml, got %v", resp1.Labels["team"])
+	}
+
+	// Verify they're persisted via GET
+	w2 := rec(r, "GET", "/api/v1/sessions/"+sessID, "", masterHdr())
+	if w2.Code != http.StatusOK {
+		t.Fatalf("GET session: %d", w2.Code)
+	}
+	var sess map[string]interface{}
+	_ = json.NewDecoder(w2.Body).Decode(&sess)
+	lbls, _ := sess["labels"].(map[string]interface{})
+	if lbls["env"] != "prod" {
+		t.Errorf("labels not persisted: %v", lbls)
+	}
+}
+
+func TestSessionUpdateLabelsClear(t *testing.T) {
+	truncateAll(t)
+	sessID := "00000000-0000-0000-0000-000000000002"
+	insertFakeSession(t, sessID, "master")
+
+	r := newTestRouter(testDB)
+
+	// Set labels first
+	rec(r, "PATCH", "/api/v1/sessions/"+sessID+"/labels",
+		`{"labels":{"env":"staging"}}`, masterHdr())
+
+	// Clear all labels
+	w := rec(r, "PATCH", "/api/v1/sessions/"+sessID+"/labels",
+		`{"labels":{}}`, masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp struct {
+		Labels map[string]string `json:"labels"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Labels) != 0 {
+		t.Errorf("expected empty labels after clear, got %v", resp.Labels)
+	}
+}
+
+func TestSessionLabelFilterMatch(t *testing.T) {
+	truncateAll(t)
+	sessID := "00000000-0000-0000-0000-000000000003"
+	insertFakeSession(t, sessID, "master")
+
+	r := newTestRouter(testDB)
+
+	// Apply a label
+	rec(r, "PATCH", "/api/v1/sessions/"+sessID+"/labels",
+		`{"labels":{"project":"alpha"}}`, masterHdr())
+
+	// Filter by that label — should return 1 session
+	w := rec(r, "GET", "/api/v1/sessions?label=project:alpha", "", masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Sessions []map[string]interface{} `json:"sessions"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Sessions) != 1 {
+		t.Errorf("want 1 session, got %d", len(resp.Sessions))
+	}
+}
+
+func TestSessionLabelFilterNoMatch(t *testing.T) {
+	truncateAll(t)
+	sessID := "00000000-0000-0000-0000-000000000004"
+	insertFakeSession(t, sessID, "master")
+
+	r := newTestRouter(testDB)
+
+	// Filter by a label that doesn't exist
+	w := rec(r, "GET", "/api/v1/sessions?label=project:beta", "", masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp struct {
+		Sessions []map[string]interface{} `json:"sessions"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Sessions) != 0 {
+		t.Errorf("want 0 sessions, got %d", len(resp.Sessions))
+	}
+}
+
+func TestSessionUpdateLabelsBadUUID(t *testing.T) {
+	r := newTestRouter(testDB)
+	w := rec(r, "PATCH", "/api/v1/sessions/not-a-uuid/labels",
+		`{"labels":{"k":"v"}}`, masterHdr())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+}
+
+// ── policy ────────────────────────────────────────────────────────────────────
+
+func TestPolicyGet(t *testing.T) {
+	r := newTestRouter(testDB)
+	w := rec(r, "GET", "/api/v1/policy", "", masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	// AllowAll policy → enabled should be false (no OPA policy file configured)
+	if _, ok := resp["enabled"]; !ok {
+		t.Error("response should contain 'enabled' field")
+	}
+}
+
+func TestPolicyEvalCommandAllowed(t *testing.T) {
+	r := newTestRouter(testDB)
+	w := rec(r, "POST", "/api/v1/policy/eval",
+		`{"type":"command","command":"python","args":["script.py"]}`, masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Allowed bool   `json:"allowed"`
+		Type    string `json:"type"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if !resp.Allowed {
+		t.Error("AllowAll policy should allow all commands")
+	}
+	if resp.Type != "command" {
+		t.Errorf("want type=command, got %q", resp.Type)
+	}
+}
+
+func TestPolicyEvalFileAllowed(t *testing.T) {
+	r := newTestRouter(testDB)
+	w := rec(r, "POST", "/api/v1/policy/eval",
+		`{"type":"file","path":"/workspace/data.csv","write":true}`, masterHdr())
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Allowed bool `json:"allowed"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if !resp.Allowed {
+		t.Error("AllowAll policy should allow file operations")
+	}
+}
+
+func TestPolicyEvalBadType(t *testing.T) {
+	r := newTestRouter(testDB)
+	w := rec(r, "POST", "/api/v1/policy/eval",
+		`{"type":"unknown"}`, masterHdr())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body)
 	}
 }

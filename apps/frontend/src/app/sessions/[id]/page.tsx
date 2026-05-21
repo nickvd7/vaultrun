@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square } from "lucide-react";
+import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check } from "lucide-react";
 import Link from "next/link";
 import { api, getStoredApiKey } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -31,6 +31,12 @@ export default function SessionDetailPage() {
   const [streaming, setStreaming] = useState(false);
   const [asyncRunId, setAsyncRunId] = useState<string | null>(null);
   const [asyncPolling, setAsyncPolling] = useState(false);
+
+  // Labels editor
+  const [editingLabels, setEditingLabels] = useState(false);
+  const [pendingLabels, setPendingLabels] = useState<Record<string, string>>({});
+  const [newLabelKey, setNewLabelKey] = useState("");
+  const [newLabelVal, setNewLabelVal] = useState("");
 
   // Live stream output
   const [streamOutput, setStreamOutput] = useState<{ kind: "out" | "err"; text: string }[]>([]);
@@ -194,6 +200,40 @@ export default function SessionDetailPage() {
     router.push("/sessions");
   };
 
+  const handleEditLabels = () => {
+    setPendingLabels({ ...(session?.labels ?? {}) });
+    setNewLabelKey("");
+    setNewLabelVal("");
+    setEditingLabels(true);
+  };
+
+  const handleSaveLabels = async () => {
+    try {
+      await api.sessions.updateLabels(id, pendingLabels);
+      setSession((s) => s ? { ...s, labels: pendingLabels } : s);
+      setEditingLabels(false);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed to save labels");
+    }
+  };
+
+  const handleAddPendingLabel = () => {
+    const k = newLabelKey.trim();
+    const v = newLabelVal.trim();
+    if (!k) return;
+    setPendingLabels((p) => ({ ...p, [k]: v }));
+    setNewLabelKey("");
+    setNewLabelVal("");
+  };
+
+  const handleRemovePendingLabel = (key: string) => {
+    setPendingLabels((p) => {
+      const next = { ...p };
+      delete next[key];
+      return next;
+    });
+  };
+
   if (!session) {
     return <div className="text-slate-600 text-sm p-8">Loading session…</div>;
   }
@@ -239,6 +279,112 @@ export default function SessionDetailPage() {
             <div className="text-sm text-slate-200 font-mono">{value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Labels panel */}
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+            <Tag className="w-3.5 h-3.5" /> Labels
+          </h2>
+          {!editingLabels && (
+            <button
+              onClick={handleEditLabels}
+              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 rounded px-2 py-1"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+
+        {!editingLabels ? (
+          /* View mode */
+          <div className="flex flex-wrap gap-2 min-h-[1.5rem]">
+            {Object.keys(session.labels ?? {}).length === 0 ? (
+              <span className="text-xs text-slate-600 italic">No labels</span>
+            ) : (
+              Object.entries(session.labels ?? {}).map(([k, v]) => (
+                <span
+                  key={k}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-xs font-mono text-slate-300"
+                >
+                  <span className="text-indigo-400">{k}</span>
+                  <span className="text-slate-500">=</span>
+                  {v}
+                </span>
+              ))
+            )}
+          </div>
+        ) : (
+          /* Edit mode */
+          <div className="space-y-2">
+            {/* Existing labels */}
+            {Object.entries(pendingLabels).map(([k, v]) => (
+              <div key={k} className="flex items-center gap-2">
+                <input
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-300 w-36 focus:outline-none focus:border-indigo-500"
+                  value={k}
+                  readOnly
+                />
+                <span className="text-slate-600 text-xs">=</span>
+                <input
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                  value={v}
+                  onChange={(e) => setPendingLabels((p) => ({ ...p, [k]: e.target.value }))}
+                />
+                <button
+                  onClick={() => handleRemovePendingLabel(k)}
+                  className="text-red-500 hover:text-red-400"
+                  title="Remove label"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+
+            {/* Add new label row */}
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-800">
+              <input
+                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-300 w-36 focus:outline-none focus:border-indigo-500"
+                placeholder="key"
+                value={newLabelKey}
+                onChange={(e) => setNewLabelKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddPendingLabel()}
+              />
+              <span className="text-slate-600 text-xs">=</span>
+              <input
+                className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                placeholder="value"
+                value={newLabelVal}
+                onChange={(e) => setNewLabelVal(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddPendingLabel()}
+              />
+              <button
+                onClick={handleAddPendingLabel}
+                className="text-green-500 hover:text-green-400"
+                title="Add label"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSaveLabels}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-500"
+              >
+                <Check className="w-3 h-3" /> Save
+              </button>
+              <button
+                onClick={() => setEditingLabels(false)}
+                className="px-3 py-1.5 text-xs text-slate-400 border border-slate-700 rounded hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Execute panel */}

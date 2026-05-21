@@ -75,6 +75,7 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		WorkingDir:     req.WorkingDir,
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          middleware.Actor(c),
+		WorkspacePath:  session.WorkspacePath,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -149,6 +150,7 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		WorkingDir:     req.WorkingDir,
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          middleware.Actor(c),
+		WorkspacePath:  session.WorkspacePath,
 	}, stdoutW, stderrW)
 
 	// Send final done event regardless of error
@@ -283,6 +285,7 @@ func (rh *RunHandler) Async(c *gin.Context) {
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          actor,
 		CallbackURL:    req.CallbackURL,
+		WorkspacePath:  session.WorkspacePath,
 	}
 
 	// Create the pending run record now so we can return its ID.

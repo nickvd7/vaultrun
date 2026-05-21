@@ -109,7 +109,7 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 
 	al := audit.New(db)
 	ws := workspace.New(cfg.Workspace.BaseDir)
-	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{})
+	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil)
 	authMW := middleware.APIKeyAuth(db, testMasterKey)
 
 	r.GET("/health", handlers.NewHealthHandler(hub).Health)

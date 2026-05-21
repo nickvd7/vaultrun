@@ -33,6 +33,10 @@ type createSessionRequest struct {
 	MemoryLimitMB  int                `json:"memory_limit_mb"`
 	TimeoutSeconds int                `json:"timeout_seconds"`
 	Labels         map[string]string  `json:"labels"`
+	// AllowedHosts is an optional list of hostnames or CIDRs the container
+	// may reach when network_enabled is true. Entries are resolved to
+	// /etc/hosts entries at container creation time for DNS-level control.
+	AllowedHosts   []string           `json:"allowed_hosts"`
 }
 
 // POST /api/v1/sessions
@@ -111,6 +115,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		labels[k] = v
 	}
 
+	allowedHosts := models.StringArray(req.AllowedHosts)
+	if allowedHosts == nil {
+		allowedHosts = models.StringArray{}
+	}
+
 	session := &models.Session{
 		ID:             sessionID,
 		Name:           req.Name,
@@ -122,6 +131,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		TimeoutSeconds: req.TimeoutSeconds,
 		WorkspacePath:  wspath,
 		Labels:         labels,
+		AllowedHosts:   allowedHosts,
 		CreatedBy:      actor,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -145,6 +155,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		CPULimit:       req.CPULimit,
 		MemoryLimitMB:  req.MemoryLimitMB,
 		ContainerName:  containerName,
+		AllowedHosts:   []string(allowedHosts),
 	})
 	if err != nil {
 		slog.Error("container creation failed",

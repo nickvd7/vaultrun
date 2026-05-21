@@ -20,6 +20,7 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
@@ -122,6 +123,15 @@ func main() {
 		slog.Info("async job queue: using in-memory (set REDIS_ADDR for durable queue)")
 		queue = jobqueue.New(rnr, asyncWorkers, asyncBufSize, cfg.Observability.WebhookSecret)
 	}
+
+	// Background goroutine: publish job queue depth to Prometheus every 15s.
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			metrics.JobQueueDepth.Set(float64(queue.Len()))
+		}
+	}()
 
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

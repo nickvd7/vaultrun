@@ -51,6 +51,51 @@ var (
 		Help:      "HTTP request duration in seconds by method and route.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "route"})
+
+	// ContainerCreationsTotal counts container create attempts by outcome.
+	// Labels: status = "created" | "failed"
+	ContainerCreationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "vaultrun",
+		Name:      "container_creations_total",
+		Help:      "Total sandbox container creation attempts, partitioned by outcome.",
+	}, []string{"status"})
+
+	// ContainerStopsTotal counts container stop/remove calls.
+	ContainerStopsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "vaultrun",
+		Name:      "container_stops_total",
+		Help:      "Total number of sandbox containers stopped and removed.",
+	})
+
+	// FilesUploadedTotal counts files uploaded to session workspaces.
+	FilesUploadedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "vaultrun",
+		Name:      "files_uploaded_total",
+		Help:      "Total number of files uploaded to session workspaces.",
+	})
+
+	// FileBytesUploadedTotal accumulates the total bytes uploaded.
+	FileBytesUploadedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "vaultrun",
+		Name:      "file_bytes_uploaded_total",
+		Help:      "Total bytes uploaded to session workspaces.",
+	})
+
+	// JobQueueDepth is the current approximate number of pending async run jobs.
+	// Updated periodically by a background goroutine in main.
+	JobQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "vaultrun",
+		Name:      "job_queue_depth",
+		Help:      "Approximate number of async run jobs currently waiting in the queue.",
+	})
+
+	// RateLimitHitsTotal counts requests rejected by the rate limiter.
+	// Labels: type = "ip" (IP-based) | "actor" (per-API-key)
+	RateLimitHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "vaultrun",
+		Name:      "rate_limit_hits_total",
+		Help:      "Total requests rejected by the rate limiter, by limiter type.",
+	}, []string{"type"})
 )
 
 // ObserveRun records run completion metrics. Call after the run status is finalised.

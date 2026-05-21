@@ -8,6 +8,8 @@ export interface Session {
   cpu_limit: number;
   memory_limit_mb: number;
   timeout_seconds: number;
+  labels: Record<string, string>;
+  allowed_hosts?: string[];
   created_by: string;
   created_at: string;
   updated_at: string;

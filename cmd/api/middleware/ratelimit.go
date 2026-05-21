@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/nickvd7/vaultrun/internal/metrics"
 )
 
 // bucket is a simple token-bucket per key.
@@ -96,6 +98,7 @@ func RateLimit(requestsPerMinute int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := c.ClientIP()
 		if !l.allow(key) {
+			metrics.RateLimitHitsTotal.WithLabelValues("ip").Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": "rate limit exceeded",
 			})
@@ -118,6 +121,7 @@ func ActorRateLimit(requestsPerMinute int) gin.HandlerFunc {
 			return
 		}
 		if !l.allow(actor) {
+			metrics.RateLimitHitsTotal.WithLabelValues("actor").Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": "rate limit exceeded",
 			})

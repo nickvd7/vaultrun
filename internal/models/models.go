@@ -107,8 +107,13 @@ type Session struct {
 	MemoryLimitMB   int        `db:"memory_limit_mb"  json:"memory_limit_mb"`
 	TimeoutSeconds  int        `db:"timeout_seconds"  json:"timeout_seconds"`
 	WorkspacePath   string     `db:"workspace_path"   json:"-"` // internal host path — never expose to callers
-	Labels          JSONB      `db:"labels"           json:"labels"`
-	CreatedBy       string     `db:"created_by"       json:"created_by"`
+	Labels          JSONB       `db:"labels"           json:"labels"`
+	// AllowedHosts is an optional list of hostnames or CIDRs the container may
+	// reach when NetworkEnabled is true. An empty list means unrestricted bridge
+	// access. Entries are resolved to /etc/hosts at container creation time.
+	// For full egress enforcement, operators should pair this with host iptables.
+	AllowedHosts    StringArray `db:"allowed_hosts"    json:"allowed_hosts,omitempty"`
+	CreatedBy       string      `db:"created_by"       json:"created_by"`
 	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
 	StoppedAt       *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`

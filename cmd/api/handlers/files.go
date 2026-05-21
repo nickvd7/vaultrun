@@ -21,6 +21,7 @@ import (
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
@@ -117,6 +118,8 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		},
 	})
 
+	metrics.FilesUploadedTotal.Inc()
+	metrics.FileBytesUploadedTotal.Add(float64(written))
 	c.JSON(http.StatusCreated, fileMeta)
 }
 

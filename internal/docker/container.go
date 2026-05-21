@@ -3,10 +3,14 @@ package docker
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/google/uuid"
+
+	"github.com/nickvd7/vaultrun/internal/metrics"
 )
 
 // SandboxConfig holds the parameters for creating a session container.
@@ -18,6 +22,12 @@ type SandboxConfig struct {
 	CPULimit       float64 // fractional CPUs, e.g. 0.5 = half a core
 	MemoryLimitMB  int
 	ContainerName  string
+	// AllowedHosts is an optional list of hostnames or IPs that the container
+	// may reach when NetworkEnabled is true. Entries are resolved to IP
+	// addresses at creation time and injected into /etc/hosts via ExtraHosts.
+	// Note: this provides DNS-level resolution hints only. For full network
+	// isolation, operators should apply host-side iptables rules in addition.
+	AllowedHosts []string
 }
 
 // CreateSandbox creates and starts an isolated Docker container.
@@ -25,10 +35,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	// Ensure image is available
 	exists, err := c.ImageExists(ctx, cfg.Image)
 	if err != nil {
+		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("check image: %w", err)
 	}
 	if !exists {
 		if err := c.PullImage(ctx, cfg.Image); err != nil {
+			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 			return "", err
 		}
 	}
@@ -54,6 +66,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		// Embed the custom JSON profile directly into SecurityOpt.
 		securityOpt = append(securityOpt, "seccomp="+c.seccompJSON)
 	}
+
+	// Resolve AllowedHosts to /etc/hosts entries ("hostname:ip").
+	// This gives the container correct DNS resolution for the allowed set.
+	// Real network egress filtering requires host-side iptables; ExtraHosts
+	// alone does not block other outbound connections.
+	extraHosts := resolveExtraHosts(cfg.AllowedHosts)
 
 	hostCfg := &container.HostConfig{
 		NetworkMode: networkMode,
@@ -83,6 +101,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		SecurityOpt:    securityOpt,
 		CapDrop:        []string{"ALL"},
 		CapAdd:         []string{}, // grant nothing extra
+		ExtraHosts:     extraHosts,
 	}
 
 	resp, err := c.inner.ContainerCreate(ctx,
@@ -103,15 +122,18 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		cfg.ContainerName,
 	)
 	if err != nil {
+		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("container create: %w", err)
 	}
 
 	if err := c.inner.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		// Clean up the created (but not started) container
 		_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("container start: %w", err)
 	}
 
+	metrics.ContainerCreationsTotal.WithLabelValues("created").Inc()
 	return resp.ID, nil
 }
 
@@ -122,6 +144,7 @@ func (c *Client) StopSandbox(ctx context.Context, containerID string) error {
 		// If it's already stopped/removed, that's fine
 		return nil
 	}
+	metrics.ContainerStopsTotal.Inc()
 	return c.inner.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true, RemoveVolumes: false})
 }
 
@@ -134,4 +157,32 @@ func (c *Client) ContainerRunning(ctx context.Context, containerID string) (bool
 		return false, nil // not found == not running
 	}
 	return info.State.Running, nil
+}
+
+// resolveExtraHosts converts a list of hostnames/IPs into Docker ExtraHosts
+// entries of the form "hostname:ip". Pure IP addresses are added as "ip:ip".
+// Hostnames that fail to resolve are skipped with a warning.
+func resolveExtraHosts(hosts []string) []string {
+	if len(hosts) == 0 {
+		return nil
+	}
+	var extra []string
+	for _, h := range hosts {
+		// If it's already a raw IP, add "ip:ip" so /etc/hosts maps it to itself.
+		if ip := net.ParseIP(h); ip != nil {
+			extra = append(extra, h+":"+ip.String())
+			continue
+		}
+		// Resolve hostname → IPs.
+		addrs, err := net.LookupHost(h)
+		if err != nil {
+			slog.Warn("sandbox: failed to resolve allowed host, skipping",
+				"host", h, "err", err)
+			continue
+		}
+		for _, addr := range addrs {
+			extra = append(extra, h+":"+addr)
+		}
+	}
+	return extra
 }

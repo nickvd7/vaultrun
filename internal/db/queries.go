@@ -16,9 +16,11 @@ import (
 func CreateSession(ctx context.Context, db *sqlx.DB, s *models.Session) error {
 	q := `
 		INSERT INTO sessions (id, name, image, status, network_enabled, cpu_limit,
-		    memory_limit_mb, timeout_seconds, workspace_path, labels, created_by, created_at, updated_at)
+		    memory_limit_mb, timeout_seconds, workspace_path, labels, allowed_hosts,
+		    created_by, created_at, updated_at)
 		VALUES (:id, :name, :image, :status, :network_enabled, :cpu_limit,
-		    :memory_limit_mb, :timeout_seconds, :workspace_path, :labels, :created_by, :created_at, :updated_at)
+		    :memory_limit_mb, :timeout_seconds, :workspace_path, :labels, :allowed_hosts,
+		    :created_by, :created_at, :updated_at)
 	`
 	_, err := db.NamedExecContext(ctx, q, s)
 	return err

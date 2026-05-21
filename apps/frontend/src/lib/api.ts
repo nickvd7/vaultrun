@@ -55,6 +55,12 @@ export const api = {
 
     delete: (id: string) =>
       request<void>(`/sessions/${id}`, { method: "DELETE" }),
+
+    updateLabels: (id: string, labels: Record<string, string>) =>
+      request<{ labels: Record<string, string> }>(`/sessions/${id}/labels`, {
+        method: "PATCH",
+        body: JSON.stringify({ labels }),
+      }),
   },
 
   runs: {
@@ -79,6 +85,37 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+
+    /** Submit a non-blocking async run. Returns immediately with run_id. */
+    submitAsync: (
+      sessionId: string,
+      body: {
+        command: string;
+        args?: string[];
+        env?: Record<string, string>;
+        working_dir?: string;
+        timeout_seconds?: number;
+        callback_url?: string;
+      }
+    ) =>
+      request<{ run_id: string; status: string; message: string }>(
+        `/sessions/${sessionId}/run/async`,
+        { method: "POST", body: JSON.stringify(body) }
+      ),
+
+    /**
+     * Poll a run by ID until it reaches a terminal state (completed | failed | timeout).
+     * Resolves with the final Run object. Rejects after maxAttempts or on error.
+     */
+    poll: async (runId: string, intervalMs = 1500, maxAttempts = 120): Promise<Run> => {
+      const terminal = new Set(["completed", "failed", "timeout"]);
+      for (let i = 0; i < maxAttempts; i++) {
+        const run = await request<Run>(`/runs/${runId}`);
+        if (terminal.has(run.status)) return run;
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+      throw new Error(`Run ${runId} did not complete within the polling window`);
+    },
   },
 
   files: {

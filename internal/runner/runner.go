@@ -354,6 +354,11 @@ func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir s
 		if err != nil {
 			return nil
 		}
+		// Normalise to /path form so artifact paths are consistent with
+		// paths stored by the upload handler (filepath.Clean("/" + userPath)).
+		// Without this, the download endpoint can't serve artifact files and
+		// ON CONFLICT deduplication fails for modified pre-existing files.
+		normalizedPath := "/" + rel
 		contentType := mime.TypeByExtension(filepath.Ext(p))
 		if contentType == "" {
 			contentType = "application/octet-stream"
@@ -362,7 +367,7 @@ func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir s
 		f := &models.File{
 			ID:          uuid.New(),
 			SessionID:   sessionID,
-			Path:        rel,
+			Path:        normalizedPath,
 			SizeBytes:   info.Size(),
 			ContentType: contentType,
 			CreatedAt:   now,

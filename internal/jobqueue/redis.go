@@ -52,6 +52,7 @@ type jobPayload struct {
 	TimeoutSeconds int               `json:"timeout_seconds"`
 	Actor          string            `json:"actor"`
 	CallbackURL    string            `json:"callback_url"`
+	WorkspacePath  string            `json:"workspace_path"` // host path for artifact detection
 }
 
 // NewRedis creates a Redis Streams-backed Queue.
@@ -128,6 +129,7 @@ func (q *RedisQueue) Submit(j Job) bool {
 		TimeoutSeconds: j.Req.TimeoutSeconds,
 		Actor:          j.Req.Actor,
 		CallbackURL:    j.CallbackURL,
+		WorkspacePath:  j.Req.WorkspacePath,
 	}
 
 	b, err := json.Marshal(p)
@@ -235,6 +237,7 @@ func (q *RedisQueue) processMessage(msg redis.XMessage) {
 		TimeoutSeconds: p.TimeoutSeconds,
 		Actor:          p.Actor,
 		CallbackURL:    p.CallbackURL,
+		WorkspacePath:  p.WorkspacePath,
 	}
 
 	completedRun, execErr := q.runner.ExecutePrepared(ctx, req, run)

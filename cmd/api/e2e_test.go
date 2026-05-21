@@ -271,12 +271,55 @@ sys.exit(0)
 		}
 	})
 
-	// ── 12. List files in session ─────────────────────────────────────────────
+	// ── 12. List files — uploaded file is present ─────────────────────────────
 	t.Run("list_files", func(t *testing.T) {
 		resp := c.getMap("/api/v1/sessions/" + sessionID + "/files")
 		files, _ := resp["files"].([]any)
 		if len(files) < 1 {
-			t.Fatalf("list_files: want ≥1 file, got %d", len(files))
+			t.Fatalf("list_files: want ≥1 file (at least hello.py), got %d", len(files))
+		}
+		// The manually-uploaded script must be present regardless of artifact detection.
+		found := false
+		for _, f := range files {
+			fm := f.(map[string]any)
+			if path, _ := fm["path"].(string); path == "/hello.py" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("list_files: /hello.py not found in %v", files)
+		}
+	})
+
+	// ── 13. Artifact detection — run writes a file, check it appears ──────────
+	t.Run("artifact_detection", func(t *testing.T) {
+		// Run a command that creates a new file in the workspace.
+		writeCmd := c.postMap("/api/v1/sessions/"+sessionID+"/run", map[string]any{
+			"command":         "python",
+			"args":            []string{"-c", "open('/workspace/artifact.txt','w').write('detected')"},
+			"timeout_seconds": 10,
+		})
+		if status, _ := writeCmd["status"].(string); status != "completed" {
+			t.Fatalf("artifact run: want completed, got %q (stderr: %v)", status, writeCmd["stderr"])
+		}
+
+		// The file should now appear in the session's file list without an
+		// explicit upload — detectArtifacts registers it automatically.
+		resp := c.getMap("/api/v1/sessions/" + sessionID + "/files")
+		files, _ := resp["files"].([]any)
+
+		found := false
+		for _, f := range files {
+			fm := f.(map[string]any)
+			if path, _ := fm["path"].(string); path == "/artifact.txt" {
+				found = true
+				t.Logf("artifact.txt detected: size=%v content_type=%v", fm["size_bytes"], fm["content_type"])
+				break
+			}
+		}
+		if !found {
+			t.Errorf("artifact_detection: /artifact.txt not found in file list after run; files: %v", files)
 		}
 	})
 }

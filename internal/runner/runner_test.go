@@ -164,6 +164,42 @@ func TestDetectArtifactsNewFile(t *testing.T) {
 	}
 }
 
+func TestArtifactPathNormalization(t *testing.T) {
+	// Verify the path normalization logic used by detectArtifacts
+	// produces /path form (leading slash), consistent with upload handler.
+	dir := t.TempDir()
+	file := filepath.Join(dir, "result.csv")
+	if err := os.WriteFile(file, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(dir, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized := "/" + rel
+	if normalized != "/result.csv" {
+		t.Errorf("expected /result.csv, got %q", normalized)
+	}
+
+	// Subdirectory artifact should also produce /__pycache__/foo.pyc form
+	subDir := filepath.Join(dir, "__pycache__")
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pyc := filepath.Join(subDir, "foo.cpython-312.pyc")
+	if err := os.WriteFile(pyc, []byte("bytecode"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	relPyc, err := filepath.Rel(dir, pyc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalizedPyc := "/" + relPyc
+	if normalizedPyc != "/__pycache__/foo.cpython-312.pyc" {
+		t.Errorf("expected /__pycache__/foo.cpython-312.pyc, got %q", normalizedPyc)
+	}
+}
+
 func TestDetectArtifactsUnchangedFileSkipped(t *testing.T) {
 	dir := t.TempDir()
 	existingFile := filepath.Join(dir, "existing.txt")

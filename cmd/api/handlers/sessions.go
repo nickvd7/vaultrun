@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,12 +26,13 @@ type SessionHandler struct {
 func NewSessionHandler(h *Hub) *SessionHandler { return &SessionHandler{h: h} }
 
 type createSessionRequest struct {
-	Name           *string `json:"name"`
-	Image          string  `json:"image"`
-	NetworkEnabled bool    `json:"network_enabled"`
-	CPULimit       float64 `json:"cpu_limit"`
-	MemoryLimitMB  int     `json:"memory_limit_mb"`
-	TimeoutSeconds int     `json:"timeout_seconds"`
+	Name           *string            `json:"name"`
+	Image          string             `json:"image"`
+	NetworkEnabled bool               `json:"network_enabled"`
+	CPULimit       float64            `json:"cpu_limit"`
+	MemoryLimitMB  int                `json:"memory_limit_mb"`
+	TimeoutSeconds int                `json:"timeout_seconds"`
+	Labels         map[string]string  `json:"labels"`
 }
 
 // POST /api/v1/sessions
@@ -103,6 +105,12 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	now := time.Now().UTC()
 
+	// Convert caller-supplied labels (string map) to JSONB.
+	labels := models.JSONB{}
+	for k, v := range req.Labels {
+		labels[k] = v
+	}
+
 	session := &models.Session{
 		ID:             sessionID,
 		Name:           req.Name,
@@ -113,6 +121,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		MemoryLimitMB:  req.MemoryLimitMB,
 		TimeoutSeconds: req.TimeoutSeconds,
 		WorkspacePath:  wspath,
+		Labels:         labels,
 		CreatedBy:      actor,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -177,6 +186,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 }
 
 // GET /api/v1/sessions
+// Supports optional ?label=key:value filter.
 func (sh *SessionHandler) List(c *gin.Context) {
 	pg := pagination(c)
 	// Non-master callers only see their own sessions (C-2 tenant isolation).
@@ -184,7 +194,17 @@ func (sh *SessionHandler) List(c *gin.Context) {
 	if listActor == "master" {
 		listActor = ""
 	}
-	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, listActor, pg.limit, pg.offset)
+
+	// Optional label filter: ?label=key:value
+	var labelKey, labelValue string
+	if lv := c.Query("label"); lv != "" {
+		if idx := strings.IndexByte(lv, ':'); idx > 0 {
+			labelKey = lv[:idx]
+			labelValue = lv[idx+1:]
+		}
+	}
+
+	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue, pg.limit, pg.offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
@@ -247,4 +267,37 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 
 	metrics.ActiveSessions.Dec()
 	c.JSON(http.StatusOK, gin.H{"message": "session deleted"})
+}
+
+// PATCH /api/v1/sessions/:id/labels
+// Replaces the session's entire label set. Pass {} to clear all labels.
+func (sh *SessionHandler) UpdateLabels(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	if _, ok := sh.h.checkSessionAccess(c, id); !ok {
+		return
+	}
+
+	var body struct {
+		Labels map[string]string `json:"labels" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	labels := models.JSONB{}
+	for k, v := range body.Labels {
+		labels[k] = v
+	}
+
+	if err := dbpkg.UpdateSessionLabels(c.Request.Context(), sh.h.db, id, labels); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update labels"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"labels": labels})
 }

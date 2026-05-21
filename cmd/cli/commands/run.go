@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -180,6 +181,109 @@ func newStreamCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&env, "env", nil, "Environment variables (KEY=VALUE)")
 	cmd.Flags().StringVar(&workDir, "workdir", "", "Working directory inside container")
 	return cmd
+}
+
+func newRunAsyncCmd() *cobra.Command {
+	var (
+		timeout     int
+		env         []string
+		workDir     string
+		callbackURL string
+		poll        bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "run-async <session-id> -- <command> [args...]",
+		Short: "Submit a command for non-blocking (async) execution",
+		Long: `Submit a command for execution without waiting for it to finish.
+Returns immediately with the run_id. Use 'vaultrun logs <run-id>' to check output.
+Optionally poll until completion with --poll, or receive a webhook via --callback.
+
+Examples:
+  vaultrun run-async abc123 -- python train.py
+  vaultrun run-async abc123 --callback https://my.app/webhook -- python train.py
+  vaultrun run-async abc123 --poll -- python train.py`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+			command := args[1]
+			cmdArgs := args[2:]
+
+			envMap := map[string]string{}
+			for _, e := range env {
+				for i, c := range e {
+					if c == '=' {
+						envMap[e[:i]] = e[i+1:]
+						break
+					}
+				}
+			}
+
+			body := map[string]interface{}{
+				"command":         command,
+				"args":            cmdArgs,
+				"timeout_seconds": timeout,
+				"env":             envMap,
+			}
+			if workDir != "" {
+				body["working_dir"] = workDir
+			}
+			if callbackURL != "" {
+				body["callback_url"] = callbackURL
+			}
+
+			var result map[string]interface{}
+			if err := newClient().post("/api/v1/sessions/"+sessionID+"/run/async", body, &result); err != nil {
+				return err
+			}
+
+			prettyJSON(result)
+
+			if poll {
+				runID, _ := result["run_id"].(string)
+				if runID == "" {
+					return fmt.Errorf("no run_id in response")
+				}
+				return pollRun(runID)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&timeout, "timeout", 30, "Execution timeout in seconds")
+	cmd.Flags().StringArrayVar(&env, "env", nil, "Environment variables (KEY=VALUE)")
+	cmd.Flags().StringVar(&workDir, "workdir", "", "Working directory inside container")
+	cmd.Flags().StringVar(&callbackURL, "callback", "", "Webhook URL to POST result to when done")
+	cmd.Flags().BoolVar(&poll, "poll", false, "Poll until the run completes and print output")
+	return cmd
+}
+
+// pollRun polls GET /runs/:id every second until the run reaches a terminal state.
+func pollRun(runID string) error {
+	client := newClient()
+	for {
+		var result map[string]interface{}
+		if err := client.get("/api/v1/runs/"+runID, &result); err != nil {
+			return err
+		}
+		status, _ := result["status"].(string)
+		switch status {
+		case "completed", "failed", "timeout":
+			if stdout, ok := result["stdout"].(string); ok && stdout != "" {
+				fmt.Println("\n--- stdout ---")
+				fmt.Print(stdout)
+			}
+			if stderr, ok := result["stderr"].(string); ok && stderr != "" {
+				fmt.Println("\n--- stderr ---")
+				fmt.Print(stderr)
+			}
+			fmt.Printf("\nRun %s: status=%s\n", runID, status)
+			return nil
+		default:
+			// still pending/running — wait and retry
+			time.Sleep(time.Second)
+		}
+	}
 }
 
 func newLogsCmd() *cobra.Command {

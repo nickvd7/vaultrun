@@ -26,6 +26,7 @@ Use this CLI to create sessions, upload files, execute commands, and inspect res
 		newSessionCmd(),
 		newFileCmd(),
 		newRunCmd(),
+		newRunAsyncCmd(),
 		newStreamCmd(),
 		newLogsCmd(),
 		newUpCmd(),

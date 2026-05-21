@@ -68,6 +68,10 @@ func (c *apiClient) post(path string, body, out interface{}) error {
 	return c.do("POST", path, body, out)
 }
 
+func (c *apiClient) patch(path string, body, out interface{}) error {
+	return c.do("PATCH", path, body, out)
+}
+
 func (c *apiClient) delete(path string) error {
 	return c.do("DELETE", path, nil, nil)
 }

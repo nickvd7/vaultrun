@@ -14,6 +14,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -29,6 +30,7 @@ type Hub struct {
 	audit  *audit.Logger
 	cfg    *config.Config
 	policy policy.Hook
+	queue  *jobqueue.Queue
 }
 
 func NewHub(
@@ -39,11 +41,12 @@ func NewHub(
 	audit *audit.Logger,
 	cfg *config.Config,
 	pol policy.Hook,
+	queue *jobqueue.Queue,
 ) *Hub {
 	if pol == nil {
 		pol = policy.AllowAll{}
 	}
-	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol}
+	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol, queue: queue}
 }
 
 // Policy exposes the active policy hook (for the policy handler).

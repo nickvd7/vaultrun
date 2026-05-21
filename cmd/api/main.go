@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/workspace"
@@ -98,13 +100,18 @@ func main() {
 
 	rnr := runner.New(db, docker, al, policyHook)
 
+	// Async run worker pool: 4 workers, buffer up to 256 pending jobs.
+	asyncWorkers, _ := strconv.Atoi(getEnvMain("ASYNC_WORKERS", "4"))
+	asyncBufSize, _ := strconv.Atoi(getEnvMain("ASYNC_QUEUE_SIZE", "256"))
+	queue := jobqueue.New(rnr, asyncWorkers, asyncBufSize)
+
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),
@@ -162,4 +169,11 @@ func main() {
 		slog.Error("forced shutdown", "err", err)
 	}
 	fmt.Println("server stopped")
+}
+
+func getEnvMain(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

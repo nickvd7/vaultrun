@@ -45,6 +45,7 @@ type RunRequest struct {
 	WorkingDir     string
 	TimeoutSeconds int
 	Actor          string
+	CallbackURL    string // empty = no async callback
 }
 
 // Execute runs a command inside the sandbox container, persists the run record,
@@ -54,7 +55,35 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 	if err != nil {
 		return nil, err
 	}
+	return r.executeImpl(ctx, req, run)
+}
 
+// PrepareAsync creates the pending run DB record and emits the start audit event,
+// then returns immediately. The caller is responsible for submitting the job to a
+// worker (which calls ExecutePrepared). This lets the async endpoint return a
+// run_id to the client before execution begins.
+func (r *Runner) PrepareAsync(ctx context.Context, req RunRequest) (*models.Run, error) {
+	return r.prepareRun(ctx, req)
+}
+
+// ExecutePrepared executes a command for an already-prepared run (created by
+// PrepareAsync). Safe to call from a background goroutine.
+func (r *Runner) ExecutePrepared(ctx context.Context, req RunRequest, run *models.Run) (*models.Run, error) {
+	return r.executeImpl(ctx, req, run)
+}
+
+// Stream runs a command and writes stdout/stderr chunks to the provided writers
+// as they arrive. Useful for SSE streaming to the client.
+func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.Writer) (*models.Run, error) {
+	run, err := r.prepareRun(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return r.streamImpl(ctx, req, run, stdout, stderr)
+}
+
+// executeImpl is the shared synchronous execution path for Execute and ExecutePrepared.
+func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Run) (*models.Run, error) {
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.Exec(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
@@ -101,14 +130,8 @@ func (r *Runner) Execute(ctx context.Context, req RunRequest) (*models.Run, erro
 	return updated, nil
 }
 
-// Stream runs a command and writes stdout/stderr chunks to the provided writers
-// as they arrive. Useful for SSE streaming to the client.
-func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.Writer) (*models.Run, error) {
-	run, err := r.prepareRun(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
+// streamImpl is the shared streaming execution path for Stream.
+func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run, stdout, stderr io.Writer) (*models.Run, error) {
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.ExecStream(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
@@ -153,7 +176,7 @@ func (r *Runner) Stream(ctx context.Context, req RunRequest, stdout, stderr io.W
 }
 
 // prepareRun validates the request, enforces policy, creates the DB record,
-// and emits the start audit event. Shared between Execute and Stream.
+// and emits the start audit event. Shared between Execute, PrepareAsync and Stream.
 func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, error) {
 	if req.Command == "" {
 		return nil, fmt.Errorf("command is required")
@@ -196,6 +219,12 @@ func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, e
 		workingDir = "/workspace"
 	}
 
+	var callbackURL *string
+	if req.CallbackURL != "" {
+		u := req.CallbackURL
+		callbackURL = &u
+	}
+
 	run := &models.Run{
 		ID:             uuid.New(),
 		SessionID:      req.SessionID,
@@ -205,6 +234,7 @@ func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, e
 		WorkingDir:     workingDir,
 		Status:         models.RunStatusPending,
 		TimeoutSeconds: timeout,
+		CallbackURL:    callbackURL,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}

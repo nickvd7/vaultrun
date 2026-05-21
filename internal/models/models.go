@@ -107,6 +107,7 @@ type Session struct {
 	MemoryLimitMB   int        `db:"memory_limit_mb"  json:"memory_limit_mb"`
 	TimeoutSeconds  int        `db:"timeout_seconds"  json:"timeout_seconds"`
 	WorkspacePath   string     `db:"workspace_path"   json:"-"` // internal host path — never expose to callers
+	Labels          JSONB      `db:"labels"           json:"labels"`
 	CreatedBy       string     `db:"created_by"       json:"created_by"`
 	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
@@ -130,6 +131,8 @@ type Run struct {
 	UpdatedAt      time.Time   `db:"updated_at"      json:"updated_at"`
 	StartedAt       *time.Time  `db:"started_at"       json:"started_at,omitempty"`
 	FinishedAt      *time.Time  `db:"finished_at"      json:"finished_at,omitempty"`
+	// CallbackURL is stored but never returned in API responses (may contain secrets).
+	CallbackURL     *string     `db:"callback_url"     json:"-"`
 	// OutputTruncated is not persisted; set in-memory when docker capped output.
 	OutputTruncated bool        `db:"-"                json:"output_truncated,omitempty"`
 }

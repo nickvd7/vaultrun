@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/runner"
 )
@@ -221,6 +222,81 @@ func (rh *RunHandler) Get(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, run)
+}
+
+// POST /api/v1/sessions/:id/run/async
+// Non-blocking variant: creates the run record immediately (status=pending),
+// returns 202 with the run_id, and executes the command in a background worker.
+// Optional "callback_url" field in the request body receives an HTTP POST with
+// the completed Run when finished.
+func (rh *RunHandler) Async(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	if !ok {
+		return
+	}
+	if session.StoppedAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "session is stopped"})
+		return
+	}
+	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
+		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+
+	var req struct {
+		createRunRequest
+		CallbackURL string `json:"callback_url"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	limits := rh.h.cfg.SessionLimits()
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must be non-negative"})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
+		return
+	}
+
+	actor := middleware.Actor(c)
+	runReq := runner.RunRequest{
+		SessionID:      sessionID,
+		ContainerID:    *session.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		WorkingDir:     req.WorkingDir,
+		TimeoutSeconds: req.TimeoutSeconds,
+		Actor:          actor,
+		CallbackURL:    req.CallbackURL,
+	}
+
+	// Create the pending run record now so we can return its ID.
+	run, err := rh.h.runner.PrepareAsync(c.Request.Context(), runReq)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !rh.h.queue.Submit(jobqueue.Job{Req: runReq, Run: run, CallbackURL: req.CallbackURL}) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "job queue full — try again later"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"run_id": run.ID,
+		"status": run.Status,
+		"message": "run enqueued",
+	})
 }
 
 // sseWriter wraps an http.ResponseWriter and formats each Write call as an SSE data event.

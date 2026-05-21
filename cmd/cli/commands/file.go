@@ -12,12 +12,169 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// filePullCmd downloads the entire workspace as a ZIP archive.
+func filePullCmd() *cobra.Command {
+	var outputPath string
+
+	cmd := &cobra.Command{
+		Use:   "pull <session-id>",
+		Short: "Download entire workspace as a ZIP archive",
+		Long: `Download all files in a session's workspace as workspace-<id>.zip.
+Useful for retrieving sandbox output after a run completes.
+
+Examples:
+  vaultrun file pull abc123
+  vaultrun file pull abc123 --output results.zip`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+
+			client := newClient()
+			req, err := http.NewRequest("GET",
+				client.baseURL+"/api/v1/sessions/"+sessionID+"/workspace.zip", nil)
+			if err != nil {
+				return err
+			}
+			req.Header.Set("X-API-Key", client.key)
+
+			resp, err := client.http.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode >= 400 {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("pull failed (%d): %s", resp.StatusCode, string(body))
+			}
+
+			dest := outputPath
+			if dest == "" {
+				dest = "workspace-" + sessionID + ".zip"
+			}
+
+			out, err := os.Create(dest)
+			if err != nil {
+				return fmt.Errorf("create output file: %w", err)
+			}
+			defer out.Close()
+
+			n, err := io.Copy(out, resp.Body)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Downloaded workspace to %s (%d bytes)\n", dest, n)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&outputPath, "output", "", "Output file path (default: workspace-<session-id>.zip)")
+	return cmd
+}
+
+// filePushCmd uploads one or more local files to the workspace in bulk.
+func filePushCmd() *cobra.Command {
+	var remoteDest string
+
+	cmd := &cobra.Command{
+		Use:   "push <session-id> <file> [file...]",
+		Short: "Upload one or more files to a session workspace",
+		Long: `Upload local files to a session workspace. Multiple files can be specified.
+By default each file is placed at /<filename> in the workspace root.
+Use --dest to set a remote subdirectory prefix.
+
+Examples:
+  vaultrun file push abc123 script.py data.csv
+  vaultrun file push abc123 script.py --dest /scripts`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+			localFiles := args[1:]
+
+			client := newClient()
+			var uploaded, failed int
+
+			for _, localPath := range localFiles {
+				remotePath := filepath.Base(localPath)
+				if remoteDest != "" {
+					remotePath = filepath.Join(remoteDest, remotePath)
+				}
+
+				f, err := os.Open(localPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  skip %s: %v\n", localPath, err)
+					failed++
+					continue
+				}
+
+				pr, pw := io.Pipe()
+				mw := multipart.NewWriter(pw)
+
+				go func(src *os.File, rp string) {
+					defer pw.Close()
+					defer mw.Close()
+					defer src.Close()
+					_ = mw.WriteField("path", rp)
+					fw, err := mw.CreateFormFile("file", filepath.Base(rp))
+					if err != nil {
+						return
+					}
+					_, _ = io.Copy(fw, src)
+				}(f, remotePath)
+
+				req, err := http.NewRequest("POST",
+					client.baseURL+"/api/v1/sessions/"+sessionID+"/files", pr)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  skip %s: %v\n", localPath, err)
+					failed++
+					continue
+				}
+				req.Header.Set("X-API-Key", client.key)
+				req.Header.Set("Content-Type", mw.FormDataContentType())
+
+				resp, err := client.http.Do(req)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "  skip %s: %v\n", localPath, err)
+					failed++
+					continue
+				}
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+
+				if resp.StatusCode >= 400 {
+					fmt.Fprintf(os.Stderr, "  fail %s: %s\n", localPath, string(body))
+					failed++
+				} else {
+					fmt.Printf("  push %s → %s\n", localPath, remotePath)
+					uploaded++
+				}
+			}
+
+			fmt.Printf("Done: %d uploaded, %d failed\n", uploaded, failed)
+			if failed > 0 {
+				return fmt.Errorf("%d file(s) failed to upload", failed)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&remoteDest, "dest", "", "Remote destination directory (default: workspace root)")
+	return cmd
+}
+
 func newFileCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "file",
 		Short: "Manage files in a session workspace",
 	}
-	cmd.AddCommand(fileUploadCmd(), fileDownloadCmd(), fileListCmd(), fileDeleteCmd())
+	cmd.AddCommand(
+		fileUploadCmd(),
+		fileDownloadCmd(),
+		fileListCmd(),
+		fileDeleteCmd(),
+		filePullCmd(),
+		filePushCmd(),
+	)
 	return cmd
 }
 

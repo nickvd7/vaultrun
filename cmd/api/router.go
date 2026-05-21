@@ -14,6 +14,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -30,6 +31,7 @@ func newRouter(
 	rnr *runner.Runner,
 	al *audit.Logger,
 	pol policy.Hook,
+	queue *jobqueue.Queue,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -44,8 +46,9 @@ func newRouter(
 	r.MaxMultipartMemory = cfg.Workspace.MaxFileMB * 1024 * 1024
 
 	// CORS: only allow explicitly configured origins.
+	// PATCH is needed for label updates.
 	corsConfig := cors.Config{
-		AllowMethods:     []string{"GET", "POST", "DELETE", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-API-Key"},
 		ExposeHeaders:    []string{"Content-Disposition"},
 		MaxAge:           12 * time.Hour,
@@ -71,7 +74,7 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol)
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue)
 
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
@@ -116,16 +119,19 @@ func newRouter(
 	authGroup.GET("/sessions", sessH.List)
 	authGroup.GET("/sessions/:id", sessH.Get)
 	authGroup.DELETE("/sessions/:id", sessH.Delete)
+	authGroup.PATCH("/sessions/:id/labels", sessH.UpdateLabels)
 
 	filesH := handlers.NewFileHandler(hub)
 	authGroup.POST("/sessions/:id/files", filesH.Upload)
 	authGroup.GET("/sessions/:id/files", filesH.List)
+	authGroup.GET("/sessions/:id/workspace.zip", filesH.WorkspaceZip)
 	authGroup.GET("/sessions/:id/files/*path", filesH.Download)
 	authGroup.DELETE("/sessions/:id/files/*path", filesH.Delete)
 
 	runsH := handlers.NewRunHandler(hub)
 	authGroup.POST("/sessions/:id/run", runsH.Execute)
 	authGroup.POST("/sessions/:id/run/stream", runsH.Stream)
+	authGroup.POST("/sessions/:id/run/async", runsH.Async)
 	authGroup.GET("/sessions/:id/runs", runsH.ListBySession)
 	authGroup.GET("/runs/:id", runsH.Get)
 

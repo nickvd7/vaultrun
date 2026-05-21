@@ -16,9 +16,9 @@ import (
 func CreateSession(ctx context.Context, db *sqlx.DB, s *models.Session) error {
 	q := `
 		INSERT INTO sessions (id, name, image, status, network_enabled, cpu_limit,
-		    memory_limit_mb, timeout_seconds, workspace_path, created_by, created_at, updated_at)
+		    memory_limit_mb, timeout_seconds, workspace_path, labels, created_by, created_at, updated_at)
 		VALUES (:id, :name, :image, :status, :network_enabled, :cpu_limit,
-		    :memory_limit_mb, :timeout_seconds, :workspace_path, :created_by, :created_at, :updated_at)
+		    :memory_limit_mb, :timeout_seconds, :workspace_path, :labels, :created_by, :created_at, :updated_at)
 	`
 	_, err := db.NamedExecContext(ctx, q, s)
 	return err
@@ -35,22 +35,48 @@ func GetSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Session
 
 // ListSessions returns active sessions. When actor is non-empty only that
 // actor's sessions are returned (tenant isolation). Master key passes "".
+// labelKey/labelValue optionally filter by a specific label (both must be set).
 // Initialises the slice to non-nil so JSON always encodes [] instead of null.
-func ListSessions(ctx context.Context, db *sqlx.DB, actor string, limit, offset int) ([]*models.Session, error) {
+func ListSessions(ctx context.Context, db *sqlx.DB, actor, labelKey, labelValue string, limit, offset int) ([]*models.Session, error) {
 	sessions := make([]*models.Session, 0)
 	var err error
-	if actor != "" {
+	switch {
+	case actor != "" && labelKey != "":
 		err = db.SelectContext(ctx, &sessions,
-			`SELECT * FROM sessions WHERE stopped_at IS NULL AND created_by = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			`SELECT * FROM sessions WHERE stopped_at IS NULL AND created_by = $1
+			   AND labels @> jsonb_build_object($2::text, $3::text)
+			 ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+			actor, labelKey, labelValue, limit, offset,
+		)
+	case actor != "":
+		err = db.SelectContext(ctx, &sessions,
+			`SELECT * FROM sessions WHERE stopped_at IS NULL AND created_by = $1
+			 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 			actor, limit, offset,
 		)
-	} else {
+	case labelKey != "":
+		err = db.SelectContext(ctx, &sessions,
+			`SELECT * FROM sessions WHERE stopped_at IS NULL
+			   AND labels @> jsonb_build_object($1::text, $2::text)
+			 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+			labelKey, labelValue, limit, offset,
+		)
+	default:
 		err = db.SelectContext(ctx, &sessions,
 			`SELECT * FROM sessions WHERE stopped_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
 			limit, offset,
 		)
 	}
 	return sessions, err
+}
+
+// UpdateSessionLabels replaces the labels map for a session.
+func UpdateSessionLabels(ctx context.Context, db *sqlx.DB, id uuid.UUID, labels models.JSONB) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE sessions SET labels = $1, updated_at = NOW() WHERE id = $2`,
+		labels, id,
+	)
+	return err
 }
 
 func UpdateSessionStatus(ctx context.Context, db *sqlx.DB, id uuid.UUID, status string, containerID *string) error {
@@ -73,8 +99,10 @@ func StopSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 
 func CreateRun(ctx context.Context, db *sqlx.DB, r *models.Run) error {
 	q := `
-		INSERT INTO runs (id, session_id, command, args, env, working_dir, status, timeout_seconds, created_at, updated_at)
-		VALUES (:id, :session_id, :command, :args, :env, :working_dir, :status, :timeout_seconds, :created_at, :updated_at)
+		INSERT INTO runs (id, session_id, command, args, env, working_dir, status,
+		    timeout_seconds, callback_url, created_at, updated_at)
+		VALUES (:id, :session_id, :command, :args, :env, :working_dir, :status,
+		    :timeout_seconds, :callback_url, :created_at, :updated_at)
 	`
 	_, err := db.NamedExecContext(ctx, q, r)
 	return err

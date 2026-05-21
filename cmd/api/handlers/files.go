@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"archive/zip"
 	"bytes"
 	"database/sql"
+	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -232,6 +235,88 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 	})
 
 	c.Status(http.StatusNoContent)
+}
+
+// GET /api/v1/sessions/:id/workspace.zip
+// Streams the entire workspace as a ZIP archive. Symlink escape protection is
+// applied: symlinks whose real target lies outside the workspace are skipped.
+func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	// C-2: verify caller owns the session.
+	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
+		return
+	}
+
+	root := fh.h.ws.SessionPath(sessionID)
+
+	// Verify the workspace directory exists before touching response headers.
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
+		return
+	}
+
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="workspace-%s.zip"`, sessionID))
+	c.Header("Cache-Control", "no-store")
+
+	zw := zip.NewWriter(c.Writer)
+	defer zw.Close()
+
+	rootWithSep := root + string(os.PathSeparator)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil // skip inaccessible entries
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Resolve symlinks and reject escapes.
+		real, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return nil
+		}
+		if real != root && !strings.HasPrefix(real, rootWithSep) {
+			slog.Warn("workspace zip: skipping symlink escape",
+				"session_id", sessionID, "path", path, "target", real)
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+
+		fw, err := zw.Create(rel)
+		if err != nil {
+			return err
+		}
+
+		f, err := os.Open(real)
+		if err != nil {
+			return nil // skip unreadable files
+		}
+		defer f.Close()
+
+		_, err = io.Copy(fw, f)
+		return err
+	})
+	if err != nil {
+		// Headers already sent; log and let the client detect the truncated ZIP.
+		slog.Error("workspace zip walk error", "session_id", sessionID, "err", err)
+	}
+
+	fh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:     middleware.Actor(c),
+		SessionID: &sessionID,
+		Action:    models.ActionFileDownloaded,
+		Metadata:  models.JSONB{"path": "workspace.zip"},
+	})
 }
 
 // sanitizeFilename strips control characters, quotes, and non-printable

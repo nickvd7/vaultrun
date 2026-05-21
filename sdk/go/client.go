@@ -9,7 +9,9 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -33,34 +35,36 @@ func New(baseURL, apiKey string) *Client {
 
 // Session represents a VaultRun sandbox session.
 type Session struct {
-	ID             string     `json:"id"`
-	Name           *string    `json:"name,omitempty"`
-	Image          string     `json:"image"`
-	Status         string     `json:"status"`
-	ContainerID    *string    `json:"container_id,omitempty"`
-	NetworkEnabled bool       `json:"network_enabled"`
-	CPULimit       float64    `json:"cpu_limit"`
-	MemoryLimitMB  int        `json:"memory_limit_mb"`
-	TimeoutSeconds int        `json:"timeout_seconds"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StoppedAt      *time.Time `json:"stopped_at,omitempty"`
+	ID             string            `json:"id"`
+	Name           *string           `json:"name,omitempty"`
+	Image          string            `json:"image"`
+	Status         string            `json:"status"`
+	ContainerID    *string           `json:"container_id,omitempty"`
+	NetworkEnabled bool              `json:"network_enabled"`
+	CPULimit       float64           `json:"cpu_limit"`
+	MemoryLimitMB  int               `json:"memory_limit_mb"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	StoppedAt      *time.Time        `json:"stopped_at,omitempty"`
 }
 
 // Run represents a command execution result.
 type Run struct {
-	ID             string     `json:"id"`
-	SessionID      string     `json:"session_id"`
-	Command        string     `json:"command"`
-	Args           []string   `json:"args"`
-	Status         string     `json:"status"`
-	ExitCode       *int       `json:"exit_code,omitempty"`
-	Stdout         *string    `json:"stdout,omitempty"`
-	Stderr         *string    `json:"stderr,omitempty"`
-	DurationMS     *int64     `json:"duration_ms,omitempty"`
-	TimeoutSeconds int        `json:"timeout_seconds"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	ID              string     `json:"id"`
+	SessionID       string     `json:"session_id"`
+	Command         string     `json:"command"`
+	Args            []string   `json:"args"`
+	Status          string     `json:"status"`
+	ExitCode        *int       `json:"exit_code,omitempty"`
+	Stdout          *string    `json:"stdout,omitempty"`
+	Stderr          *string    `json:"stderr,omitempty"`
+	DurationMS      *int64     `json:"duration_ms,omitempty"`
+	TimeoutSeconds  int        `json:"timeout_seconds"`
+	OutputTruncated bool       `json:"output_truncated,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 }
 
 // File represents a file in a session workspace.
@@ -81,6 +85,7 @@ type CreateSessionOptions struct {
 	CPULimit       float64
 	MemoryLimitMB  int
 	TimeoutSeconds int
+	Labels         map[string]string
 }
 
 // CreateSession creates a new sandbox session.
@@ -97,6 +102,9 @@ func (c *Client) CreateSession(ctx context.Context, opts CreateSessionOptions) (
 	}
 	if opts.Image == "" {
 		body["image"] = "python:3.12-slim"
+	}
+	if len(opts.Labels) > 0 {
+		body["labels"] = opts.Labels
 	}
 
 	var s Session
@@ -115,12 +123,25 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (*Session, er
 	return &s, nil
 }
 
-// ListSessions returns active sessions.
-func (c *Client) ListSessions(ctx context.Context) ([]*Session, error) {
+// ListSessionsOptions filters the session list.
+type ListSessionsOptions struct {
+	// LabelKey and LabelValue filter by a specific label (both must be set).
+	LabelKey   string
+	LabelValue string
+}
+
+// ListSessions returns active sessions visible to the authenticated caller.
+func (c *Client) ListSessions(ctx context.Context, opts ...ListSessionsOptions) ([]*Session, error) {
+	path := "/api/v1/sessions"
+	if len(opts) > 0 && opts[0].LabelKey != "" {
+		q := url.Values{}
+		q.Set("label", opts[0].LabelKey+":"+opts[0].LabelValue)
+		path += "?" + q.Encode()
+	}
 	var result struct {
 		Sessions []*Session `json:"sessions"`
 	}
-	if err := c.do(ctx, "GET", "/api/v1/sessions", nil, &result); err != nil {
+	if err := c.do(ctx, "GET", path, nil, &result); err != nil {
 		return nil, err
 	}
 	return result.Sessions, nil
@@ -129,6 +150,16 @@ func (c *Client) ListSessions(ctx context.Context) ([]*Session, error) {
 // DeleteSession stops and removes a session.
 func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	return c.do(ctx, "DELETE", "/api/v1/sessions/"+sessionID, nil, nil)
+}
+
+// UpdateSessionLabels replaces the label set on a session.
+// Pass an empty map to clear all labels.
+func (c *Client) UpdateSessionLabels(ctx context.Context, sessionID string, labels map[string]string) error {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return c.do(ctx, "PATCH", "/api/v1/sessions/"+sessionID+"/labels",
+		map[string]interface{}{"labels": labels}, nil)
 }
 
 // RunOptions configures a command execution.
@@ -161,6 +192,46 @@ func (c *Client) Run(ctx context.Context, sessionID string, opts RunOptions) (*R
 	return &r, nil
 }
 
+// AsyncRunResult is returned by RunAsync — contains the pending run's ID.
+type AsyncRunResult struct {
+	RunID   string `json:"run_id"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// AsyncRunOptions extends RunOptions with an optional webhook callback URL.
+type AsyncRunOptions struct {
+	RunOptions
+	// CallbackURL receives an HTTP POST with the completed Run when the job finishes.
+	CallbackURL string
+}
+
+// RunAsync submits a command for non-blocking execution. It returns immediately
+// with the pending run's ID. Poll GetRun to check for completion, or supply a
+// CallbackURL to receive a webhook when done.
+func (c *Client) RunAsync(ctx context.Context, sessionID string, opts AsyncRunOptions) (*AsyncRunResult, error) {
+	body := map[string]interface{}{
+		"command":         opts.Command,
+		"args":            opts.Args,
+		"timeout_seconds": opts.TimeoutSeconds,
+	}
+	if opts.Env != nil {
+		body["env"] = opts.Env
+	}
+	if opts.WorkingDir != "" {
+		body["working_dir"] = opts.WorkingDir
+	}
+	if opts.CallbackURL != "" {
+		body["callback_url"] = opts.CallbackURL
+	}
+
+	var result AsyncRunResult
+	if err := c.do(ctx, "POST", "/api/v1/sessions/"+sessionID+"/run/async", body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GetRun retrieves a run by ID.
 func (c *Client) GetRun(ctx context.Context, runID string) (*Run, error) {
 	var r Run
@@ -168,6 +239,17 @@ func (c *Client) GetRun(ctx context.Context, runID string) (*Run, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// ListRuns returns all runs for a session.
+func (c *Client) ListRuns(ctx context.Context, sessionID string) ([]*Run, error) {
+	var result struct {
+		Runs []*Run `json:"runs"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/sessions/"+sessionID+"/runs", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Runs, nil
 }
 
 // UploadFile uploads a file to a session workspace.
@@ -227,10 +309,12 @@ func (c *Client) UploadFile(ctx context.Context, sessionID, remotePath string, c
 	return &f, nil
 }
 
-// DownloadFile downloads a file from a session workspace.
+// DownloadFile downloads a single file from a session workspace.
 func (c *Client) DownloadFile(ctx context.Context, sessionID, remotePath string) (io.ReadCloser, error) {
+	// Strip leading slash so the URL path doesn't double-slash
+	clean := strings.TrimPrefix(remotePath, "/")
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		c.baseURL+"/api/v1/sessions/"+sessionID+"/files/"+remotePath, nil)
+		c.baseURL+"/api/v1/sessions/"+sessionID+"/files/"+clean, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +334,33 @@ func (c *Client) DownloadFile(ctx context.Context, sessionID, remotePath string)
 	return resp.Body, nil
 }
 
+// DownloadWorkspace downloads the entire workspace as a ZIP archive.
+// The caller is responsible for closing the returned ReadCloser.
+func (c *Client) DownloadWorkspace(ctx context.Context, sessionID string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		c.baseURL+"/api/v1/sessions/"+sessionID+"/workspace.zip", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	// Use a client without timeout for potentially large archives.
+	noTimeoutClient := *c.httpClient
+	noTimeoutClient.Timeout = 0
+	resp, err := noTimeoutClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("workspace download failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	return resp.Body, nil
+}
+
 // ListFiles returns all files in a session workspace.
 func (c *Client) ListFiles(ctx context.Context, sessionID string) ([]*File, error) {
 	var result struct {
@@ -261,20 +372,10 @@ func (c *Client) ListFiles(ctx context.Context, sessionID string) ([]*File, erro
 	return result.Files, nil
 }
 
-// ListRuns returns all runs for a session.
-func (c *Client) ListRuns(ctx context.Context, sessionID string) ([]*Run, error) {
-	var result struct {
-		Runs []*Run `json:"runs"`
-	}
-	if err := c.do(ctx, "GET", "/api/v1/sessions/"+sessionID+"/runs", nil, &result); err != nil {
-		return nil, err
-	}
-	return result.Runs, nil
-}
-
 // DeleteFile removes a file from a session workspace.
 func (c *Client) DeleteFile(ctx context.Context, sessionID, remotePath string) error {
-	return c.do(ctx, "DELETE", "/api/v1/sessions/"+sessionID+"/files/"+remotePath, nil, nil)
+	clean := strings.TrimPrefix(remotePath, "/")
+	return c.do(ctx, "DELETE", "/api/v1/sessions/"+sessionID+"/files/"+clean, nil, nil)
 }
 
 // APIKey represents a VaultRun API key (plaintext is never returned after creation).

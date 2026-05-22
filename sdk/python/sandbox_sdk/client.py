@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import io
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -72,6 +73,27 @@ class File:
     size_bytes: int
     content_type: str
     created_at: str
+
+
+@dataclass
+class AuditLog:
+    """A single audit trail entry."""
+    id: str
+    actor: str
+    action: str
+    timestamp: str
+    session_id: Optional[str] = None
+    run_id: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = None
+
+
+@dataclass
+class StreamResult:
+    """Returned by :meth:`Client.stream` when the SSE stream closes."""
+    run_id: str
+    status: str
+    exit_code: Optional[int] = None
+    duration_ms: Optional[int] = None
 
 
 @dataclass
@@ -329,6 +351,132 @@ class Client:
         """Revoke an API key by ID."""
         self._delete(f"/api/v1/keys/{key_id}")
 
+    # --- Audit ---
+
+    def list_audit_logs(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list["AuditLog"]:
+        """Return audit log entries for the current actor.
+
+        Master key holders see all actors' entries; regular keys see only their
+        own sessions' entries. Entries are ordered newest-first.
+
+        Args:
+            session_id: restrict results to a single session (optional).
+            limit: maximum entries to return (default 50).
+            offset: pagination offset.
+
+        Returns:
+            List of :class:`AuditLog` entries.
+        """
+        params: list[str] = []
+        if session_id:
+            params.append(f"session_id={session_id}")
+        if limit != 50:
+            params.append(f"limit={limit}")
+        if offset:
+            params.append(f"offset={offset}")
+        path = "/api/v1/audit"
+        if params:
+            path += "?" + "&".join(params)
+        data = self._get(path)
+        return [self._parse_audit_log(e) for e in data.get("audit_logs", [])]
+
+    # --- Streaming ---
+
+    def stream(
+        self,
+        session_id: str,
+        command: str,
+        args: Optional[list[str]] = None,
+        env: Optional[dict[str, str]] = None,
+        working_dir: Optional[str] = None,
+        timeout_seconds: int = 30,
+        stdout: Optional[IO[str]] = None,
+        stderr: Optional[IO[str]] = None,
+    ) -> "StreamResult":
+        """Execute a command via SSE streaming, writing output chunks as they arrive.
+
+        Unlike :meth:`run`, which buffers all output and returns when the command
+        finishes, ``stream`` writes stdout/stderr to the provided file-like objects
+        as each chunk arrives.  This is useful for long-running commands where you
+        want to observe progress in real time.
+
+        Args:
+            session_id: target session.
+            command: executable name (no shell — no metacharacters).
+            args: positional arguments.
+            env: extra environment variables injected into the exec.
+            working_dir: working directory inside the container.
+            timeout_seconds: server-side execution timeout.
+            stdout: writable text stream for stdout chunks (default: discard).
+            stderr: writable text stream for stderr chunks (default: discard).
+
+        Returns:
+            :class:`StreamResult` with the final status, exit code, and duration.
+
+        Example::
+
+            import sys
+            result = client.stream(
+                session.id, "python", args=["script.py"],
+                stdout=sys.stdout, stderr=sys.stderr,
+            )
+            print(f"exit code: {result.exit_code}")
+        """
+        body: dict[str, Any] = {
+            "command": command,
+            "args": args or [],
+            "timeout_seconds": timeout_seconds,
+        }
+        if env:
+            body["env"] = env
+        if working_dir:
+            body["working_dir"] = working_dir
+
+        resp = self._session.post(
+            self.base_url + f"/api/v1/sessions/{session_id}/run/stream",
+            json=body,
+            headers={"Accept": "text/event-stream"},
+            stream=True,
+            timeout=None,  # caller controls duration via context / timeout_seconds
+        )
+        self._raise_for_status(resp)
+
+        final: dict[str, Any] = {}
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            if isinstance(line, bytes):
+                line = line.decode()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if not payload:
+                continue
+            try:
+                event = json.loads(payload)
+            except ValueError:
+                continue
+            etype = event.get("type", "")
+            if etype == "stdout" and stdout is not None:
+                stdout.write(event.get("data", ""))
+            elif etype == "stderr" and stderr is not None:
+                stderr.write(event.get("data", ""))
+            elif etype == "done":
+                final = event
+                break
+
+        return StreamResult(
+            run_id=final.get("run_id", ""),
+            status=final.get("status", "unknown"),
+            exit_code=final.get("exit_code"),
+            duration_ms=final.get("duration_ms"),
+        )
+
     # --- Webhook signature verification ---
 
     @staticmethod
@@ -467,4 +615,16 @@ class Client:
             size_bytes=d["size_bytes"],
             content_type=d["content_type"],
             created_at=d["created_at"],
+        )
+
+    @staticmethod
+    def _parse_audit_log(d: dict) -> AuditLog:
+        return AuditLog(
+            id=d["id"],
+            actor=d["actor"],
+            action=d["action"],
+            timestamp=d["timestamp"],
+            session_id=d.get("session_id"),
+            run_id=d.get("run_id"),
+            metadata=d.get("metadata"),
         )

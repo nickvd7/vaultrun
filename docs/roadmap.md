@@ -36,10 +36,10 @@
 - [ ] Warm container pool for low-latency startup
 
 ## v0.5 — Policy Engine
-- [ ] Open Policy Agent (OPA) integration
-- [ ] Per-session command allowlist/denylist
-- [ ] File access policies (read-only mounts, path restrictions)
-- [ ] Network egress policies
+- [x] Open Policy Agent (OPA) integration (`OPA_POLICY_FILE`, Rego evaluation via `go-opa-evaluate`)
+- [x] Per-session command allowlist/denylist (via OPA `EvalCommand` hook — deny by command + args)
+- [x] File access policies (via OPA `EvalFileAccess` hook — deny by path pattern)
+- [x] Network egress policies (per-session iptables allowlist via `AllowedHosts`; DNS + ESTABLISHED always permitted)
 
 ## v0.6 — Secrets & State
 - [ ] Secrets broker (Vault / AWS Secrets Manager integration)

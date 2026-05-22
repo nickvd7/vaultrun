@@ -430,6 +430,56 @@ func (c *Client) RevokeKey(ctx context.Context, keyID string) error {
 	return c.do(ctx, "DELETE", "/api/v1/keys/"+keyID, nil, nil)
 }
 
+// AuditLog is a single entry in the audit trail.
+type AuditLog struct {
+	ID        string     `json:"id"`
+	Actor     string     `json:"actor"`
+	SessionID *string    `json:"session_id,omitempty"`
+	RunID     *string    `json:"run_id,omitempty"`
+	Action    string     `json:"action"`
+	Metadata  any        `json:"metadata,omitempty"`
+	Timestamp time.Time  `json:"timestamp"`
+}
+
+// ListAuditLogsOptions filters the audit log query.
+type ListAuditLogsOptions struct {
+	// SessionID restricts entries to a single session.
+	// Non-master callers may only query sessions they own.
+	SessionID string
+	Limit     int // 0 uses the server default (50)
+	Offset    int
+}
+
+// ListAuditLogs returns audit log entries for the current actor.
+// Master key holders receive all actors' entries; regular keys receive only
+// their own. Use opts.SessionID to narrow results to a specific session.
+func (c *Client) ListAuditLogs(ctx context.Context, opts ...ListAuditLogsOptions) ([]*AuditLog, error) {
+	path := "/api/v1/audit"
+	if len(opts) > 0 {
+		o := opts[0]
+		q := url.Values{}
+		if o.SessionID != "" {
+			q.Set("session_id", o.SessionID)
+		}
+		if o.Limit > 0 {
+			q.Set("limit", fmt.Sprintf("%d", o.Limit))
+		}
+		if o.Offset > 0 {
+			q.Set("offset", fmt.Sprintf("%d", o.Offset))
+		}
+		if len(q) > 0 {
+			path += "?" + q.Encode()
+		}
+	}
+	var result struct {
+		AuditLogs []*AuditLog `json:"audit_logs"`
+	}
+	if err := c.do(ctx, "GET", path, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.AuditLogs, nil
+}
+
 // StreamEvent is a single SSE event from the run/stream endpoint.
 type StreamEvent struct {
 	Type       string `json:"type"`        // "stdout", "stderr", or "done"

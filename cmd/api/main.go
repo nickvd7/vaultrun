@@ -49,6 +49,17 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
+	// Startup pre-flight checks — fail fast so operators see problems immediately
+	// rather than discovering them at runtime on the first real request.
+
+	// MASTER_API_KEY: without this, no API keys can be created and the system is
+	// inaccessible. Warn loudly; do not exit (key may have been intentionally
+	// cleared after bootstrapping if keys already exist in the DB).
+	if cfg.Auth.MasterKey == "" {
+		slog.Warn("MASTER_API_KEY is not set — POST /api/v1/keys will be inaccessible; " +
+			"set the key to create new API keys or verify existing keys are present in the database")
+	}
+
 	db, err := dbpkg.Connect(cfg.Database)
 	if err != nil {
 		slog.Error("connect database", "err", err)
@@ -83,6 +94,18 @@ func main() {
 		slog.Error("create docker client", "err", err)
 		os.Exit(1)
 	}
+	// Verify the Docker daemon is reachable before accepting traffic. A
+	// misconfigured DOCKER_HOST causes every session creation to fail; better to
+	// surface it at startup.
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := docker.Inner().Ping(pingCtx); err != nil {
+		slog.Error("docker daemon unreachable — check DOCKER_HOST",
+			"addr", cfg.Docker.Host, "err", err)
+		pingCancel()
+		os.Exit(1)
+	}
+	pingCancel()
+	slog.Info("docker daemon reachable", "host", cfg.Docker.Host)
 
 	ws := workspace.New(cfg.Workspace.BaseDir)
 
@@ -91,6 +114,15 @@ func main() {
 		slog.Error("create workspace base dir", "err", err)
 		os.Exit(1)
 	}
+	// Verify the workspace directory is actually writable. A read-only mount or
+	// wrong ownership would cause silent failures at session creation time.
+	probeFile := fmt.Sprintf("%s/.vaultrun-startup-probe", cfg.Workspace.BaseDir)
+	if err := os.WriteFile(probeFile, []byte("ok"), 0o600); err != nil {
+		slog.Error("workspace base dir is not writable — check WORKSPACE_BASE_DIR permissions",
+			"dir", cfg.Workspace.BaseDir, "err", err)
+		os.Exit(1)
+	}
+	_ = os.Remove(probeFile)
 
 	al := audit.New(db)
 
@@ -127,7 +159,8 @@ func main() {
 			asyncWorkers, cfg.Observability.WebhookSecret,
 		)
 		if err != nil {
-			slog.Error("create redis job queue", "addr", cfg.Redis.Addr, "err", err)
+			slog.Error("create redis job queue — check Redis connectivity or clear REDIS_ADDR to use in-memory queue",
+				"addr", cfg.Redis.Addr, "err", err)
 			os.Exit(1)
 		}
 		queue = q

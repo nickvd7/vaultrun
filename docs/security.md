@@ -26,6 +26,9 @@ VaultRun is designed to safely execute untrusted AI agent code. The primary thre
 | No host network | Never uses `NetworkMode: "host"` |
 | CPU + memory limits | NanoCPUs + hard memory limit (swap disabled) |
 | PID limit | `PidsLimit: 512` — blocks fork-bomb attacks |
+| Read-only root filesystem | `ReadonlyRootfs: true` — container image layers are immutable; prevents processes from modifying shared image state |
+| Writable `/tmp` (tmpfs) | A 64 MB `tmpfs` is mounted at `/tmp`; the only writable location outside `/workspace`. Size-limited to prevent host memory exhaustion |
+| Home directory isolation | `HOME=/tmp` — tools that write to `$HOME` (pip cache, Python bytecode, etc.) land in the ephemeral `/tmp` tmpfs, not the rootfs |
 | No docker.sock exposure | The container never gets access to the Docker socket |
 | Seccomp syscall filter | Embedded vaultrun profile applied at compile time via `//go:embed`; no external file dependency |
 

@@ -21,6 +21,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/nickvd7/vaultrun/internal/httputil"
 )
 
 // Provider is the secrets broker interface.
@@ -83,7 +85,7 @@ func NewVaultProvider(addr, token, mount, path string) *VaultProvider {
 		token:  token,
 		mount:  mount,
 		path:   path,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: httputil.NoRedirectClient(10 * time.Second),
 	}
 }
 
@@ -165,7 +167,7 @@ func NewAWSProvider(region, prefix string) *AWSProvider {
 	return &AWSProvider{
 		region: region,
 		prefix: prefix,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: httputil.NoRedirectClient(10 * time.Second),
 	}
 }
 

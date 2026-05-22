@@ -226,35 +226,41 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		return "", fmt.Errorf("container create: %w", err)
 	}
 
+	// ── Step 5: apply iptables egress rules BEFORE starting the container ───────
+	//
+	// The bridge interface br-<networkID[:12]> is present as soon as the network
+	// is created. Applying rules here closes the race window where a fast
+	// container entrypoint could make outbound connections before iptables rules
+	// are in place. If policy application fails, we do NOT start the container —
+	// returning an error prevents a sandbox declared with AllowedHosts from
+	// running with unrestricted network access.
+	if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
+		allowedIPs := resolveToIPs(cfg.AllowedHosts)
+		chain := chainName(resp.ID)
+		iface := bridgeIface(sessionNetID)
+		if err := applyEgressPolicy(chain, iface, allowedIPs); err != nil {
+			// Policy failed — tear down the container and network rather than
+			// starting a sandbox with no egress controls.
+			_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+			_ = c.inner.NetworkRemove(ctx, sessionNetID)
+			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+			return "", fmt.Errorf("egress policy setup failed — container not started: %w", err)
+		}
+	}
+
 	if err := c.inner.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		// Clean up the created (but not started) container and any network.
+		if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
+			chain := chainName(resp.ID)
+			iface := bridgeIface(sessionNetID)
+			removeEgressPolicy(chain, iface)
+		}
 		_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		if sessionNetID != "" {
 			_ = c.inner.NetworkRemove(ctx, sessionNetID)
 		}
 		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("container start: %w", err)
-	}
-
-	// ── Step 5: apply iptables egress rules (after container starts) ─────────
-	//
-	// The bridge interface br-<networkID[:12]> is present once the network
-	// exists, but we apply rules after start to ensure the container's network
-	// stack is fully initialised before conntrack entries can be created.
-	if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
-		allowedIPs := resolveToIPs(cfg.AllowedHosts)
-		chain := chainName(resp.ID)
-		iface := bridgeIface(sessionNetID)
-		if err := applyEgressPolicy(chain, iface, allowedIPs); err != nil {
-			// Log a prominent warning but do NOT tear down the container — a
-			// warning is preferable to an outage. Operators who require strict
-			// enforcement should alert on this log line.
-			slog.Error("sandbox: egress iptables policy failed — container running WITHOUT network filtering",
-				"container_id", resp.ID,
-				"session_id", cfg.SessionID,
-				"err", err,
-			)
-		}
 	}
 
 	metrics.ContainerCreationsTotal.WithLabelValues("created").Inc()

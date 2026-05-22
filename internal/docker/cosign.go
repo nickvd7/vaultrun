@@ -33,8 +33,15 @@ func (c *Client) VerifyImage(ctx context.Context, image string) error {
 		)
 	}
 
+	// Validate image name to prevent argument injection (e.g. image="--insecure-ignore-tlog").
+	// Allow: registry/repo:tag@sha256:digest — reject anything starting with '-'.
+	if strings.HasPrefix(image, "-") {
+		return fmt.Errorf("invalid image name: must not start with '-'")
+	}
+
 	cmd := exec.CommandContext(ctx, cosignPath, "verify",
 		"--key", c.cosignPublicKey,
+		"--",
 		image,
 	)
 

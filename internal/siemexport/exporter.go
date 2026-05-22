@@ -25,6 +25,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/httputil"
 )
 
 // Exporter polls for new audit entries and ships them to an HTTP endpoint.
@@ -44,12 +45,18 @@ func New(db *sqlx.DB) *Exporter {
 	if exportURL == "" {
 		return nil
 	}
+	// Validate the export URL at startup to catch misconfigurations early.
+	if err := httputil.ValidatePublicURL(exportURL, false); err != nil {
+		slog.Warn("AUDIT_EXPORT_URL validation failed — exporter disabled",
+			"url", exportURL, "err", err)
+		return nil
+	}
 	e := &Exporter{
-		db:        db,
-		exportURL: exportURL,
-		secret:    os.Getenv("AUDIT_EXPORT_SECRET"),
-		httpClient: &http.Client{Timeout: 15 * time.Second},
-		interval:  30 * time.Second,
+		db:         db,
+		exportURL:  exportURL,
+		secret:     os.Getenv("AUDIT_EXPORT_SECRET"),
+		httpClient: httputil.NoRedirectClient(15 * time.Second),
+		interval:   30 * time.Second,
 	}
 	// Start from now — don't re-export historical entries on first run.
 	e.bookmark.Store(time.Now().UTC())

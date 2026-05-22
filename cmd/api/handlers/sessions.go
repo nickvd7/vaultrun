@@ -158,6 +158,13 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load snapshot"})
 			return
 		}
+		// Verify the caller can access the source session the snapshot came from.
+		// Without this, any authenticated user who knows a snapshot UUID can restore
+		// another tenant's workspace contents into their own session.
+		if _, ok := sh.h.checkSessionAccess(c, snap.SessionID, models.OrgRoleViewer); !ok {
+			_ = sh.h.ws.Delete(sessionID)
+			return
+		}
 		if err := sh.h.ws.RestoreSnapshot(sessionID, snap.ArchivePath); err != nil {
 			_ = sh.h.ws.Delete(sessionID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "restore snapshot failed: " + err.Error()})

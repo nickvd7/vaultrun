@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/httputil"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -240,19 +241,8 @@ func (rh *RunHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// Ownership check: verify the caller owns the parent session (H-5).
-	// This prevents cross-tenant run data leakage via direct UUID access.
-	actor := middleware.Actor(c)
-	if actor != "master" {
-		session, sessErr := dbpkg.GetSession(c.Request.Context(), rh.h.db, run.SessionID)
-		if sessErr == sql.ErrNoRows || (sessErr == nil && session.CreatedBy != actor) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
-			return
-		}
-		if sessErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify run ownership"})
-			return
-		}
+	if _, ok := rh.h.checkSessionAccess(c, run.SessionID, models.OrgRoleViewer); !ok {
+		return
 	}
 
 	c.JSON(http.StatusOK, run)
@@ -294,6 +284,14 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Validate callback URL to prevent SSRF.
+	if req.CallbackURL != "" {
+		if err := httputil.ValidatePublicURL(req.CallbackURL, false); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid callback_url: " + err.Error()})
+			return
+		}
 	}
 
 	// Resolve requested secrets and merge into env

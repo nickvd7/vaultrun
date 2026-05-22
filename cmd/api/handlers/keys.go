@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,17 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
+
+// Block reserved actor names — these strings are used as identity sentinels
+// throughout the codebase (RBAC short-circuits, audit log actor fields) and
+// must never be assignable to a real API key.
+var reservedActorNames = map[string]struct{}{
+	"master":  {},
+	"cleanup": {},
+	"unknown": {},
+	"system":  {},
+	"":        {},
+}
 
 type KeyHandler struct {
 	h *Hub
@@ -31,6 +43,11 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 	var req createKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, reserved := reservedActorNames[strings.ToLower(strings.TrimSpace(req.Name))]; reserved {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is reserved"})
 		return
 	}
 

@@ -56,26 +56,27 @@ func (m *Manager) Delete(sessionID uuid.UUID) error {
 }
 
 // SafePath resolves a user-provided path within the workspace, enforcing:
-//  1. No ".." components (after URL-decoding)
-//  2. Resolved path stays inside the workspace root
+//  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
+//  2. Resolved path stays inside the workspace root (via filepath.Clean + HasPrefix)
 func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
-	// URL-decode first to catch encoded traversals like %2e%2e%2f
-	decoded, err := url.PathUnescape(userPath)
-	if err != nil {
-		decoded = userPath
-	}
-
-	// Reject any path containing ".." in raw or decoded form
-	if strings.Contains(decoded, "..") || strings.Contains(userPath, "..") {
-		return "", fmt.Errorf("path traversal detected")
+	// URL-decode in a loop until stable to catch double/triple-encoded traversals.
+	decoded := userPath
+	for {
+		next, err := url.PathUnescape(decoded)
+		if err != nil || next == decoded {
+			break
+		}
+		decoded = next
 	}
 
 	root := m.sessionPath(sessionID)
-	// Normalize: prepend "/" so Clean can't produce "../" prefixes, then join with root
+	// filepath.Clean eliminates any ".." components; joining with the root then
+	// means the only way to escape is if the cleaned absolute path leaves root.
 	cleaned := filepath.Clean("/" + decoded)
 	resolved := filepath.Join(root, cleaned)
 
-	// Belt-and-suspenders: verify resolved path is still inside root
+	// Belt-and-suspenders: verify with trailing-separator to prevent
+	// /data/workspaces/AAAA matching /data/workspaces/AAAA-other/...
 	if !strings.HasPrefix(resolved, root+string(os.PathSeparator)) && resolved != root {
 		return "", fmt.Errorf("path traversal detected")
 	}
@@ -282,7 +283,7 @@ func (m *Manager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath s
 			if err != nil {
 				return nil // skip broken symlinks
 			}
-			if !strings.HasPrefix(real, root) {
+			if !strings.HasPrefix(real, root+string(os.PathSeparator)) && real != root {
 				return nil // skip escape symlinks
 			}
 		}
@@ -364,8 +365,8 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 			continue
 		}
 		dest := filepath.Join(root, filepath.Clean("/"+hdr.Name))
-		if !strings.HasPrefix(dest, root) {
-			continue // paranoia
+		if !strings.HasPrefix(dest, root+string(os.PathSeparator)) && dest != root {
+			continue // path traversal — reject
 		}
 
 		switch hdr.Typeflag {

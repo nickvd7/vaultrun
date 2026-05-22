@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -337,19 +336,26 @@ func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
 	})
 }
 
-// sanitizeFilename strips control characters, quotes, and non-printable
-// runes from a filename for safe use in HTTP headers.
+// sanitizeFilename returns a safe filename for use in Content-Disposition headers.
+// Only alphanumeric characters, dots, hyphens, and underscores are allowed;
+// everything else (including quotes, semicolons, CRLF, and Unicode) is replaced
+// with an underscore. This prevents header injection and response splitting.
 func sanitizeFilename(name string) string {
+	if name == "" {
+		return "file"
+	}
 	var b strings.Builder
 	for _, r := range name {
-		if r == '"' || r == '\\' || r == '\r' || r == '\n' || !unicode.IsPrint(r) {
-			b.WriteRune('_')
-		} else {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
 			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
 		}
 	}
 	s := b.String()
-	if s == "" {
+	// Prevent empty result or all-dots names (e.g. "..." → "___" is fine)
+	if s == "" || strings.Trim(s, "_.") == "" {
 		return "file"
 	}
 	return s

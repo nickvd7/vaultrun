@@ -31,7 +31,7 @@ func (sh *SnapshotHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, ok := sh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
+	if _, ok := sh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
 		return
 	}
 

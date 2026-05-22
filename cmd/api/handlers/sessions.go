@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -332,6 +333,25 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 				"container_id", *session.ContainerID,
 				"err", err,
 			)
+		}
+	}
+
+	// Remove all snapshots belonging to this session (DB rows + archive files).
+	// Best-effort: log failures but never abort the delete flow.
+	if snaps, err := dbpkg.ListSnapshots(c.Request.Context(), sh.h.db, id); err != nil {
+		slog.Warn("session delete: list snapshots failed", "session_id", id, "err", err)
+	} else {
+		for _, snap := range snaps {
+			archivePath, err := dbpkg.DeleteSnapshot(c.Request.Context(), sh.h.db, snap.ID)
+			if err != nil {
+				slog.Warn("session delete: remove snapshot DB row failed",
+					"session_id", id, "snapshot_id", snap.ID, "err", err)
+				continue
+			}
+			if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("session delete: remove snapshot archive failed",
+					"session_id", id, "snapshot_id", snap.ID, "path", archivePath, "err", err)
+			}
 		}
 	}
 

@@ -112,7 +112,7 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 
 	al := audit.New(db)
 	ws := workspace.New(cfg.Workspace.BaseDir)
-	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil)
+	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
 	authMW := middleware.APIKeyAuth(db, testMasterKey)
 
 	r.GET("/health", handlers.NewHealthHandler(hub).Health)
@@ -700,7 +700,7 @@ func newActorLimitRouter(db *sqlx.DB, requestsPerMinute int) *gin.Engine {
 	}
 	al := audit.New(db)
 	ws := workspace.New(cfg.Workspace.BaseDir)
-	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil)
+	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
 
 	authMW := middleware.APIKeyAuth(db, testMasterKey)
 	actorMW := middleware.ActorRateLimit(requestsPerMinute)
@@ -782,7 +782,7 @@ func newSessionQuotaRouter(t *testing.T, db *sqlx.DB, maxSessions int) *gin.Engi
 	al := audit.New(db)
 	ws := workspace.New(cfg.Workspace.BaseDir)
 	// docker client is nil — quota check fires before any Docker call.
-	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil)
+	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
 	authMW := middleware.APIKeyAuth(db, testMasterKey)
 	api := r.Group("/api/v1", authMW)
 	api.POST("/sessions", handlers.NewSessionHandler(hub).Create)

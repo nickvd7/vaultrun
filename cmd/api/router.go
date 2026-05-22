@@ -82,18 +82,35 @@ func newRouter(
 	// in production (or protected by an external gateway).
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// API documentation — unauthenticated, read-only.
-	// /docs/openapi.yaml  → raw OpenAPI 3.1 spec
-	// /docs               → Redoc interactive UI (references openapi.yaml)
-	r.Static("/docs", "docs")
-	r.GET("/docs/", func(c *gin.Context) {
-		// Override CSP for the docs page: Redoc needs inline scripts and styles.
-		c.Header("Content-Security-Policy",
-			"default-src 'none'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "+
-				"style-src 'self' 'unsafe-inline' fonts.googleapis.com; "+
-				"font-src fonts.gstatic.com; img-src 'self' data:")
-		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
-	})
+	// API documentation — OpenAPI spec + Redoc UI.
+	//
+	// A relaxed Content-Security-Policy is applied to all /docs/* requests so
+	// that the Redoc standalone bundle can be loaded from cdn.jsdelivr.net.
+	//
+	// We cannot combine r.Static("/docs", …) with r.GET("/docs/", …):
+	// r.Static registers GET /docs/*filepath, and registering any explicit
+	// /docs/ path on top of that wildcard causes Gin to panic at startup.
+	// Instead, a single wildcard handler owns both the CSP override and the
+	// trailing-slash redirect.
+	docsCSP := "default-src 'none'; " +
+		"script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " +
+		"style-src 'self' 'unsafe-inline' fonts.googleapis.com; " +
+		"font-src fonts.gstatic.com; img-src 'self' data:"
+	docsFS := http.FileServer(http.Dir("docs"))
+	docsHandler := func(c *gin.Context) {
+		c.Header("Content-Security-Policy", docsCSP)
+		fp := c.Param("filepath")
+		if fp == "/" || fp == "" {
+			c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
+			return
+		}
+		// Strip the /docs prefix so the file server resolves paths within
+		// the docs directory (e.g. /openapi.yaml → docs/openapi.yaml).
+		c.Request.URL.Path = fp
+		docsFS.ServeHTTP(c.Writer, c.Request)
+	}
+	r.GET("/docs/*filepath", docsHandler)
+	r.HEAD("/docs/*filepath", docsHandler)
 
 	api := r.Group("/api/v1")
 	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey)

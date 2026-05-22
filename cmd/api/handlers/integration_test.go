@@ -129,6 +129,16 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 	api.GET("/sessions/:id", sessH.Get)
 	api.PATCH("/sessions/:id/labels", sessH.UpdateLabels)
 
+	orgH := handlers.NewOrgHandler(hub)
+	api.POST("/orgs", orgH.Create)
+	api.GET("/orgs", orgH.List)
+	api.GET("/orgs/:id", orgH.Get)
+	api.DELETE("/orgs/:id", orgH.Delete)
+	api.POST("/orgs/:id/members", orgH.AddMember)
+	api.GET("/orgs/:id/members", orgH.ListMembers)
+	api.DELETE("/orgs/:id/members/:principal", orgH.RemoveMember)
+	api.GET("/orgs/:id/sessions", orgH.ListSessions)
+
 	policyH := handlers.NewPolicyHandler(hub)
 	api.GET("/policy", policyH.Get)
 	api.POST("/policy/eval", policyH.Eval)
@@ -142,7 +152,7 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 // truncateAll wipes every table so each test starts from an empty DB.
 func truncateAll(t *testing.T) {
 	t.Helper()
-	_, err := testDB.Exec(`TRUNCATE audit_logs, files, runs, sessions, api_keys CASCADE`)
+	_, err := testDB.Exec(`TRUNCATE audit_logs, files, runs, sessions, api_keys, org_members, organizations CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}
@@ -853,5 +863,263 @@ func TestSessionQuotaMasterExempt(t *testing.T) {
 	// acceptable (validation failures). Anything but 429 proves master is exempt.
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatalf("master key must not be blocked by session quota, got 429: %s", w.Body)
+	}
+}
+
+// ── organizations & RBAC ──────────────────────────────────────────────────────
+
+func TestOrgCreateAndList(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	// Create org
+	w := rec(r, "POST", "/api/v1/orgs", `{"name":"Acme Corp"}`, masterHdr())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create org: want 201, got %d: %s", w.Code, w.Body)
+	}
+	var org map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&org); err != nil {
+		t.Fatalf("decode org: %v", err)
+	}
+	if org["slug"] != "acme-corp" {
+		t.Errorf("want slug=acme-corp, got %q", org["slug"])
+	}
+	orgID, _ := org["id"].(string)
+
+	// List orgs
+	w2 := rec(r, "GET", "/api/v1/orgs", "", masterHdr())
+	if w2.Code != http.StatusOK {
+		t.Fatalf("list orgs: want 200, got %d: %s", w2.Code, w2.Body)
+	}
+	var list struct {
+		Orgs []map[string]interface{} `json:"orgs"`
+	}
+	_ = json.NewDecoder(w2.Body).Decode(&list)
+	if len(list.Orgs) != 1 {
+		t.Fatalf("want 1 org, got %d", len(list.Orgs))
+	}
+
+	// Get by ID
+	w3 := rec(r, "GET", "/api/v1/orgs/"+orgID, "", masterHdr())
+	if w3.Code != http.StatusOK {
+		t.Fatalf("get org: want 200, got %d: %s", w3.Code, w3.Body)
+	}
+}
+
+func TestOrgSlugDeduplicated(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	rec(r, "POST", "/api/v1/orgs", `{"name":"Duplicate"}`, masterHdr())
+	w := rec(r, "POST", "/api/v1/orgs", `{"name":"Duplicate"}`, masterHdr())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("want 409 for duplicate slug, got %d: %s", w.Code, w.Body)
+	}
+}
+
+func TestOrgDelete(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	w := rec(r, "POST", "/api/v1/orgs", `{"name":"DeleteMe"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	w2 := rec(r, "DELETE", "/api/v1/orgs/"+orgID, "", masterHdr())
+	if w2.Code != http.StatusNoContent {
+		t.Fatalf("delete org: want 204, got %d: %s", w2.Code, w2.Body)
+	}
+
+	w3 := rec(r, "GET", "/api/v1/orgs/"+orgID, "", masterHdr())
+	if w3.Code != http.StatusNotFound {
+		t.Fatalf("get deleted org: want 404, got %d", w3.Code)
+	}
+}
+
+func TestOrgMemberAddAndList(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	// Create org
+	wo := rec(r, "POST", "/api/v1/orgs", `{"name":"Team Alpha"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(wo.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	// Add executor member
+	wm := rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
+		`{"principal":"alice","role":"executor"}`, masterHdr())
+	if wm.Code != http.StatusCreated {
+		t.Fatalf("add member: want 201, got %d: %s", wm.Code, wm.Body)
+	}
+
+	// List members
+	wl := rec(r, "GET", "/api/v1/orgs/"+orgID+"/members", "", masterHdr())
+	if wl.Code != http.StatusOK {
+		t.Fatalf("list members: want 200, got %d: %s", wl.Code, wl.Body)
+	}
+	var listResp struct {
+		Members []map[string]interface{} `json:"members"`
+	}
+	_ = json.NewDecoder(wl.Body).Decode(&listResp)
+	if len(listResp.Members) != 1 {
+		t.Fatalf("want 1 member, got %d", len(listResp.Members))
+	}
+	if listResp.Members[0]["role"] != "executor" {
+		t.Errorf("want role=executor, got %v", listResp.Members[0]["role"])
+	}
+}
+
+func TestOrgMemberRemove(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	wo := rec(r, "POST", "/api/v1/orgs", `{"name":"Remove Test"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(wo.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
+		`{"principal":"bob","role":"viewer"}`, masterHdr())
+
+	wr := rec(r, "DELETE", "/api/v1/orgs/"+orgID+"/members/bob", "", masterHdr())
+	if wr.Code != http.StatusNoContent {
+		t.Fatalf("remove member: want 204, got %d: %s", wr.Code, wr.Body)
+	}
+
+	// Member should no longer appear
+	wl := rec(r, "GET", "/api/v1/orgs/"+orgID+"/members", "", masterHdr())
+	var listResp struct {
+		Members []map[string]interface{} `json:"members"`
+	}
+	_ = json.NewDecoder(wl.Body).Decode(&listResp)
+	if len(listResp.Members) != 0 {
+		t.Errorf("want 0 members after remove, got %d", len(listResp.Members))
+	}
+}
+
+func TestOrgMemberRoleUpdate(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	wo := rec(r, "POST", "/api/v1/orgs", `{"name":"Role Update"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(wo.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	// Add as viewer
+	rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
+		`{"principal":"carol","role":"viewer"}`, masterHdr())
+
+	// Promote to admin (upsert)
+	wp := rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
+		`{"principal":"carol","role":"admin"}`, masterHdr())
+	if wp.Code != http.StatusCreated {
+		t.Fatalf("upsert member: want 201, got %d: %s", wp.Code, wp.Body)
+	}
+
+	wl := rec(r, "GET", "/api/v1/orgs/"+orgID+"/members", "", masterHdr())
+	var listResp struct {
+		Members []map[string]interface{} `json:"members"`
+	}
+	_ = json.NewDecoder(wl.Body).Decode(&listResp)
+	if len(listResp.Members) != 1 {
+		t.Fatalf("want 1 member after upsert, got %d", len(listResp.Members))
+	}
+	if listResp.Members[0]["role"] != "admin" {
+		t.Errorf("want role=admin after promotion, got %v", listResp.Members[0]["role"])
+	}
+}
+
+func TestOrgSessionSharing(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	// Create org and add member "dave" as viewer
+	wo := rec(r, "POST", "/api/v1/orgs", `{"name":"Shared Org"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(wo.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
+		`{"principal":"dave","role":"viewer"}`, masterHdr())
+
+	// Insert a session belonging to that org owned by master
+	orgUUID := uuid.MustParse(orgID)
+	sessID := uuid.New()
+	_, err := testDB.ExecContext(context.Background(), `
+		INSERT INTO sessions (id, image, status, network_enabled, cpu_limit,
+		    memory_limit_mb, timeout_seconds, workspace_path, labels, allowed_hosts,
+		    created_by, org_id, created_at, updated_at)
+		VALUES ($1, 'python:3.12-slim', 'running', false, 1.0,
+		    512, 300, '/tmp/ws', '{}', '{}', 'master', $2, NOW(), NOW())`,
+		sessID, orgUUID,
+	)
+	if err != nil {
+		t.Fatalf("insert org session: %v", err)
+	}
+
+	// Create a key for "dave" so dave can authenticate
+	wk := rec(r, "POST", "/api/v1/keys", `{"name":"dave"}`, masterHdr())
+	if wk.Code != http.StatusCreated {
+		t.Fatalf("create dave key: want 201, got %d: %s", wk.Code, wk.Body)
+	}
+	var daveKey struct{ Key string `json:"key"` }
+	_ = json.NewDecoder(wk.Body).Decode(&daveKey)
+	daveHdr := map[string]string{"X-API-Key": daveKey.Key}
+
+	// Dave should see the org session in the global session list
+	wl := rec(r, "GET", "/api/v1/sessions", "", daveHdr)
+	if wl.Code != http.StatusOK {
+		t.Fatalf("list sessions as dave: want 200, got %d: %s", wl.Code, wl.Body)
+	}
+	var sessResp struct {
+		Sessions []map[string]interface{} `json:"sessions"`
+	}
+	_ = json.NewDecoder(wl.Body).Decode(&sessResp)
+	if len(sessResp.Sessions) != 1 {
+		t.Errorf("dave (viewer) should see the shared org session, got %d sessions", len(sessResp.Sessions))
+	}
+
+	// Dave should also see it via the org sessions endpoint
+	wos := rec(r, "GET", "/api/v1/orgs/"+orgID+"/sessions", "", daveHdr)
+	if wos.Code != http.StatusOK {
+		t.Fatalf("org sessions as dave: want 200, got %d: %s", wos.Code, wos.Body)
+	}
+	var orgSessResp struct {
+		Sessions []map[string]interface{} `json:"sessions"`
+	}
+	_ = json.NewDecoder(wos.Body).Decode(&orgSessResp)
+	if len(orgSessResp.Sessions) != 1 {
+		t.Errorf("want 1 org session, got %d", len(orgSessResp.Sessions))
+	}
+}
+
+func TestOrgNonMemberCannotSeeOrg(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	wo := rec(r, "POST", "/api/v1/orgs", `{"name":"Private Org"}`, masterHdr())
+	var org map[string]interface{}
+	_ = json.NewDecoder(wo.Body).Decode(&org)
+	orgID := org["id"].(string)
+
+	// Create "eve" key — NOT added as org member
+	wk := rec(r, "POST", "/api/v1/keys", `{"name":"eve"}`, masterHdr())
+	var eveKey struct{ Key string `json:"key"` }
+	_ = json.NewDecoder(wk.Body).Decode(&eveKey)
+	eveHdr := map[string]string{"X-API-Key": eveKey.Key}
+
+	// Eve should get 404 (existence not leaked)
+	wg := rec(r, "GET", "/api/v1/orgs/"+orgID, "", eveHdr)
+	if wg.Code != http.StatusNotFound {
+		t.Fatalf("non-member GET org: want 404, got %d: %s", wg.Code, wg.Body)
+	}
+
+	// Eve should not be able to list members
+	wm := rec(r, "GET", "/api/v1/orgs/"+orgID+"/members", "", eveHdr)
+	if wm.Code != http.StatusNotFound {
+		t.Fatalf("non-member list members: want 404, got %d: %s", wm.Code, wm.Body)
 	}
 }

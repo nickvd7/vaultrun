@@ -37,6 +37,9 @@ type createSessionRequest struct {
 	// may reach when network_enabled is true. Entries are resolved to
 	// /etc/hosts entries at container creation time for DNS-level control.
 	AllowedHosts   []string           `json:"allowed_hosts"`
+	// OrgID optionally assigns this session to an org for shared access.
+	// The caller must be an executor or admin of that org.
+	OrgID          *string            `json:"org_id"`
 }
 
 // POST /api/v1/sessions
@@ -99,6 +102,30 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		}
 	}
 
+	// Resolve and validate org_id if provided.
+	var orgID *uuid.UUID
+	if req.OrgID != nil && *req.OrgID != "" {
+		oid, err := uuid.Parse(*req.OrgID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid org_id"})
+			return
+		}
+		// Verify the org exists.
+		if _, err := dbpkg.GetOrg(c.Request.Context(), sh.h.db, oid); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "org not found"})
+			return
+		}
+		// Non-master callers must be at least executor in that org.
+		if actor != "master" {
+			role, err := dbpkg.GetOrgMemberRole(c.Request.Context(), sh.h.db, oid, actor)
+			if err != nil || !models.RoleAtLeast(role, models.OrgRoleExecutor) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "org executor role required to create org sessions"})
+				return
+			}
+		}
+		orgID = &oid
+	}
+
 	sessionID := uuid.New()
 
 	wspath, err := sh.h.ws.Create(sessionID)
@@ -133,6 +160,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		Labels:         labels,
 		AllowedHosts:   allowedHosts,
 		CreatedBy:      actor,
+		OrgID:          orgID,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -197,10 +225,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 }
 
 // GET /api/v1/sessions
-// Supports optional ?label=key:value filter.
+// Returns the caller's own sessions plus sessions in any org they belong to.
+// Master key sees all sessions. Supports optional ?label=key:value filter.
 func (sh *SessionHandler) List(c *gin.Context) {
 	pg := pagination(c)
-	// Non-master callers only see their own sessions (C-2 tenant isolation).
+	// Non-master callers see their own sessions + sessions shared via org membership.
 	listActor := middleware.Actor(c)
 	if listActor == "master" {
 		listActor = ""
@@ -215,12 +244,12 @@ func (sh *SessionHandler) List(c *gin.Context) {
 		}
 	}
 
-	sessions, err := dbpkg.ListSessions(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue, pg.limit, pg.offset)
+	sessions, err := dbpkg.ListSessionsForActor(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue, pg.limit, pg.offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
 	}
-	total, _ := dbpkg.CountSessionsFiltered(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue)
+	total, _ := dbpkg.CountSessionsForActor(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue)
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions, "pagination": pg.response(total)})
 }
 
@@ -230,7 +259,7 @@ func (sh *SessionHandler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	session, ok := sh.h.checkSessionAccess(c, id)
+	session, ok := sh.h.checkSessionAccess(c, id, models.OrgRoleViewer)
 	if !ok {
 		return
 	}
@@ -243,7 +272,7 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	session, ok := sh.h.checkSessionAccess(c, id)
+	session, ok := sh.h.checkSessionAccess(c, id, models.OrgRoleAdmin)
 	if !ok {
 		return
 	}
@@ -289,7 +318,7 @@ func (sh *SessionHandler) UpdateLabels(c *gin.Context) {
 		return
 	}
 
-	if _, ok := sh.h.checkSessionAccess(c, id); !ok {
+	if _, ok := sh.h.checkSessionAccess(c, id, models.OrgRoleExecutor); !ok {
 		return
 	}
 

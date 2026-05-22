@@ -141,6 +141,22 @@ func newRouter(
 	api.GET("/keys", buildMW(masterMWKeys, keysH.List)...)
 	api.DELETE("/keys/:id", buildMW(masterMWKeys, keysH.Revoke)...)
 
+	// Org management — create/list/delete requires master key.
+	// GET a specific org, list members, and list org sessions are accessible to
+	// org members (enforced inside the handler via requireOrgAccess).
+	orgH := handlers.NewOrgHandler(hub)
+	// master-only endpoints
+	api.POST("/orgs", buildMW(masterMWKeys, orgH.Create)...)
+	api.GET("/orgs", buildMW(masterMWKeys, orgH.List)...)
+	api.DELETE("/orgs/:id", buildMW(masterMWKeys, orgH.Delete)...)
+	// org-member-accessible endpoints (auth required; handler enforces RBAC)
+	api.GET("/orgs/:id", buildMW(orgH.Get)...)
+	api.GET("/orgs/:id/sessions", buildMW(orgH.ListSessions)...)
+	api.GET("/orgs/:id/members", buildMW(orgH.ListMembers)...)
+	// member management: master key or org admin (handler enforces)
+	api.POST("/orgs/:id/members", buildMW(orgH.AddMember)...)
+	api.DELETE("/orgs/:id/members/:principal", buildMW(orgH.RemoveMember)...)
+
 	// All remaining routes — rate-limited + any valid API key
 	authGroup := api.Group("/", buildMW()...)
 

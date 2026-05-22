@@ -38,8 +38,8 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// C-2: verify caller owns the session (returns 404 for cross-tenant access).
-	session, ok := fh.h.checkSessionAccess(c, sessionID)
+	// C-2: verify caller owns the session or is an org executor (upload = write).
+	session, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
 	if !ok {
 		return
 	}
@@ -145,8 +145,8 @@ func (fh *FileHandler) List(c *gin.Context) {
 		return
 	}
 
-	// C-2: verify caller owns the session.
-	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
+	// C-2: verify caller owns the session or is an org viewer (list = read).
+	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
 		return
 	}
 
@@ -173,8 +173,8 @@ func (fh *FileHandler) Download(c *gin.Context) {
 	}
 	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
-	// C-2: verify caller owns the session.
-	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
+	// C-2: verify caller owns the session or is an org viewer (download = read).
+	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
 		return
 	}
 
@@ -222,8 +222,8 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 	}
 	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
 
-	// C-2: verify caller owns the session.
-	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
+	// C-2: verify caller owns the session or is an org executor (delete file = write).
+	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
 		return
 	}
 
@@ -264,8 +264,8 @@ func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
 		return
 	}
 
-	// C-2: verify caller owns the session.
-	if _, ok := fh.h.checkSessionAccess(c, sessionID); !ok {
+	// C-2: verify caller owns the session or is an org viewer (zip = read).
+	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
 		return
 	}
 

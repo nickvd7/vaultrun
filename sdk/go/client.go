@@ -480,6 +480,103 @@ func (c *Client) ListAuditLogs(ctx context.Context, opts ...ListAuditLogsOptions
 	return result.AuditLogs, nil
 }
 
+// ─── Organizations ────────────────────────────────────────────────────────────
+
+// Organization represents a VaultRun team/org.
+type Organization struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Slug      string    `json:"slug"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// OrgMember represents a principal's membership in an org.
+type OrgMember struct {
+	OrgID     string    `json:"org_id"`
+	Principal string    `json:"principal"`
+	Role      string    `json:"role"` // "viewer" | "executor" | "admin"
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateOrg creates a new organization. Slug is auto-generated from name if
+// omitted. Requires master key.
+func (c *Client) CreateOrg(ctx context.Context, name, slug string) (*Organization, error) {
+	body := map[string]string{"name": name}
+	if slug != "" {
+		body["slug"] = slug
+	}
+	var org Organization
+	if err := c.do(ctx, "POST", "/api/v1/orgs", body, &org); err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+// ListOrgs returns all organizations. Requires master key.
+func (c *Client) ListOrgs(ctx context.Context) ([]*Organization, error) {
+	var result struct {
+		Orgs []*Organization `json:"orgs"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/orgs", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Orgs, nil
+}
+
+// GetOrg fetches a single org by ID. Accessible to org members.
+func (c *Client) GetOrg(ctx context.Context, orgID string) (*Organization, error) {
+	var org Organization
+	if err := c.do(ctx, "GET", "/api/v1/orgs/"+orgID, nil, &org); err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+// DeleteOrg deletes an org and all its members. Requires master key.
+func (c *Client) DeleteOrg(ctx context.Context, orgID string) error {
+	return c.do(ctx, "DELETE", "/api/v1/orgs/"+orgID, nil, nil)
+}
+
+// AddOrgMember adds (or updates) a member in an org. Role must be one of
+// "viewer", "executor", or "admin". Requires master key or org admin.
+func (c *Client) AddOrgMember(ctx context.Context, orgID, principal, role string) (*OrgMember, error) {
+	body := map[string]string{"principal": principal, "role": role}
+	var m OrgMember
+	if err := c.do(ctx, "POST", "/api/v1/orgs/"+orgID+"/members", body, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// ListOrgMembers lists all members of an org. Accessible to org members.
+func (c *Client) ListOrgMembers(ctx context.Context, orgID string) ([]*OrgMember, error) {
+	var result struct {
+		Members []*OrgMember `json:"members"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/orgs/"+orgID+"/members", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Members, nil
+}
+
+// RemoveOrgMember removes a principal from an org. Requires master key or org admin.
+func (c *Client) RemoveOrgMember(ctx context.Context, orgID, principal string) error {
+	return c.do(ctx, "DELETE", "/api/v1/orgs/"+orgID+"/members/"+principal, nil, nil)
+}
+
+// ListOrgSessions returns active sessions belonging to the org.
+// The caller must be an org member; results are filtered by the server.
+func (c *Client) ListOrgSessions(ctx context.Context, orgID string) ([]*Session, error) {
+	var result struct {
+		Sessions []*Session `json:"sessions"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/orgs/"+orgID+"/sessions", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Sessions, nil
+}
+
 // StreamEvent is a single SSE event from the run/stream endpoint.
 type StreamEvent struct {
 	Type       string `json:"type"`        // "stdout", "stderr", or "done"

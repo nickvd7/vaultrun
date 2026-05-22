@@ -39,6 +39,12 @@ const (
 	ActionAPIKeyRevoked   = "apikey.revoked"
 	ActionFileDeleted     = "file.deleted"
 	ActionSessionExpired  = "session.expired" // emitted by background cleanup goroutine
+
+	// Org actions
+	ActionOrgCreated        = "org.created"
+	ActionOrgDeleted        = "org.deleted"
+	ActionOrgMemberAdded    = "org.member.added"
+	ActionOrgMemberRemoved  = "org.member.removed"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.
@@ -94,6 +100,7 @@ type APIKey struct {
 	LastUsedAt *time.Time `db:"last_used_at" json:"last_used_at,omitempty"`
 	ExpiresAt  *time.Time `db:"expires_at"   json:"expires_at,omitempty"`
 	Active     bool       `db:"active"       json:"active"`
+	OrgID      *uuid.UUID `db:"org_id"     json:"org_id,omitempty"`
 }
 
 type Session struct {
@@ -117,6 +124,7 @@ type Session struct {
 	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
 	StoppedAt       *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`
+	OrgID           *uuid.UUID  `db:"org_id"           json:"org_id,omitempty"`
 }
 
 type Run struct {
@@ -160,4 +168,39 @@ type AuditLog struct {
 	RunID     *uuid.UUID `db:"run_id"     json:"run_id,omitempty"`
 	Action    string     `db:"action"     json:"action"`
 	Metadata  JSONB      `db:"metadata"   json:"metadata"`
+}
+
+// Org RBAC roles
+const (
+	OrgRoleViewer   = "viewer"   // read-only: list/get sessions, runs, files, audit
+	OrgRoleExecutor = "executor" // viewer + create sessions, run commands, upload/delete files
+	OrgRoleAdmin    = "admin"    // executor + delete sessions, manage org members
+)
+
+// roleRank maps each role to a numeric precedence for ≥ comparisons.
+var roleRank = map[string]int{
+	OrgRoleViewer:   1,
+	OrgRoleExecutor: 2,
+	OrgRoleAdmin:    3,
+}
+
+// RoleAtLeast returns true when have is at least as permissive as need.
+// Unknown role names map to 0 and always return false.
+func RoleAtLeast(have, need string) bool {
+	return roleRank[have] >= roleRank[need]
+}
+
+type Organization struct {
+	ID        uuid.UUID `db:"id"         json:"id"`
+	Name      string    `db:"name"       json:"name"`
+	Slug      string    `db:"slug"       json:"slug"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type OrgMember struct {
+	OrgID     uuid.UUID `db:"org_id"    json:"org_id"`
+	Principal string    `db:"principal" json:"principal"`
+	Role      string    `db:"role"      json:"role"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }

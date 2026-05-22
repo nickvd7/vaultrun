@@ -105,11 +105,31 @@ class APIKey:
     created_at: str
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
+    org_id: Optional[str] = None
 
 
 @dataclass
 class CreatedKey(APIKey):
     key: str = ""
+
+
+@dataclass
+class Organization:
+    """A VaultRun team / org."""
+    id: str
+    name: str
+    slug: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class OrgMember:
+    """An actor's membership in an org with a RBAC role."""
+    org_id: str
+    principal: str
+    role: str  # "viewer" | "executor" | "admin"
+    created_at: str
 
 
 class Client:
@@ -477,6 +497,74 @@ class Client:
             duration_ms=final.get("duration_ms"),
         )
 
+    # --- Organizations & RBAC ---
+
+    def create_org(self, name: str, slug: Optional[str] = None) -> Organization:
+        """Create a new organization. Requires master key.
+
+        Args:
+            name: human-readable org name.
+            slug: URL-safe identifier; auto-generated from name if omitted.
+
+        Returns:
+            :class:`Organization`
+        """
+        body: dict[str, Any] = {"name": name}
+        if slug:
+            body["slug"] = slug
+        d = self._post("/api/v1/orgs", body)
+        return self._parse_org(d)
+
+    def list_orgs(self) -> list[Organization]:
+        """List all organizations. Requires master key."""
+        d = self._get("/api/v1/orgs")
+        return [self._parse_org(o) for o in d.get("orgs", [])]
+
+    def get_org(self, org_id: str) -> Organization:
+        """Fetch a single org by ID. Accessible to org members."""
+        d = self._get(f"/api/v1/orgs/{org_id}")
+        return self._parse_org(d)
+
+    def delete_org(self, org_id: str) -> None:
+        """Delete an org and all its members. Requires master key."""
+        self._delete(f"/api/v1/orgs/{org_id}")
+
+    def add_org_member(
+        self,
+        org_id: str,
+        principal: str,
+        role: str = "executor",
+    ) -> OrgMember:
+        """Add or update an org member.
+
+        Args:
+            org_id: target organization ID.
+            principal: API key name (the actor string).
+            role: one of ``"viewer"``, ``"executor"``, or ``"admin"``.
+
+        Requires master key or org admin role.
+        """
+        body: dict[str, Any] = {"principal": principal, "role": role}
+        d = self._post(f"/api/v1/orgs/{org_id}/members", body)
+        return self._parse_org_member(d)
+
+    def list_org_members(self, org_id: str) -> list[OrgMember]:
+        """List all members of an org. Accessible to org members."""
+        d = self._get(f"/api/v1/orgs/{org_id}/members")
+        return [self._parse_org_member(m) for m in d.get("members", [])]
+
+    def remove_org_member(self, org_id: str, principal: str) -> None:
+        """Remove a principal from an org. Requires master key or org admin."""
+        self._delete(f"/api/v1/orgs/{org_id}/members/{principal}")
+
+    def list_org_sessions(self, org_id: str) -> list[Session]:
+        """List active sessions that belong to the org.
+
+        The caller must be an org member; the server filters by role.
+        """
+        d = self._get(f"/api/v1/orgs/{org_id}/sessions")
+        return [self._parse_session(s) for s in d.get("sessions", [])]
+
     # --- Webhook signature verification ---
 
     @staticmethod
@@ -627,4 +715,23 @@ class Client:
             session_id=d.get("session_id"),
             run_id=d.get("run_id"),
             metadata=d.get("metadata"),
+        )
+
+    @staticmethod
+    def _parse_org(d: dict) -> Organization:
+        return Organization(
+            id=d["id"],
+            name=d["name"],
+            slug=d["slug"],
+            created_at=d["created_at"],
+            updated_at=d["updated_at"],
+        )
+
+    @staticmethod
+    def _parse_org_member(d: dict) -> OrgMember:
+        return OrgMember(
+            org_id=d["org_id"],
+            principal=d["principal"],
+            role=d["role"],
+            created_at=d["created_at"],
         )

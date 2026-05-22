@@ -24,10 +24,10 @@
 - [x] Run artifacts: automatic detection of new files post-run
 
 ## v0.3 — Multi-tenancy
-- [ ] Organizations / teams
-- [ ] Per-org API key namespacing
-- [ ] RBAC (read-only vs. execute vs. admin)
-- [ ] Session sharing within org
+- [x] Organizations / teams (`POST/GET/DELETE /api/v1/orgs`, slug auto-generation)
+- [x] Per-org API key namespacing (`org_id` FK on `api_keys`; keys scoped to org on creation)
+- [x] RBAC (viewer / executor / admin roles on `org_members`; enforced per-endpoint)
+- [x] Session sharing within org (`org_id` on sessions; org members see shared sessions in `GET /sessions`; `GET /orgs/:id/sessions`)
 
 ## v0.4 — Advanced Runners
 - [ ] Kubernetes runner backend

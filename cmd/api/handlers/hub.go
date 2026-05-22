@@ -94,11 +94,20 @@ func parseUUID(c *gin.Context, param string) (uuid.UUID, bool) {
 	return id, true
 }
 
-// checkSessionAccess loads a session and verifies the caller owns it (C-2).
-// The master actor bypasses the ownership check and sees all sessions.
-// On failure the handler writes the appropriate JSON response and returns nil.
-// Pattern: session, ok := h.checkSessionAccess(c, id); if !ok { return }
-func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID) (*models.Session, bool) {
+// checkSessionAccess loads a session and verifies the caller has at least
+// minRole access to it (C-2 tenant isolation + v0.3 org RBAC).
+//
+// Access is granted when any of the following is true:
+//  1. actor is "master" (always full access)
+//  2. actor is the session owner (full access)
+//  3. the session belongs to an org and the actor is a member with
+//     role ≥ minRole
+//
+// On failure, the handler writes the appropriate JSON response (always 404
+// to avoid leaking session existence to unauthorized callers) and returns nil.
+//
+// Pattern: session, ok := h.checkSessionAccess(c, id, models.OrgRoleViewer)
+func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID, minRole string) (*models.Session, bool) {
 	session, err := dbpkg.GetSession(c.Request.Context(), h.db, sessionID)
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
@@ -109,11 +118,22 @@ func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID) (*models.S
 		return nil, false
 	}
 	actor := middleware.Actor(c)
-	// Non-master callers may only access their own sessions. Return 404 (not
-	// 403) to avoid leaking the existence of sessions owned by other actors.
-	if actor != "master" && session.CreatedBy != actor {
-		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-		return nil, false
+	// Master key sees everything.
+	if actor == "master" {
+		return session, true
 	}
-	return session, true
+	// Session owner always has full access regardless of role.
+	if session.CreatedBy == actor {
+		return session, true
+	}
+	// Org membership check: actor must be a member with sufficient role.
+	if session.OrgID != nil {
+		role, err := dbpkg.GetOrgMemberRole(c.Request.Context(), h.db, *session.OrgID, actor)
+		if err == nil && models.RoleAtLeast(role, minRole) {
+			return session, true
+		}
+	}
+	// Always return 404 (never 403) to avoid leaking session existence.
+	c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+	return nil, false
 }

@@ -17,10 +17,10 @@ func CreateSession(ctx context.Context, db *sqlx.DB, s *models.Session) error {
 	q := `
 		INSERT INTO sessions (id, name, image, status, network_enabled, cpu_limit,
 		    memory_limit_mb, timeout_seconds, workspace_path, labels, allowed_hosts,
-		    created_by, created_at, updated_at)
+		    created_by, org_id, created_at, updated_at)
 		VALUES (:id, :name, :image, :status, :network_enabled, :cpu_limit,
 		    :memory_limit_mb, :timeout_seconds, :workspace_path, :labels, :allowed_hosts,
-		    :created_by, :created_at, :updated_at)
+		    :created_by, :org_id, :created_at, :updated_at)
 	`
 	_, err := db.NamedExecContext(ctx, q, s)
 	return err
@@ -422,4 +422,204 @@ func FailStalePendingRuns(ctx context.Context, db *sqlx.DB, before time.Time) (i
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+// Organizations
+
+func CreateOrg(ctx context.Context, db *sqlx.DB, o *models.Organization) error {
+	_, err := db.NamedExecContext(ctx, `
+		INSERT INTO organizations (id, name, slug, created_at, updated_at)
+		VALUES (:id, :name, :slug, :created_at, :updated_at)
+	`, o)
+	return err
+}
+
+func GetOrg(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Organization, error) {
+	var o models.Organization
+	err := db.GetContext(ctx, &o, `SELECT * FROM organizations WHERE id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+func GetOrgBySlug(ctx context.Context, db *sqlx.DB, slug string) (*models.Organization, error) {
+	var o models.Organization
+	err := db.GetContext(ctx, &o, `SELECT * FROM organizations WHERE slug = $1`, slug)
+	if err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+func ListOrgs(ctx context.Context, db *sqlx.DB, limit, offset int) ([]*models.Organization, error) {
+	orgs := make([]*models.Organization, 0)
+	err := db.SelectContext(ctx, &orgs,
+		`SELECT * FROM organizations ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	return orgs, err
+}
+
+func CountOrgs(ctx context.Context, db *sqlx.DB) (int, error) {
+	var n int
+	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM organizations`)
+	return n, err
+}
+
+func DeleteOrg(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM organizations WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// Org members
+
+func AddOrgMember(ctx context.Context, db *sqlx.DB, m *models.OrgMember) error {
+	_, err := db.NamedExecContext(ctx, `
+		INSERT INTO org_members (org_id, principal, role, created_at)
+		VALUES (:org_id, :principal, :role, :created_at)
+		ON CONFLICT (org_id, principal) DO UPDATE SET role = EXCLUDED.role
+	`, m)
+	return err
+}
+
+func GetOrgMember(ctx context.Context, db *sqlx.DB, orgID uuid.UUID, principal string) (*models.OrgMember, error) {
+	var m models.OrgMember
+	err := db.GetContext(ctx, &m,
+		`SELECT * FROM org_members WHERE org_id = $1 AND principal = $2`,
+		orgID, principal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// GetOrgMemberRole returns the role for the given actor in the given org,
+// or sql.ErrNoRows if they are not a member.
+func GetOrgMemberRole(ctx context.Context, db *sqlx.DB, orgID uuid.UUID, principal string) (string, error) {
+	var role string
+	err := db.GetContext(ctx, &role,
+		`SELECT role FROM org_members WHERE org_id = $1 AND principal = $2`,
+		orgID, principal,
+	)
+	return role, err
+}
+
+func ListOrgMembers(ctx context.Context, db *sqlx.DB, orgID uuid.UUID) ([]*models.OrgMember, error) {
+	members := make([]*models.OrgMember, 0)
+	err := db.SelectContext(ctx, &members,
+		`SELECT * FROM org_members WHERE org_id = $1 ORDER BY created_at ASC`,
+		orgID,
+	)
+	return members, err
+}
+
+func RemoveOrgMember(ctx context.Context, db *sqlx.DB, orgID uuid.UUID, principal string) error {
+	res, err := db.ExecContext(ctx,
+		`DELETE FROM org_members WHERE org_id = $1 AND principal = $2`,
+		orgID, principal,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// GetActorOrgs returns all org memberships for the given actor.
+func GetActorOrgs(ctx context.Context, db *sqlx.DB, principal string) ([]*models.OrgMember, error) {
+	members := make([]*models.OrgMember, 0)
+	err := db.SelectContext(ctx, &members,
+		`SELECT * FROM org_members WHERE principal = $1`,
+		principal,
+	)
+	return members, err
+}
+
+// ListOrgSessions returns active sessions belonging to the given org.
+func ListOrgSessions(ctx context.Context, db *sqlx.DB, orgID uuid.UUID, limit, offset int) ([]*models.Session, error) {
+	sessions := make([]*models.Session, 0)
+	err := db.SelectContext(ctx, &sessions,
+		`SELECT * FROM sessions WHERE stopped_at IS NULL AND org_id = $1
+		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		orgID, limit, offset,
+	)
+	return sessions, err
+}
+
+func CountOrgSessions(ctx context.Context, db *sqlx.DB, orgID uuid.UUID) (int, error) {
+	var n int
+	err := db.GetContext(ctx, &n,
+		`SELECT COUNT(*) FROM sessions WHERE stopped_at IS NULL AND org_id = $1`, orgID)
+	return n, err
+}
+
+// ListSessionsForActor returns all active sessions visible to the actor:
+// own sessions UNION sessions in any org the actor belongs to.
+// When actor is empty (master), all sessions are returned.
+func ListSessionsForActor(ctx context.Context, db *sqlx.DB, actor, labelKey, labelValue string, limit, offset int) ([]*models.Session, error) {
+	sessions := make([]*models.Session, 0)
+	if actor == "" {
+		// master: existing ListSessions logic handles this
+		return ListSessions(ctx, db, "", labelKey, labelValue, limit, offset)
+	}
+	if labelKey != "" {
+		err := db.SelectContext(ctx, &sessions, `
+			SELECT DISTINCT s.*
+			FROM sessions s
+			LEFT JOIN org_members om ON om.org_id = s.org_id AND om.principal = $1
+			WHERE s.stopped_at IS NULL
+			  AND (s.created_by = $1 OR om.principal IS NOT NULL)
+			  AND s.labels @> jsonb_build_object($2::text, $3::text)
+			ORDER BY s.created_at DESC
+			LIMIT $4 OFFSET $5
+		`, actor, labelKey, labelValue, limit, offset)
+		return sessions, err
+	}
+	err := db.SelectContext(ctx, &sessions, `
+		SELECT DISTINCT s.*
+		FROM sessions s
+		LEFT JOIN org_members om ON om.org_id = s.org_id AND om.principal = $1
+		WHERE s.stopped_at IS NULL
+		  AND (s.created_by = $1 OR om.principal IS NOT NULL)
+		ORDER BY s.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, actor, limit, offset)
+	return sessions, err
+}
+
+// CountSessionsForActor mirrors ListSessionsForActor for pagination totals.
+func CountSessionsForActor(ctx context.Context, db *sqlx.DB, actor, labelKey, labelValue string) (int, error) {
+	var n int
+	if actor == "" {
+		return CountSessionsFiltered(ctx, db, "", labelKey, labelValue)
+	}
+	if labelKey != "" {
+		err := db.GetContext(ctx, &n, `
+			SELECT COUNT(DISTINCT s.id)
+			FROM sessions s
+			LEFT JOIN org_members om ON om.org_id = s.org_id AND om.principal = $1
+			WHERE s.stopped_at IS NULL
+			  AND (s.created_by = $1 OR om.principal IS NOT NULL)
+			  AND s.labels @> jsonb_build_object($2::text, $3::text)
+		`, actor, labelKey, labelValue)
+		return n, err
+	}
+	err := db.GetContext(ctx, &n, `
+		SELECT COUNT(DISTINCT s.id)
+		FROM sessions s
+		LEFT JOIN org_members om ON om.org_id = s.org_id AND om.principal = $1
+		WHERE s.stopped_at IS NULL
+		  AND (s.created_by = $1 OR om.principal IS NOT NULL)
+	`, actor)
+	return n, err
 }

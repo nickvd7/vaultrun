@@ -37,7 +37,7 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
 	if !ok {
 		return
 	}
@@ -98,7 +98,7 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
 	if !ok {
 		return
 	}
@@ -177,7 +177,7 @@ func (rh *RunHandler) ListBySession(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, ok := rh.h.checkSessionAccess(c, sessionID); !ok {
+	if _, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
 		return
 	}
 
@@ -242,7 +242,7 @@ func (rh *RunHandler) Async(c *gin.Context) {
 		return
 	}
 
-	session, ok := rh.h.checkSessionAccess(c, sessionID)
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
 	if !ok {
 		return
 	}

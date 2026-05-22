@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -40,6 +41,10 @@ type createSessionRequest struct {
 	// OrgID optionally assigns this session to an org for shared access.
 	// The caller must be an executor or admin of that org.
 	OrgID          *string            `json:"org_id"`
+	// SnapshotID optionally names a snapshot to restore into the new session workspace.
+	SnapshotID *string `json:"snapshot_id"`
+	// GPUEnabled requests GPU device passthrough when the server has GPUs configured.
+	GPUEnabled bool    `json:"gpu_enabled"`
 }
 
 // POST /api/v1/sessions
@@ -134,6 +139,31 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if req.SnapshotID != nil && *req.SnapshotID != "" {
+		snapUUID, err := uuid.Parse(*req.SnapshotID)
+		if err != nil {
+			_ = sh.h.ws.Delete(sessionID)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid snapshot_id"})
+			return
+		}
+		snap, err := dbpkg.GetSnapshot(c.Request.Context(), sh.h.db, snapUUID)
+		if err == sql.ErrNoRows {
+			_ = sh.h.ws.Delete(sessionID)
+			c.JSON(http.StatusNotFound, gin.H{"error": "snapshot not found"})
+			return
+		}
+		if err != nil {
+			_ = sh.h.ws.Delete(sessionID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load snapshot"})
+			return
+		}
+		if err := sh.h.ws.RestoreSnapshot(sessionID, snap.ArchivePath); err != nil {
+			_ = sh.h.ws.Delete(sessionID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "restore snapshot failed: " + err.Error()})
+			return
+		}
+	}
+
 	now := time.Now().UTC()
 
 	// Convert caller-supplied labels (string map) to JSONB.
@@ -175,16 +205,33 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	// Use the full UUID as the container name suffix to avoid birthday collisions
 	// (8-char hex has ~1% collision at 65 K sessions).
 	containerName := fmt.Sprintf("%s-%s", sh.h.cfg.Docker.ContainerPrefix, sessionID.String())
-	containerID, err := sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{
-		SessionID:      sessionID,
-		Image:          req.Image,
-		WorkspacePath:  wspath,
-		NetworkEnabled: req.NetworkEnabled,
-		CPULimit:       req.CPULimit,
-		MemoryLimitMB:  req.MemoryLimitMB,
-		ContainerName:  containerName,
-		AllowedHosts:   []string(allowedHosts),
-	})
+
+	gpuDevices := ""
+	if req.GPUEnabled && sh.h.cfg.Docker.GPUDevices != "" {
+		gpuDevices = sh.h.cfg.Docker.GPUDevices
+	}
+
+	var containerID string
+	if sh.h.warmPool != nil && req.Image == sh.h.cfg.Docker.WarmPoolImage {
+		if entry, ok := sh.h.warmPool.Acquire(); ok {
+			containerID = entry.ContainerID
+			slog.Info("warm pool container acquired", "session_id", sessionID, "container_id", containerID)
+		}
+	}
+
+	if containerID == "" {
+		containerID, err = sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{
+			SessionID:      sessionID,
+			Image:          req.Image,
+			WorkspacePath:  wspath,
+			NetworkEnabled: req.NetworkEnabled,
+			CPULimit:       req.CPULimit,
+			MemoryLimitMB:  req.MemoryLimitMB,
+			ContainerName:  containerName,
+			AllowedHosts:   []string(allowedHosts),
+			GPUDevices:     gpuDevices,
+		})
+	}
 	if err != nil {
 		slog.Error("container creation failed",
 			"session_id", sessionID,

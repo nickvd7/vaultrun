@@ -388,6 +388,19 @@ func CountAPIKeys(ctx context.Context, db *sqlx.DB) (int, error) {
 	return n, err
 }
 
+// ListAuditSince returns up to limit audit entries created after since, ordered by timestamp ASC.
+func ListAuditSince(ctx context.Context, db *sqlx.DB, since time.Time, limit int) ([]models.AuditLog, error) {
+	var entries []models.AuditLog
+	err := db.SelectContext(ctx, &entries,
+		`SELECT id, timestamp, actor, session_id, run_id, action, metadata
+		   FROM audit_logs
+		  WHERE timestamp > $1
+		  ORDER BY timestamp ASC
+		  LIMIT $2`,
+		since, limit)
+	return entries, err
+}
+
 // DeleteOldAuditLogs removes audit log entries whose timestamp is older than
 // the given cutoff. Returns the number of rows deleted.
 // Called by the background cleanup goroutine when AUDIT_LOG_RETENTION_DAYS > 0.
@@ -622,4 +635,98 @@ func CountSessionsForActor(ctx context.Context, db *sqlx.DB, actor, labelKey, la
 		  AND (s.created_by = $1 OR om.principal IS NOT NULL)
 	`, actor)
 	return n, err
+}
+
+// ─── Snapshots ────────────────────────────────────────────────────────────────
+
+func CreateSnapshot(ctx context.Context, db *sqlx.DB, s *models.Snapshot) error {
+	_, err := db.NamedExecContext(ctx, `
+		INSERT INTO session_snapshots (id, session_id, name, created_by, size_bytes, archive_path, created_at)
+		VALUES (:id, :session_id, :name, :created_by, :size_bytes, :archive_path, :created_at)
+	`, s)
+	return err
+}
+
+func GetSnapshot(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.Snapshot, error) {
+	var s models.Snapshot
+	err := db.GetContext(ctx, &s, `SELECT * FROM session_snapshots WHERE id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func ListSnapshots(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) ([]*models.Snapshot, error) {
+	snaps := make([]*models.Snapshot, 0)
+	err := db.SelectContext(ctx, &snaps,
+		`SELECT * FROM session_snapshots WHERE session_id = $1 ORDER BY created_at DESC`,
+		sessionID,
+	)
+	return snaps, err
+}
+
+func DeleteSnapshot(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, error) {
+	var archivePath string
+	err := db.GetContext(ctx, &archivePath,
+		`DELETE FROM session_snapshots WHERE id = $1 RETURNING archive_path`, id)
+	if err == sql.ErrNoRows {
+		return "", sql.ErrNoRows
+	}
+	return archivePath, err
+}
+
+// ─── Shared artifacts ─────────────────────────────────────────────────────────
+
+func CreateArtifact(ctx context.Context, db *sqlx.DB, a *models.SharedArtifact) error {
+	_, err := db.NamedExecContext(ctx, `
+		INSERT INTO shared_artifacts (id, name, artifact_path, size_bytes, content_type, created_by, session_id, created_at)
+		VALUES (:id, :name, :artifact_path, :size_bytes, :content_type, :created_by, :session_id, :created_at)
+	`, a)
+	return err
+}
+
+func GetArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (*models.SharedArtifact, error) {
+	var a models.SharedArtifact
+	err := db.GetContext(ctx, &a, `SELECT * FROM shared_artifacts WHERE id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func ListArtifacts(ctx context.Context, db *sqlx.DB, actor string, limit, offset int) ([]*models.SharedArtifact, error) {
+	artifacts := make([]*models.SharedArtifact, 0)
+	if actor != "" {
+		err := db.SelectContext(ctx, &artifacts,
+			`SELECT * FROM shared_artifacts WHERE created_by = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			actor, limit, offset,
+		)
+		return artifacts, err
+	}
+	err := db.SelectContext(ctx, &artifacts,
+		`SELECT * FROM shared_artifacts ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+	return artifacts, err
+}
+
+func CountArtifacts(ctx context.Context, db *sqlx.DB, actor string) (int, error) {
+	var n int
+	var err error
+	if actor != "" {
+		err = db.GetContext(ctx, &n, `SELECT COUNT(*) FROM shared_artifacts WHERE created_by = $1`, actor)
+	} else {
+		err = db.GetContext(ctx, &n, `SELECT COUNT(*) FROM shared_artifacts`)
+	}
+	return n, err
+}
+
+func DeleteArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, error) {
+	var artifactPath string
+	err := db.GetContext(ctx, &artifactPath,
+		`DELETE FROM shared_artifacts WHERE id = $1 RETURNING artifact_path`, id)
+	if err == sql.ErrNoRows {
+		return "", sql.ErrNoRows
+	}
+	return artifactPath, err
 }

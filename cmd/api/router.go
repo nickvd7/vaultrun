@@ -18,9 +18,10 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
+	"github.com/nickvd7/vaultrun/internal/secrets"
+	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
-
 
 
 func newRouter(
@@ -32,6 +33,8 @@ func newRouter(
 	al *audit.Logger,
 	pol policy.Hook,
 	queue jobqueue.Queue,
+	sec secrets.Provider,
+	pool *warmpool.Pool,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -74,7 +77,7 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue)
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool)
 
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
@@ -180,6 +183,18 @@ func newRouter(
 	authGroup.POST("/sessions/:id/run/async", runsH.Async)
 	authGroup.GET("/sessions/:id/runs", runsH.ListBySession)
 	authGroup.GET("/runs/:id", runsH.Get)
+
+	snapH := handlers.NewSnapshotHandler(hub)
+	authGroup.POST("/sessions/:id/snapshots", snapH.Create)
+	authGroup.GET("/sessions/:id/snapshots", snapH.List)
+	authGroup.GET("/snapshots/:id/download", snapH.Download)
+	authGroup.DELETE("/snapshots/:id", snapH.Delete)
+
+	artH := handlers.NewArtifactHandler(hub)
+	authGroup.POST("/sessions/:id/artifacts", artH.Promote)
+	authGroup.GET("/artifacts", artH.List)
+	authGroup.GET("/artifacts/:id/download", artH.Download)
+	authGroup.DELETE("/artifacts/:id", artH.Delete)
 
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)

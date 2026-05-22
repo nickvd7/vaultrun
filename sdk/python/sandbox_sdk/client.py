@@ -132,6 +132,29 @@ class OrgMember:
     created_at: str
 
 
+@dataclass
+class Snapshot:
+    """A compressed workspace archive."""
+    id: str
+    session_id: str
+    name: str
+    created_by: str
+    size_bytes: int
+    created_at: str
+
+
+@dataclass
+class SharedArtifact:
+    """A file promoted to the shared artifact registry."""
+    id: str
+    name: str
+    size_bytes: int
+    content_type: str
+    created_by: str
+    created_at: str
+    session_id: Optional[str] = None
+
+
 class Client:
     """VaultRun API client.
 
@@ -564,6 +587,67 @@ class Client:
         """
         d = self._get(f"/api/v1/orgs/{org_id}/sessions")
         return [self._parse_session(s) for s in d.get("sessions", [])]
+
+    # --- Snapshots ---
+
+    def create_snapshot(self, session_id: str, *, name: str) -> Snapshot:
+        """Create a snapshot archive of a session's workspace."""
+        data = self._post(f"/api/v1/sessions/{session_id}/snapshots", {"name": name})
+        return Snapshot(**{k: v for k, v in data.items() if k in Snapshot.__dataclass_fields__})
+
+    def list_snapshots(self, session_id: str) -> list[Snapshot]:
+        """List all snapshots for a session."""
+        data = self._get(f"/api/v1/sessions/{session_id}/snapshots")
+        return [Snapshot(**{k: v for k, v in s.items() if k in Snapshot.__dataclass_fields__})
+                for s in data.get("snapshots", [])]
+
+    def download_snapshot(self, snapshot_id: str) -> bytes:
+        """Download a snapshot archive as bytes."""
+        resp = self._session.get(
+            f"{self.base_url}/api/v1/snapshots/{snapshot_id}/download",
+            timeout=self._timeout,
+        )
+        self._raise_for_status(resp)
+        return resp.content
+
+    def delete_snapshot(self, snapshot_id: str) -> None:
+        """Delete a snapshot."""
+        self._delete(f"/api/v1/snapshots/{snapshot_id}")
+
+    # --- Artifacts ---
+
+    def promote_artifact(
+        self,
+        session_id: str,
+        path: str,
+        *,
+        name: str = "",
+    ) -> SharedArtifact:
+        """Promote a workspace file to the shared artifact registry."""
+        body: dict[str, Any] = {"path": path}
+        if name:
+            body["name"] = name
+        data = self._post(f"/api/v1/sessions/{session_id}/artifacts", body)
+        return SharedArtifact(**{k: v for k, v in data.items() if k in SharedArtifact.__dataclass_fields__})
+
+    def list_artifacts(self) -> list[SharedArtifact]:
+        """List shared artifacts visible to the caller."""
+        data = self._get("/api/v1/artifacts")
+        return [SharedArtifact(**{k: v for k, v in a.items() if k in SharedArtifact.__dataclass_fields__})
+                for a in data.get("artifacts", [])]
+
+    def download_artifact(self, artifact_id: str) -> bytes:
+        """Download a shared artifact as bytes."""
+        resp = self._session.get(
+            f"{self.base_url}/api/v1/artifacts/{artifact_id}/download",
+            timeout=self._timeout,
+        )
+        self._raise_for_status(resp)
+        return resp.content
+
+    def delete_artifact(self, artifact_id: str) -> None:
+        """Delete a shared artifact."""
+        self._delete(f"/api/v1/artifacts/{artifact_id}")
 
     # --- Webhook signature verification ---
 

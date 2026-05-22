@@ -30,10 +30,11 @@
 - [x] Session sharing within org (`org_id` on sessions; org members see shared sessions in `GET /sessions`; `GET /orgs/:id/sessions`)
 
 ## v0.4 — Advanced Runners
-- [ ] Kubernetes runner backend
-- [ ] Firecracker microVM runner
-- [ ] Runner pool with scheduling
-- [ ] Warm container pool for low-latency startup
+- [ ] Kubernetes runner backend *(deferred — infrastructure-dependent)*
+- [ ] Firecracker microVM runner *(deferred — requires host kernel support)*
+- [ ] Runner pool with scheduling *(deferred — requires Kubernetes)*
+- [x] Warm container pool for low-latency startup (`WARM_POOL_SIZE` / `WARM_POOL_IMAGE`; pre-started containers, non-blocking acquire on hot path)
+- [x] GPU runner support (`DOCKER_GPU_DEVICES`; NVIDIA Container Toolkit passthrough via `gpu_enabled` session flag)
 
 ## v0.5 — Policy Engine
 - [x] Open Policy Agent (OPA) integration (`OPA_POLICY_FILE`, Rego evaluation via `go-opa-evaluate`)
@@ -42,15 +43,15 @@
 - [x] Network egress policies (per-session iptables allowlist via `AllowedHosts`; DNS + ESTABLISHED always permitted)
 
 ## v0.6 — Secrets & State
-- [ ] Secrets broker (Vault / AWS Secrets Manager integration)
-- [ ] Persistent workspace snapshots
-- [ ] Session resume from snapshot
-- [ ] Cross-session artifact sharing
+- [x] Secrets broker (Vault KV v2 + AWS Secrets Manager + env fallback; `SECRETS_PROVIDER`; injected into runs via `secrets` field)
+- [x] Persistent workspace snapshots (`POST /sessions/:id/snapshots`, `GET /snapshots/:id/download`, `DELETE /snapshots/:id`)
+- [x] Session resume from snapshot (`snapshot_id` in `POST /sessions` restores workspace before container start)
+- [x] Cross-session artifact sharing (`POST /sessions/:id/artifacts`, `GET /artifacts`, `GET /artifacts/:id/download`, `DELETE /artifacts/:id`)
 
 ## v1.0 — Enterprise
-- [ ] SSO / SAML
-- [ ] Enterprise audit export (SIEM integrations)
-- [ ] Hosted control plane option
-- [ ] GPU runner support
-- [ ] Agent SDK integrations (LangChain, CrewAI, AutoGen)
-- [ ] Multi-region support
+- [ ] SSO / SAML *(deferred)*
+- [x] Enterprise audit export (SIEM integrations — `AUDIT_EXPORT_URL`; newline-delimited JSON POST every 30 s; Bearer token auth via `AUDIT_EXPORT_SECRET`)
+- [ ] Hosted control plane option *(deferred)*
+- [x] GPU runner support (see v0.4 above)
+- [x] Agent SDK integrations (LangChain + AutoGen examples in `sdk/python/examples/`)
+- [ ] Multi-region support *(deferred)*

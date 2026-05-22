@@ -23,6 +23,8 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
+	"github.com/nickvd7/vaultrun/internal/secrets"
+	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
@@ -126,6 +128,10 @@ func main() {
 
 	al := audit.New(db)
 
+	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
+	sec := secrets.New()
+	slog.Info("secrets provider initialised", "provider", sec.Name())
+
 	// Load OPA policy if OPA_POLICY_FILE is configured; fall back to AllowAll.
 	var policyHook policy.Hook = policy.AllowAll{}
 	if policyFile := cfg.Auth.OPAPolicyFile; policyFile != "" {
@@ -144,6 +150,19 @@ func main() {
 	}
 
 	rnr := runner.New(db, docker, al, policyHook)
+
+	// Warm container pool — optional; disabled when WARM_POOL_SIZE=0 or WARM_POOL_IMAGE is empty.
+	var pool *warmpool.Pool
+	poolCtx, poolCancel := context.WithCancel(context.Background())
+	defer poolCancel()
+	if cfg.Docker.WarmPoolSize > 0 && cfg.Docker.WarmPoolImage != "" {
+		slog.Info("warm container pool enabled",
+			"image", cfg.Docker.WarmPoolImage,
+			"size", cfg.Docker.WarmPoolSize)
+		pool = warmpool.New(docker.Inner(), cfg.Docker.WarmPoolImage,
+			cfg.Docker.WarmPoolSize, cfg.Workspace.BaseDir, "")
+		pool.Start(poolCtx)
+	}
 
 	// Async run worker pool.
 	// When REDIS_ADDR is set, use the durable Redis Streams backend.
@@ -184,7 +203,7 @@ func main() {
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),
@@ -236,6 +255,11 @@ func main() {
 				}
 			}
 		}
+	}
+
+	if pool != nil {
+		slog.Info("draining warm container pool")
+		pool.Stop()
 	}
 
 	if err := srv.Shutdown(ctx); err != nil {

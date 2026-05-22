@@ -378,6 +378,93 @@ func (c *Client) DeleteFile(ctx context.Context, sessionID, remotePath string) e
 	return c.do(ctx, "DELETE", "/api/v1/sessions/"+sessionID+"/files/"+clean, nil, nil)
 }
 
+// Snapshot represents a compressed workspace archive.
+type Snapshot struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Name      string    `json:"name"`
+	CreatedBy string    `json:"created_by"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SharedArtifact represents a file promoted to the shared artifact registry.
+type SharedArtifact struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	SizeBytes   int64      `json:"size_bytes"`
+	ContentType string     `json:"content_type"`
+	CreatedBy   string     `json:"created_by"`
+	SessionID   *string    `json:"session_id,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// CreateSnapshot creates a snapshot archive of a session's workspace.
+func (c *Client) CreateSnapshot(ctx context.Context, sessionID, name string) (*Snapshot, error) {
+	var s Snapshot
+	if err := c.do(ctx, "POST", "/api/v1/sessions/"+sessionID+"/snapshots",
+		map[string]string{"name": name}, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// ListSnapshots lists all snapshots for a session.
+func (c *Client) ListSnapshots(ctx context.Context, sessionID string) ([]*Snapshot, error) {
+	var result struct {
+		Snapshots []*Snapshot `json:"snapshots"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/sessions/"+sessionID+"/snapshots", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Snapshots, nil
+}
+
+// DownloadSnapshot streams a snapshot archive and returns the raw bytes.
+func (c *Client) DownloadSnapshot(ctx context.Context, snapshotID string) ([]byte, error) {
+	return c.download(ctx, "/api/v1/snapshots/"+snapshotID+"/download")
+}
+
+// DeleteSnapshot deletes a snapshot.
+func (c *Client) DeleteSnapshot(ctx context.Context, snapshotID string) error {
+	return c.do(ctx, "DELETE", "/api/v1/snapshots/"+snapshotID, nil, nil)
+}
+
+// PromoteArtifact promotes a session file to the shared artifact registry.
+// path is the file path inside the session workspace.
+func (c *Client) PromoteArtifact(ctx context.Context, sessionID, path string, name ...string) (*SharedArtifact, error) {
+	body := map[string]interface{}{"path": path}
+	if len(name) > 0 && name[0] != "" {
+		body["name"] = name[0]
+	}
+	var a SharedArtifact
+	if err := c.do(ctx, "POST", "/api/v1/sessions/"+sessionID+"/artifacts", body, &a); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// ListArtifacts returns shared artifacts visible to the caller.
+func (c *Client) ListArtifacts(ctx context.Context) ([]*SharedArtifact, error) {
+	var result struct {
+		Artifacts []*SharedArtifact `json:"artifacts"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/artifacts", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Artifacts, nil
+}
+
+// DownloadArtifact streams an artifact file and returns the raw bytes.
+func (c *Client) DownloadArtifact(ctx context.Context, artifactID string) ([]byte, error) {
+	return c.download(ctx, "/api/v1/artifacts/"+artifactID+"/download")
+}
+
+// DeleteArtifact deletes a shared artifact.
+func (c *Client) DeleteArtifact(ctx context.Context, artifactID string) error {
+	return c.do(ctx, "DELETE", "/api/v1/artifacts/"+artifactID, nil, nil)
+}
+
 // APIKey represents a VaultRun API key (plaintext is never returned after creation).
 type APIKey struct {
 	ID         string     `json:"id"`
@@ -679,6 +766,24 @@ func (c *Client) Stream(ctx context.Context, sessionID string, opts RunOptions, 
 }
 
 // --- internal helpers ---
+
+func (c *Client) download(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return io.ReadAll(resp.Body)
+}
 
 func (c *Client) do(ctx context.Context, method, path string, body, out interface{}) error {
 	var bodyReader io.Reader

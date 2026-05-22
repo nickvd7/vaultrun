@@ -28,6 +28,8 @@ type createRunRequest struct {
 	Env            map[string]string `json:"env"`
 	WorkingDir     string            `json:"working_dir"`
 	TimeoutSeconds int               `json:"timeout_seconds"`
+	// Secrets is a list of secret names to resolve and inject as environment variables.
+	Secrets []string `json:"secrets"`
 }
 
 // POST /api/v1/sessions/:id/run
@@ -54,6 +56,21 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Resolve requested secrets and merge into env
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if req.Env == nil {
+			req.Env = make(map[string]string)
+		}
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			req.Env[name] = val
+		}
 	}
 
 	limits := rh.h.cfg.SessionLimits()
@@ -115,6 +132,21 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Resolve requested secrets and merge into env
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if req.Env == nil {
+			req.Env = make(map[string]string)
+		}
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			req.Env[name] = val
+		}
 	}
 
 	limits := rh.h.cfg.SessionLimits()
@@ -262,6 +294,21 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Resolve requested secrets and merge into env
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if req.Env == nil {
+			req.Env = make(map[string]string)
+		}
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			req.Env[name] = val
+		}
 	}
 
 	limits := rh.h.cfg.SessionLimits()

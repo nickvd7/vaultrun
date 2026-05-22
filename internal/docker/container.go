@@ -34,6 +34,10 @@ type SandboxConfig struct {
 	// When empty (and NetworkEnabled), the container uses the default bridge
 	// without iptables filtering (operator is responsible for egress policy).
 	AllowedHosts []string
+	// GPUDevices enables NVIDIA GPU access inside the container.
+	// Values: "all" (all GPUs), "0" (first GPU), "0,1" (first two GPUs), "" (disabled).
+	// Requires nvidia-container-toolkit on the host.
+	GPUDevices string
 }
 
 const labelNetID = "vaultrun.netid" // Docker container label that records the session network ID
@@ -182,6 +186,22 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		CapDrop:        []string{"ALL"},
 		CapAdd:         []string{},
 		ExtraHosts:     extraHosts,
+	}
+
+	// GPU device requests — only applied when GPUDevices is set and the host
+	// has nvidia-container-toolkit. Passing an empty Capabilities slice to the
+	// Docker daemon is rejected; we only add the DeviceRequest when enabled.
+	if cfg.GPUDevices != "" {
+		dr := container.DeviceRequest{
+			Driver:       "nvidia",
+			Capabilities: [][]string{{"gpu"}},
+		}
+		if cfg.GPUDevices == "all" {
+			dr.Count = -1 // all available GPUs
+		} else {
+			dr.DeviceIDs = []string{cfg.GPUDevices}
+		}
+		hostCfg.DeviceRequests = []container.DeviceRequest{dr}
 	}
 
 	resp, err := c.inner.ContainerCreate(ctx,

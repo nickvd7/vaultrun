@@ -61,6 +61,15 @@ type DockerConfig struct {
 	// ImageAllowlist is an optional set of permitted images.
 	// An empty slice means all images are allowed.
 	ImageAllowlist []string
+	// WarmPoolSize is the number of containers to pre-start for WarmPoolImage.
+	// 0 = disabled (default).
+	WarmPoolSize int
+	// WarmPoolImage is the image to pre-warm (e.g. "python:3.12-slim").
+	// When empty, warm pool is disabled regardless of WarmPoolSize.
+	WarmPoolImage string
+	// GPUDevices enables NVIDIA GPU access in sessions that request it.
+	// "all" = all GPUs; "0,1" = specific GPU indices; "" = disabled.
+	GPUDevices string
 }
 
 type WorkspaceConfig struct {
@@ -150,6 +159,9 @@ func Load() (*Config, error) {
 			ContainerPrefix: getEnv("DOCKER_CONTAINER_PREFIX", "vaultrun"),
 			IdleTimeoutMins: idleTimeout,
 			ImageAllowlist:  imageAllowlist,
+			WarmPoolSize:    func() int { n, _ := strconv.Atoi(getEnv("WARM_POOL_SIZE", "0")); return n }(),
+			WarmPoolImage:   getEnv("WARM_POOL_IMAGE", ""),
+			GPUDevices:      getEnv("DOCKER_GPU_DEVICES", ""),
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:        getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),

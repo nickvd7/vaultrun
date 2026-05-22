@@ -18,19 +18,23 @@ import (
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
+	"github.com/nickvd7/vaultrun/internal/secrets"
+	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 // Hub holds shared dependencies that all handlers need.
 type Hub struct {
-	db     *sqlx.DB
-	docker *dockerpkg.Client
-	ws     *workspace.Manager
-	runner *runner.Runner
-	audit  *audit.Logger
-	cfg    *config.Config
-	policy policy.Hook
-	queue  jobqueue.Queue // interface — nil when async not configured
+	db       *sqlx.DB
+	docker   *dockerpkg.Client
+	ws       *workspace.Manager
+	runner   *runner.Runner
+	audit    *audit.Logger
+	cfg      *config.Config
+	policy   policy.Hook
+	queue    jobqueue.Queue // interface — nil when async not configured
+	secrets  secrets.Provider
+	warmPool *warmpool.Pool // nil when pool disabled
 }
 
 func NewHub(
@@ -42,11 +46,13 @@ func NewHub(
 	cfg *config.Config,
 	pol policy.Hook,
 	queue jobqueue.Queue,
+	sec secrets.Provider,
+	pool *warmpool.Pool,
 ) *Hub {
 	if pol == nil {
 		pol = policy.AllowAll{}
 	}
-	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol, queue: queue}
+	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol, queue: queue, secrets: sec, warmPool: pool}
 }
 
 // Policy exposes the active policy hook (for the policy handler).

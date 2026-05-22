@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -230,7 +232,182 @@ func (m *Manager) sessionPath(sessionID uuid.UUID) string {
 	return filepath.Join(m.baseDir, sessionID.String())
 }
 
-// SessionPath exposes the workspace root for a session (used by Docker bind mount).
 func (m *Manager) SessionPath(sessionID uuid.UUID) string {
 	return m.sessionPath(sessionID)
+}
+
+// CreateSnapshot creates a gzip-compressed tar archive of the session workspace.
+// The archive is written to {baseDir}/snapshots/<snapshotID>.tar.gz and the
+// archive path + uncompressed size are returned.
+func (m *Manager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath string, sizeBytes int64, err error) {
+	root := m.sessionPath(sessionID)
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return "", 0, fmt.Errorf("workspace not found for session %s", sessionID)
+	}
+
+	snapsDir := filepath.Join(m.baseDir, "snapshots")
+	if err := os.MkdirAll(snapsDir, 0o700); err != nil {
+		return "", 0, fmt.Errorf("create snapshots dir: %w", err)
+	}
+
+	archivePath = filepath.Join(snapsDir, snapshotID.String()+".tar.gz")
+	f, err := os.OpenFile(archivePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", 0, fmt.Errorf("create archive file: %w", err)
+	}
+	defer f.Close()
+
+	cw := newCountingWriter(f)
+	gzw, err := gzip.NewWriterLevel(cw, gzip.BestSpeed)
+	if err != nil {
+		return "", 0, fmt.Errorf("create gzip writer: %w", err)
+	}
+	tw := tar.NewWriter(gzw)
+
+	walkErr := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		// Resolve symlinks; skip those that escape the workspace.
+		if info.Mode()&os.ModeSymlink != 0 {
+			real, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return nil // skip broken symlinks
+			}
+			if !strings.HasPrefix(real, root) {
+				return nil // skip escape symlinks
+			}
+		}
+
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		hdr.Name = rel
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		ff, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer ff.Close()
+		_, err = io.Copy(tw, ff)
+		return err
+	})
+
+	if walkErr != nil {
+		_ = os.Remove(archivePath)
+		return "", 0, fmt.Errorf("archive workspace: %w", walkErr)
+	}
+	if err := tw.Close(); err != nil {
+		_ = os.Remove(archivePath)
+		return "", 0, fmt.Errorf("close tar writer: %w", err)
+	}
+	if err := gzw.Close(); err != nil {
+		_ = os.Remove(archivePath)
+		return "", 0, fmt.Errorf("close gzip writer: %w", err)
+	}
+
+	return archivePath, cw.n, nil
+}
+
+// RestoreSnapshot extracts a snapshot archive into the session workspace.
+// Files in the archive overwrite existing files; the workspace is not cleared
+// first so existing files not in the snapshot are preserved.
+func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error {
+	root := m.sessionPath(sessionID)
+	if err := os.MkdirAll(root, 0o777); err != nil {
+		return fmt.Errorf("create workspace: %w", err)
+	}
+	if err := os.Chmod(root, 0o777); err != nil {
+		return fmt.Errorf("chmod workspace: %w", err)
+	}
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read archive: %w", err)
+		}
+
+		// Sanitize path: reject any traversal attempts.
+		if strings.Contains(hdr.Name, "..") {
+			continue
+		}
+		dest := filepath.Join(root, filepath.Clean("/"+hdr.Name))
+		if !strings.HasPrefix(dest, root) {
+			continue // paranoia
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(dest, 0o777); err != nil {
+				return fmt.Errorf("mkdir %s: %w", hdr.Name, err)
+			}
+			_ = os.Chmod(dest, 0o777)
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
+				return fmt.Errorf("mkdir parent of %s: %w", hdr.Name, err)
+			}
+			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			if err != nil {
+				return fmt.Errorf("create %s: %w", hdr.Name, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
+				return fmt.Errorf("write %s: %w", hdr.Name, err)
+			}
+			_ = out.Close()
+			_ = os.Chmod(dest, 0o644)
+		}
+	}
+	return nil
+}
+
+// DeleteSnapshot removes a snapshot archive from disk.
+func (m *Manager) DeleteSnapshot(archivePath string) error {
+	return os.Remove(archivePath)
+}
+
+// countingWriter counts bytes written through it.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func newCountingWriter(w io.Writer) *countingWriter { return &countingWriter{w: w} }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }

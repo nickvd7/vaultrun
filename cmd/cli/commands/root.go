@@ -32,6 +32,8 @@ Use this CLI to create sessions, upload files, execute commands, and inspect res
 		newUpCmd(),
 		newKeyCmd(),
 		newAuditCmd(),
+		NewSnapshotCmd(),
+		NewArtifactCmd(),
 	)
 
 	return root

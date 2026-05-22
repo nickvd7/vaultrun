@@ -45,6 +45,14 @@ const (
 	ActionOrgDeleted        = "org.deleted"
 	ActionOrgMemberAdded    = "org.member.added"
 	ActionOrgMemberRemoved  = "org.member.removed"
+
+	// Snapshot actions
+	ActionSnapshotCreated = "snapshot.created"
+	ActionSnapshotDeleted = "snapshot.deleted"
+
+	// Artifact actions
+	ActionArtifactCreated = "artifact.created"
+	ActionArtifactDeleted = "artifact.deleted"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.
@@ -203,4 +211,25 @@ type OrgMember struct {
 	Principal string    `db:"principal" json:"principal"`
 	Role      string    `db:"role"      json:"role"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+type Snapshot struct {
+	ID          uuid.UUID `db:"id"           json:"id"`
+	SessionID   uuid.UUID `db:"session_id"   json:"session_id"`
+	Name        string    `db:"name"         json:"name"`
+	CreatedBy   string    `db:"created_by"   json:"created_by"`
+	SizeBytes   int64     `db:"size_bytes"   json:"size_bytes"`
+	ArchivePath string    `db:"archive_path" json:"-"` // host path — never expose
+	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+}
+
+type SharedArtifact struct {
+	ID           uuid.UUID  `db:"id"            json:"id"`
+	Name         string     `db:"name"          json:"name"`
+	ArtifactPath string     `db:"artifact_path" json:"-"` // host path — never expose
+	SizeBytes    int64      `db:"size_bytes"    json:"size_bytes"`
+	ContentType  string     `db:"content_type"  json:"content_type"`
+	CreatedBy    string     `db:"created_by"    json:"created_by"`
+	SessionID    *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
+	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
 }

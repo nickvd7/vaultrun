@@ -24,6 +24,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
+	"github.com/nickvd7/vaultrun/internal/siemexport"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -202,6 +203,12 @@ func main() {
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
+
+	// SIEM audit export — optional; only active when AUDIT_EXPORT_URL is set.
+	if siemExp := siemexport.New(db); siemExp != nil {
+		siemExp.Start(cleanupCtx)
+		slog.Info("siem audit export started", "url", os.Getenv("AUDIT_EXPORT_URL"))
+	}
 
 	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool)
 

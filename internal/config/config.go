@@ -27,9 +27,14 @@ type ServerConfig struct {
 	CORSOrigins     []string // allowed CORS origins; empty = same-origin only
 	RateLimit       int      // max requests per minute per IP (0 = disabled)
 	ActorRateLimit  int      // max requests per minute per actor/API-key (0 = same as RateLimit; -1 = disabled)
-	// TLS: when both are set the server listens over HTTPS.
+	// Static TLS: when both are set the server listens over HTTPS using the provided cert/key files.
 	TLSCertFile string // TLS_CERT_FILE — PEM certificate chain
 	TLSKeyFile  string // TLS_KEY_FILE  — PEM private key
+	// ACME / Let's Encrypt: when set, the server obtains and auto-renews a certificate.
+	// Requires port 443 access and a publicly routable hostname.
+	// Takes precedence over TLS_CERT_FILE/TLS_KEY_FILE when set.
+	ACMEDomain   string // ACME_DOMAIN  — hostname to obtain a cert for (e.g. "api.example.com")
+	ACMECacheDir string // ACME_CACHE_DIR — directory to persist ACME account keys + certs (default: /data/acme-cache)
 }
 
 type DatabaseConfig struct {
@@ -135,6 +140,8 @@ func Load() (*Config, error) {
 			ActorRateLimit:  actorRateLimit,
 			TLSCertFile:     getEnv("TLS_CERT_FILE", ""),
 			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
+			ACMEDomain:      getEnv("ACME_DOMAIN", ""),
+			ACMECacheDir:    getEnv("ACME_CACHE_DIR", "/data/acme-cache"),
 		},
 		Database: DatabaseConfig{
 			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),
@@ -186,9 +193,15 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// TLSEnabled returns true when both a certificate and key file are configured.
+// TLSEnabled returns true when static TLS cert+key files are configured.
 func (c *Config) TLSEnabled() bool {
 	return c.Server.TLSCertFile != "" && c.Server.TLSKeyFile != ""
+}
+
+// ACMEEnabled returns true when ACME/Let's Encrypt automatic cert management is configured.
+// ACME takes precedence over static TLS files when both are set.
+func (c *Config) ACMEEnabled() bool {
+	return c.Server.ACMEDomain != ""
 }
 
 // ActorRateLimitPerMin returns the effective per-actor rate limit.

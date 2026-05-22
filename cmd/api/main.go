@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/cleanup"
@@ -237,14 +238,41 @@ func main() {
 	}
 
 	go func() {
-		if cfg.TLSEnabled() {
+		switch {
+		case cfg.ACMEEnabled():
+			// ACME / Let's Encrypt: auto-obtain and renew certificate.
+			// The cache dir persists account keys + certificates across restarts.
+			if err := os.MkdirAll(cfg.Server.ACMECacheDir, 0o700); err != nil {
+				slog.Error("create acme cache dir", "dir", cfg.Server.ACMECacheDir, "err", err)
+				os.Exit(1)
+			}
+			m := &autocert.Manager{
+				Prompt:     autocert.AcceptTOS,
+				HostPolicy: autocert.HostWhitelist(cfg.Server.ACMEDomain),
+				Cache:      autocert.DirCache(cfg.Server.ACMECacheDir),
+			}
+			// HTTP-01 challenge listener on :80 (background goroutine).
+			go func() {
+				if err := http.ListenAndServe(":80", m.HTTPHandler(nil)); err != nil {
+					slog.Warn("acme http-01 listener stopped", "err", err)
+				}
+			}()
+			srv.Addr = ":443"
+			srv.TLSConfig = m.TLSConfig()
+			slog.Info("vaultrun api starting (ACME/Let's Encrypt)",
+				"domain", cfg.Server.ACMEDomain, "cache", cfg.Server.ACMECacheDir)
+			if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				slog.Error("server error", "err", err)
+				os.Exit(1)
+			}
+		case cfg.TLSEnabled():
 			slog.Info("vaultrun api starting (TLS)", "addr", cfg.ServerAddr(),
 				"cert", cfg.Server.TLSCertFile)
 			if err := srv.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile); err != nil && err != http.ErrServerClosed {
 				slog.Error("server error", "err", err)
 				os.Exit(1)
 			}
-		} else {
+		default:
 			slog.Info("vaultrun api starting", "addr", cfg.ServerAddr())
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				slog.Error("server error", "err", err)

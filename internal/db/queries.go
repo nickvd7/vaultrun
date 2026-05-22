@@ -721,6 +721,21 @@ func CountArtifacts(ctx context.Context, db *sqlx.DB, actor string) (int, error)
 	return n, err
 }
 
+// TotalArtifactBytes returns the sum of size_bytes for all artifacts owned by actor.
+// Pass an empty actor to sum across all actors (master use).
+func TotalArtifactBytes(ctx context.Context, db *sqlx.DB, actor string) (int64, error) {
+	var total int64
+	var err error
+	if actor != "" {
+		err = db.GetContext(ctx, &total,
+			`SELECT COALESCE(SUM(size_bytes), 0) FROM shared_artifacts WHERE created_by = $1`, actor)
+	} else {
+		err = db.GetContext(ctx, &total,
+			`SELECT COALESCE(SUM(size_bytes), 0) FROM shared_artifacts`)
+	}
+	return total, err
+}
+
 func DeleteArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, error) {
 	var artifactPath string
 	err := db.GetContext(ctx, &artifactPath,

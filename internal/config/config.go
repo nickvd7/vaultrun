@@ -73,10 +73,11 @@ type DockerConfig struct {
 }
 
 type WorkspaceConfig struct {
-	BaseDir        string
-	MaxFileMB      int64
-	MaxOutputMB    int64
-	MaxWorkspaceMB int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
+	BaseDir              string
+	MaxFileMB            int64
+	MaxOutputMB          int64
+	MaxWorkspaceMB       int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
+	MaxArtifactStorageMB int64 // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
 }
 
 type AuthConfig struct {
@@ -164,10 +165,11 @@ func Load() (*Config, error) {
 			GPUDevices:      getEnv("DOCKER_GPU_DEVICES", ""),
 		},
 		Workspace: WorkspaceConfig{
-			BaseDir:        getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
-			MaxFileMB:      maxFileMB,
-			MaxOutputMB:    maxOutputMB,
-			MaxWorkspaceMB: func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
+			BaseDir:              getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
+			MaxFileMB:            maxFileMB,
+			MaxOutputMB:          maxOutputMB,
+			MaxWorkspaceMB:       func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
+			MaxArtifactStorageMB: func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
 		},
 		Auth: AuthConfig{
 			MasterKey:     getEnv("MASTER_API_KEY", ""),

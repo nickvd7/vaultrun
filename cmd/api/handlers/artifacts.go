@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -41,6 +42,8 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		return
 	}
 
+	actor := middleware.Actor(c)
+
 	var req struct {
 		Path string  `json:"path" binding:"required"`
 		Name *string `json:"name"`
@@ -65,6 +68,22 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	if err != nil || !info.Mode().IsRegular() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path must point to a regular file"})
 		return
+	}
+
+	// Enforce per-actor artifact storage quota (when configured).
+	if maxMB := ah.h.cfg.Workspace.MaxArtifactStorageMB; maxMB > 0 && actor != "master" {
+		used, err := dbpkg.TotalArtifactBytes(c.Request.Context(), ah.h.db, actor)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "quota check failed"})
+			return
+		}
+		maxBytes := maxMB * 1024 * 1024
+		if used+info.Size() > maxBytes {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": fmt.Sprintf("artifact storage quota of %d MB exceeded", maxMB),
+			})
+			return
+		}
 	}
 
 	// Determine the artifact name (fall back to the base filename).
@@ -106,7 +125,6 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		return
 	}
 
-	actor := middleware.Actor(c)
 	art := &models.SharedArtifact{
 		ID:           artifactID,
 		Name:         name,

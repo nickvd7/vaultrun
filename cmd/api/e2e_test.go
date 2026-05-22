@@ -67,10 +67,27 @@ func TestE2ESmoke(t *testing.T) {
 		t.Skipf("Docker ping failed — skipping E2E: %v", err)
 	}
 
-	// Pull the sandbox image once so the session create call doesn't time-out.
-	t.Log("pulling sandbox image…")
-	if err := dockerClient.PullImage(ctx, e2eImage); err != nil {
-		t.Skipf("cannot pull %s: %v", e2eImage, err)
+	// Ensure the sandbox image is locally available. If CI has already pre-pulled
+	// it (via the "Pull sandbox image" workflow step), we skip the registry pull
+	// entirely — Docker Hub enforces a 100-pull/6 h rate limit for unauthenticated
+	// runners, and unconditionally calling PullImage burns that quota even when
+	// the image is already cached, which is the primary cause of intermittent
+	// CI failures.
+	t.Log("checking sandbox image availability…")
+	imageAvailable, err := dockerClient.ImageExists(ctx, e2eImage)
+	if err != nil {
+		t.Logf("image existence check error (%v); will attempt pull", err)
+		imageAvailable = false
+	}
+	if !imageAvailable {
+		t.Logf("image %s not found locally — pulling from registry…", e2eImage)
+		pullCtx, pullCancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer pullCancel()
+		if err := dockerClient.PullImage(pullCtx, e2eImage); err != nil {
+			t.Skipf("cannot pull %s: %v", e2eImage, err)
+		}
+	} else {
+		t.Logf("image %s found in local cache — skipping registry pull", e2eImage)
 	}
 
 	// ── 1. Database ───────────────────────────────────────────────────────────

@@ -82,8 +82,41 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Pull sandbox image
-        run: docker pull python:3.12-slim
+      # Cache python:3.12-slim as a tarball so Docker Hub is only hit on the
+      # first run (or after manual cache busting). Docker Hub enforces a
+      # 100-pull/6 h rate limit for unauthenticated runners, which is the
+      # primary cause of intermittent e2e failures when the cache is cold.
+      - name: Restore Docker image cache
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.docker-cache
+          key: docker-python-3.12-slim
+
+      - name: Load cached sandbox image
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/.docker-cache/python-3.12-slim.tar
+
+      - name: Pull sandbox image (cache miss)
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          # Retry up to 3 times with exponential backoff to handle transient
+          # Docker Hub errors or rate-limit responses.
+          for attempt in 1 2 3; do
+            docker pull python:3.12-slim && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "All pull attempts failed"
+              exit 1
+            fi
+            echo "Pull attempt $attempt failed; retrying in $((attempt * 10))s…"
+            sleep $((attempt * 10))
+          done
+
+      - name: Save sandbox image to cache
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/.docker-cache
+          docker save python:3.12-slim -o /tmp/.docker-cache/python-3.12-slim.tar
 
       - name: E2E smoke test
         run: go test -tags e2e ./cmd/api/ -v -timeout 300s

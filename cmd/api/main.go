@@ -157,6 +157,23 @@ func main() {
 	poolCtx, poolCancel := context.WithCancel(context.Background())
 	defer poolCancel()
 	if cfg.Docker.WarmPoolSize > 0 && cfg.Docker.WarmPoolImage != "" {
+		// Pre-pull the image at startup so the first Acquire() is instant.
+		// Without this the pool fill goroutine would block on a pull the first time
+		// it tries to create a container, causing pool starvation under early load.
+		pullCtx, pullCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		exists, _ := docker.ImageExists(pullCtx, cfg.Docker.WarmPoolImage)
+		if !exists {
+			slog.Info("warm pool: pulling image", "image", cfg.Docker.WarmPoolImage)
+			if err := docker.PullImage(pullCtx, cfg.Docker.WarmPoolImage); err != nil {
+				// Non-fatal: the pool fill goroutine will retry; log and continue.
+				slog.Warn("warm pool: pre-pull failed — pool will retry in background",
+					"image", cfg.Docker.WarmPoolImage, "err", err)
+			} else {
+				slog.Info("warm pool: image ready", "image", cfg.Docker.WarmPoolImage)
+			}
+		}
+		pullCancel()
+
 		slog.Info("warm container pool enabled",
 			"image", cfg.Docker.WarmPoolImage,
 			"size", cfg.Docker.WarmPoolSize)

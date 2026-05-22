@@ -16,7 +16,7 @@ services:
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable
-      - REDIS_ADDR=redis:6379
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - WORKSPACE_BASE_DIR=/data/workspaces
       - MIGRATIONS_PATH=/app/migrations
       - MASTER_API_KEY=${MASTER_API_KEY:?MASTER_API_KEY must be set}
@@ -26,6 +26,34 @@ services:
       - MAX_OUTPUT_MB=${MAX_OUTPUT_MB:-10}
       - GIN_MODE=${GIN_MODE:-release}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      # Async workers
+      - ASYNC_WORKERS=${ASYNC_WORKERS:-4}
+      - ASYNC_QUEUE_SIZE=${ASYNC_QUEUE_SIZE:-256}
+      # Rate limiting
+      - RATE_LIMIT_PER_MIN=${RATE_LIMIT_PER_MIN:-120}
+      - ACTOR_RATE_LIMIT_PER_MIN=${ACTOR_RATE_LIMIT_PER_MIN:-0}
+      # Session resource limits
+      - MAX_SESSION_CPU=${MAX_SESSION_CPU:-8}
+      - MAX_SESSION_MEMORY_MB=${MAX_SESSION_MEMORY_MB:-8192}
+      - MAX_SESSION_TIMEOUT_SEC=${MAX_SESSION_TIMEOUT_SEC:-86400}
+      - MAX_SESSIONS_PER_ACTOR=${MAX_SESSIONS_PER_ACTOR:-20}
+      - MAX_WORKSPACE_MB=${MAX_WORKSPACE_MB:-0}
+      # Docker sandbox
+      - DOCKER_DEFAULT_IMAGE=${DOCKER_DEFAULT_IMAGE:-python:3.12-slim}
+      - DOCKER_IDLE_TIMEOUT_MINS=${DOCKER_IDLE_TIMEOUT_MINS:-30}
+      # Redis auth
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      # Observability
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUDIT_LOG_RETENTION_DAYS=${AUDIT_LOG_RETENTION_DAYS:-90}
+      - STOP_CONTAINERS_ON_SHUTDOWN=${STOP_CONTAINERS_ON_SHUTDOWN:-false}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      # Auth / policy
+      - OPA_POLICY_FILE=${OPA_POLICY_FILE:-}
+      # TLS (set both to enable HTTPS on the API server)
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-}
       - DOCKER_IMAGE_ALLOWLIST=${DOCKER_IMAGE_ALLOWLIST:-}
       # Seccomp + cosign (optional but recommended in production)
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}

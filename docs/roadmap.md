@@ -14,14 +14,14 @@
 - [x] Unit + integration tests
 
 ## v0.2 — Hardening
-- [ ] Seccomp profiles for containers
-- [ ] Image allowlist in policy hook
-- [ ] Per-session network policies (allowlist specific hosts)
-- [ ] TLS termination built-in (Let's Encrypt)
-- [ ] Rate limiting (Redis-backed)
-- [ ] Session idle timeout cleanup (background goroutine)
-- [ ] Streaming run output via SSE
-- [ ] Run artifacts: automatic detection of new files post-run
+- [x] Seccomp profiles for containers
+- [x] Image allowlist in policy hook
+- [x] Per-session network policies (allowlist specific hosts)
+- [x] TLS termination (HTTPS via TLS_CERT_FILE/TLS_KEY_FILE; Let's Encrypt/ACME planned)
+- [x] Rate limiting (IP + per-actor; Redis-backed sliding window planned)
+- [x] Session idle timeout cleanup (background goroutine)
+- [x] Streaming run output via SSE
+- [x] Run artifacts: automatic detection of new files post-run
 
 ## v0.3 — Multi-tenancy
 - [ ] Organizations / teams

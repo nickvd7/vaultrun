@@ -139,7 +139,7 @@ func Load() (*Config, error) {
 			SSLKey:      getEnv("DB_SSL_KEY", ""),
 		},
 		Redis: RedisConfig{
-			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+			Addr:     getEnv("REDIS_ADDR", ""),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       redisDB,
 		},

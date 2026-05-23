@@ -3,6 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -118,6 +121,12 @@ func (sh *SnapshotHandler) Download(c *gin.Context) {
 
 	// Verify the caller can access the source session.
 	if _, ok := sh.h.checkSessionAccess(c, snap.SessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+
+	snapshotsBase := filepath.Join(sh.h.cfg.Workspace.BaseDir, "snapshots")
+	if !strings.HasPrefix(filepath.Clean(snap.ArchivePath), snapshotsBase+string(os.PathSeparator)) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "snapshot path invalid"})
 		return
 	}
 

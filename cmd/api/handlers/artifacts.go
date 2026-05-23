@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -196,6 +197,15 @@ func (ah *ArtifactHandler) Download(c *gin.Context) {
 	actor := middleware.Actor(c)
 	if actor != "master" && art.CreatedBy != actor {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
+		return
+	}
+
+	// Defence-in-depth: ensure the artifact path is within the configured
+	// artifacts directory. A DB corruption or injection attack should not
+	// be able to serve arbitrary host files.
+	artifactsBase := ah.artifactDir()
+	if !strings.HasPrefix(filepath.Clean(art.ArtifactPath), artifactsBase+string(os.PathSeparator)) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "artifact path invalid"})
 		return
 	}
 

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -200,7 +201,10 @@ func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("aws: secrets manager returned %d for %q: %s", resp.StatusCode, secretID, respBody)
+		// Log full details at debug level only — don't expose the secret ID or
+		// AWS error body in the returned error (it may reach the API response).
+		slog.Debug("aws: secrets manager error", "secret_id", secretID, "status", resp.StatusCode, "body", string(respBody))
+		return "", fmt.Errorf("aws: get secret failed (status %d)", resp.StatusCode)
 	}
 
 	var result struct {

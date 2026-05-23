@@ -189,6 +189,14 @@ func main() {
 	asyncWorkers, _ := strconv.Atoi(getEnvMain("ASYNC_WORKERS", "4"))
 	asyncBufSize, _ := strconv.Atoi(getEnvMain("ASYNC_QUEUE_SIZE", "256"))
 
+	// Log whether rate limiting is backed by Redis or in-memory.
+	if cfg.Redis.Addr != "" {
+		slog.Info("rate limiter: using Redis backend (distributed, shared across instances)",
+			"addr", cfg.Redis.Addr)
+	} else {
+		slog.Warn("rate limiter: using in-memory backend (process-local; set REDIS_ADDR for distributed rate limiting)")
+	}
+
 	var queue jobqueue.Queue
 	if cfg.Redis.Addr != "" {
 		q, err := jobqueue.NewRedis(

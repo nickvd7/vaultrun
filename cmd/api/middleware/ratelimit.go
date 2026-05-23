@@ -1,11 +1,15 @@
 package middleware
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/nickvd7/vaultrun/internal/metrics"
 )
@@ -130,3 +134,74 @@ func ActorRateLimit(requestsPerMinute int) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// NewRedisRateLimit returns a per-minute rate-limit middleware backed by Redis.
+// Uses a sliding-window approximation: each 1-minute bucket has its own key.
+// On Redis error the middleware fails open (allows the request) and logs a warning.
+func NewRedisRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
+	opts := &redis.Options{Addr: addr, Password: password, DB: db}
+	rdb := redis.NewClient(opts)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		minute := time.Now().Unix() / 60
+		key := fmt.Sprintf("ratelimit:ip:%s:%d", ip, minute)
+		ctx := c.Request.Context()
+
+		count, err := rdb.Incr(ctx, key).Result()
+		if err != nil {
+			slog.Warn("redis rate limit: incr failed, allowing request", "err", err)
+			c.Next()
+			return
+		}
+		if count == 1 {
+			// First request in this window — set expiry.
+			rdb.Expire(ctx, key, 90*time.Second)
+		}
+		if int(count) > limit {
+			metrics.RateLimitHitsTotal.WithLabelValues("ip").Inc()
+			c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+			c.Header("Retry-After", "60")
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			return
+		}
+		c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+		c.Next()
+	}
+}
+
+// NewRedisActorRateLimit is like NewRedisRateLimit but keys on the authenticated actor.
+// Must run AFTER APIKeyAuth so that Actor(c) is populated.
+// The master actor is always exempt — it should never be throttled.
+func NewRedisActorRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
+	opts := &redis.Options{Addr: addr, Password: password, DB: db}
+	rdb := redis.NewClient(opts)
+	return func(c *gin.Context) {
+		actor := Actor(c)
+		// Master key and unauthenticated (already rejected by auth) are exempt.
+		if actor == "master" || actor == "unknown" {
+			c.Next()
+			return
+		}
+		minute := time.Now().Unix() / 60
+		key := fmt.Sprintf("ratelimit:actor:%s:%d", actor, minute)
+		ctx := c.Request.Context()
+
+		count, err := rdb.Incr(ctx, key).Result()
+		if err != nil {
+			slog.Warn("redis actor rate limit: incr failed, allowing request", "err", err)
+			c.Next()
+			return
+		}
+		if count == 1 {
+			rdb.Expire(ctx, key, 90*time.Second)
+		}
+		if int(count) > limit {
+			metrics.RateLimitHitsTotal.WithLabelValues("actor").Inc()
+			c.Header("Retry-After", "60")
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+			return
+		}
+		c.Next()
+	}
+}
+

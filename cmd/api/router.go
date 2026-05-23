@@ -122,14 +122,25 @@ func newRouter(
 	actorLimit := cfg.ActorRateLimitPerMin()
 
 	// Build a middleware slice that optionally prepends the rate limiter.
+	// When Redis is configured, use the distributed Redis-backed limiters so that
+	// multi-instance deployments behind a load balancer share a single counter
+	// (preventing the per-instance N×limit bypass).
 	buildMW := func(extra ...gin.HandlerFunc) []gin.HandlerFunc {
 		var mw []gin.HandlerFunc
 		if cfg.Server.RateLimit > 0 {
-			mw = append(mw, middleware.RateLimit(cfg.Server.RateLimit))
+			if cfg.Redis.Addr != "" {
+				mw = append(mw, middleware.NewRedisRateLimit(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, cfg.Server.RateLimit))
+			} else {
+				mw = append(mw, middleware.RateLimit(cfg.Server.RateLimit))
+			}
 		}
 		mw = append(mw, authMW)
 		if actorLimit > 0 {
-			mw = append(mw, middleware.ActorRateLimit(actorLimit))
+			if cfg.Redis.Addr != "" {
+				mw = append(mw, middleware.NewRedisActorRateLimit(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, actorLimit))
+			} else {
+				mw = append(mw, middleware.ActorRateLimit(actorLimit))
+			}
 		}
 		return append(mw, extra...)
 	}

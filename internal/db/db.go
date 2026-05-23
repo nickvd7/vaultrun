@@ -29,6 +29,13 @@ func Connect(cfg config.DatabaseConfig) (*sqlx.DB, error) {
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
+	// Warn operators when the database connection is unencrypted.
+	// In production, use DB_SSL_MODE=require or verify-full.
+	if strings.Contains(dsn, "sslmode=disable") || cfg.SSLMode == "disable" {
+		slog.Warn("database connection is unencrypted (sslmode=disable) — " +
+			"set DB_SSL_MODE=require in production")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

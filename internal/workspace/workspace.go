@@ -57,9 +57,11 @@ func (m *Manager) Delete(sessionID uuid.UUID) error {
 
 // SafePath resolves a user-provided path within the workspace, enforcing:
 //  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
-//  2. Resolved path stays inside the workspace root (via filepath.Clean + HasPrefix)
+//  2. No ".." path components (checked after full decoding, before Clean)
+//  3. Resolved path stays inside the workspace root (filepath.Clean + HasPrefix)
 func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
-	// URL-decode in a loop until stable to catch double/triple-encoded traversals.
+	// URL-decode in a loop until stable to catch double/triple-encoded traversals
+	// (%252e%252e%2f → %2e%2e/ → ../).
 	decoded := userPath
 	for {
 		next, err := url.PathUnescape(decoded)
@@ -69,13 +71,24 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 		decoded = next
 	}
 
+	// Reject any path component that is exactly "..".
+	// This is checked AFTER full decoding so encoded variants are caught too.
+	// We use a component-level check (not strings.Contains) so "foo..txt" is
+	// still allowed while "../" traversals are rejected as errors — important
+	// for clients that distinguish traversal attempts from valid paths.
+	for _, part := range strings.Split(filepath.ToSlash(decoded), "/") {
+		if part == ".." {
+			return "", fmt.Errorf("path traversal detected")
+		}
+	}
+
 	root := m.sessionPath(sessionID)
-	// filepath.Clean eliminates any ".." components; joining with the root then
-	// means the only way to escape is if the cleaned absolute path leaves root.
+	// filepath.Clean eliminates any remaining "." components and double slashes;
+	// joining with the root ensures the result is absolute and inside root.
 	cleaned := filepath.Clean("/" + decoded)
 	resolved := filepath.Join(root, cleaned)
 
-	// Belt-and-suspenders: verify with trailing-separator to prevent
+	// Belt-and-suspenders: trailing-separator HasPrefix prevents
 	// /data/workspaces/AAAA matching /data/workspaces/AAAA-other/...
 	if !strings.HasPrefix(resolved, root+string(os.PathSeparator)) && resolved != root {
 		return "", fmt.Errorf("path traversal detected")

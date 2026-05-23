@@ -12,6 +12,60 @@ import (
 	"time"
 )
 
+// canonicalURI returns the AWS SigV4 canonical URI for the given raw URL path.
+//
+// Rules per AWS SigV4 spec (and RFC 3986):
+//   - Slashes that separate path segments are preserved as-is.
+//   - Each path segment is URI-encoded independently.
+//   - Unreserved characters (A-Z a-z 0-9 - _ . ~) are never encoded.
+//   - All other bytes are percent-encoded with uppercase hex (%XX).
+//   - An empty path (or "/") is normalised to "/".
+//   - Double (or multiple) slashes in the original path are preserved — they
+//     are NOT collapsed, because AWS uses the raw path for signature matching.
+func canonicalURI(rawPath string) string {
+	if rawPath == "" {
+		return "/"
+	}
+
+	segments := strings.Split(rawPath, "/")
+	for i, seg := range segments {
+		segments[i] = uriEncodeSegment(seg)
+	}
+	result := strings.Join(segments, "/")
+	if result == "" {
+		return "/"
+	}
+	return result
+}
+
+// uriEncodeSegment percent-encodes a single path segment according to
+// RFC 3986 / AWS SigV4 rules: unreserved characters are left as-is,
+// everything else is encoded as %XX with uppercase hex digits.
+//
+// Unreserved characters (RFC 3986 §2.3):  A-Z a-z 0-9 - _ . ~
+func uriEncodeSegment(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isUnreserved(c) {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// isUnreserved reports whether c is an RFC 3986 unreserved character.
+// These characters must NOT be percent-encoded: A-Z a-z 0-9 - _ . ~
+func isUnreserved(c byte) bool {
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '_' || c == '.' || c == '~'
+}
+
 // signAWS signs an HTTP request using AWS Signature Version 4.
 // Credentials are read from standard AWS env vars:
 //
@@ -55,7 +109,7 @@ func signAWS(req *http.Request, region, service string, body []byte) error {
 	bodyHash := sha256Hex(body)
 	canonicalRequest := strings.Join([]string{
 		req.Method,
-		req.URL.Path,
+		canonicalURI(req.URL.Path),
 		req.URL.RawQuery,
 		canonicalHeaders.String(),
 		signedHeaders.String(),

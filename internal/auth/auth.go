@@ -42,7 +42,7 @@ func GenerateKey(name string, expiresAt *time.Time) (plaintext string, key *mode
 	}
 
 	plaintext = "vr_" + hex.EncodeToString(raw)
-	prefix := plaintext[:8]
+	prefix := plaintext[:11] // "vr_" (3) + 8 hex chars = 32 bits of entropy
 	hash := sha256Key(plaintext)
 
 	key = &models.APIKey{

@@ -27,3 +27,4 @@ sdk/python/__pycache__/
 sdk/python/**/__pycache__/
 sdk/python/**/*.pyc
 .claude/
+mcp

@@ -25,18 +25,34 @@ func New(baseDir string) *Manager {
 
 // Create initializes an isolated workspace directory for a session.
 //
-// The directory is bind-mounted into the sandbox container which runs as an
-// unprivileged user (e.g. nobody, UID 65534). That user must be able to read
-// uploaded files and create output files. We therefore need world-rwx on the
-// directory.
+// Why 0o777 is required:
+//   The directory is bind-mounted into the sandbox container, which runs as
+//   the unprivileged user "nobody" (UID 65534). From the Linux kernel's
+//   perspective, UID 65534 is "other" relative to the host process that owns
+//   the workspace, so the container user can only access the directory if the
+//   "other" permission bits are set. Without 0o777 (specifically the world-wx
+//   bits) the container process cannot create output files or traverse into
+//   subdirectories, causing sandbox runs to fail.
 //
-// os.MkdirAll respects the process umask, which can silently strip the
-// group/other bits we set (e.g. umask 0o077 → 0o700). To guarantee the
-// intended permissions we call os.Chmod after creation, which is not
-// affected by the umask.
+// Why not use a tighter permission model:
+//   The ideal alternative would be a per-session UID combined with a user
+//   namespace so the container runs as a private UID that owns the directory
+//   (allowing 0o700). That approach is out of scope for v1 and requires
+//   additional kernel capabilities or a suid helper binary.
 //
-// The base workspace directory (one level up) retains tighter permissions so
-// other host processes cannot enumerate session UUIDs.
+// Limiting blast radius on the host:
+//   0o777 on the session-specific directory means other host processes running
+//   as arbitrary UIDs can also write to it. To prevent those host processes
+//   from even discovering which session directories exist, the parent baseDir
+//   is created with 0o700 (owner-only) in main.go. Only the owner of the host
+//   process can list baseDir entries; the 0o777 child directories are therefore
+//   not reachable by other host users without already knowing the session UUID.
+//
+// umask behaviour:
+//   os.MkdirAll honours the process umask, which can silently strip the
+//   group/other bits we set (e.g. umask 0o077 → effective 0o700). To
+//   guarantee the intended 0o777 we call os.Chmod after creation; Chmod is
+//   not affected by the umask.
 func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 	path := m.sessionPath(sessionID)
 	if err := os.MkdirAll(path, 0o777); err != nil {

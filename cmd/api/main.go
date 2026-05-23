@@ -317,6 +317,12 @@ func main() {
 		}
 	}
 
+	// Drain the async job queue: stop accepting new jobs and wait for in-flight
+	// runs to complete (bounded by the shutdown timeout). This ensures no run
+	// is silently abandoned mid-execution on SIGTERM.
+	slog.Info("draining async job queue")
+	queue.Drain(ctx)
+
 	if pool != nil {
 		slog.Info("draining warm container pool")
 		pool.Stop()

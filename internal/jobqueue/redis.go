@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,8 +35,7 @@ const (
 //
 // Each worker goroutine uses a named consumer ("worker-N") within the consumer
 // group. Unacknowledged jobs from crashed workers can be reclaimed via the
-// standard Redis XPENDING / XCLAIM mechanism (not implemented here — add a
-// reaper goroutine for production use).
+// PEL reaper goroutine that runs XAUTOCLAIM periodically.
 type RedisQueue struct {
 	client        *redis.Client
 	runner        *runner.Runner
@@ -43,6 +43,12 @@ type RedisQueue struct {
 	httpClient    *http.Client
 	webhookSecret string
 	workers       int
+
+	// shutdown plumbing
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
+	wg         sync.WaitGroup
+	stopOnce   sync.Once
 }
 
 // jobPayload is the serialisable form stored in Redis Streams.
@@ -103,6 +109,7 @@ func NewRedis(
 		return nil, fmt.Errorf("create redis consumer group: %w", err)
 	}
 
+	stopCtx, stopCancel := context.WithCancel(context.Background())
 	q := &RedisQueue{
 		client:        rdb,
 		runner:        rnr,
@@ -110,9 +117,12 @@ func NewRedis(
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		webhookSecret: webhookSecret,
 		workers:       workers,
+		stopCtx:       stopCtx,
+		stopCancel:    stopCancel,
 	}
 
 	// Launch worker goroutines.
+	q.wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go q.work(fmt.Sprintf("worker-%d", i))
 	}
@@ -120,6 +130,7 @@ func NewRedis(
 	// Launch the PEL reaper: periodically reclaims messages that have been
 	// pending for longer than reaperMinIdle (i.e. the owning consumer crashed
 	// before acknowledging). Uses XAUTOCLAIM (Redis ≥ 6.2).
+	q.wg.Add(1)
 	go q.reap("reaper-0")
 
 	slog.Info("jobqueue: redis queue started",
@@ -175,17 +186,49 @@ func (q *RedisQueue) Len() int {
 	return int(n)
 }
 
+// Drain signals workers to stop after finishing in-flight jobs, then waits
+// until all goroutines exit or ctx expires.
+func (q *RedisQueue) Drain(ctx context.Context) {
+	q.stopOnce.Do(func() { q.stopCancel() })
+
+	done := make(chan struct{})
+	go func() {
+		q.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		slog.Info("jobqueue: redis workers drained")
+	case <-ctx.Done():
+		slog.Warn("jobqueue: redis drain timed out, some in-flight runs may not have completed")
+	}
+}
+
 // work is the consumer goroutine. It blocks on XREADGROUP, processes one job
-// at a time, and acknowledges completed jobs.
+// at a time, and acknowledges completed jobs. It exits when the shutdown
+// context is cancelled.
 func (q *RedisQueue) work(consumerName string) {
+	defer q.wg.Done()
 	for {
-		msgs, err := q.client.XReadGroup(context.Background(), &redis.XReadGroupArgs{
+		// Check for shutdown before blocking on XREADGROUP.
+		select {
+		case <-q.stopCtx.Done():
+			slog.Info("jobqueue redis: worker stopping", "consumer", consumerName)
+			return
+		default:
+		}
+
+		msgs, err := q.client.XReadGroup(q.stopCtx, &redis.XReadGroupArgs{
 			Group:    redisGroupName,
 			Consumer: consumerName,
 			Streams:  []string{redisStreamKey, ">"},
 			Count:    1,
 			Block:    redisBlockTimeout,
 		}).Result()
+		if err == context.Canceled || q.stopCtx.Err() != nil {
+			slog.Info("jobqueue redis: worker stopping", "consumer", consumerName)
+			return
+		}
 		if err == redis.Nil || len(msgs) == 0 || (err != nil && len(msgs) == 0) {
 			// Timeout or transient error — loop and retry.
 			if err != nil && err != redis.Nil {
@@ -231,8 +274,9 @@ func (q *RedisQueue) processMessage(msg redis.XMessage) {
 	}
 
 	// Fetch the pending run record from the database.
-	ctx := context.Background()
-	run, err := dbpkg.GetRun(ctx, q.db, runID)
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	run, err := dbpkg.GetRun(dbCtx, q.db, runID)
+	dbCancel()
 	if err != nil {
 		slog.Error("jobqueue redis: fetch run", "run_id", runID, "err", err)
 		q.ack(msg.ID) // don't retry DB errors — run is stuck pending
@@ -252,7 +296,16 @@ func (q *RedisQueue) processMessage(msg redis.XMessage) {
 		WorkspacePath:  p.WorkspacePath,
 	}
 
-	completedRun, execErr := q.runner.ExecutePrepared(ctx, req, run)
+	// Derive a run-scoped context with the job's own timeout so the runner can
+	// cancel on deadline. This prevents a hung container from blocking a worker
+	// goroutine indefinitely.
+	timeout := time.Duration(p.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 5 * time.Minute // safe fallback
+	}
+	runCtx, runCancel := context.WithTimeout(context.Background(), timeout)
+	completedRun, execErr := q.runner.ExecutePrepared(runCtx, req, run)
+	runCancel()
 
 	if p.CallbackURL != "" {
 		sendCallback(q.httpClient, q.webhookSecret, p.CallbackURL, completedRun, execErr)
@@ -278,10 +331,18 @@ func (q *RedisQueue) ack(msgID string) {
 // This implements the "reaper goroutine for production use" noted in the Redis
 // Streams design: without it, jobs owned by crashed workers stay stuck forever.
 func (q *RedisQueue) reap(consumerName string) {
+	defer q.wg.Done()
 	ticker := time.NewTicker(reaperInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-q.stopCtx.Done():
+			slog.Info("jobqueue redis: reaper stopping")
+			return
+		case <-ticker.C:
+		}
+
 		cursor := "0-0"
 		for {
 			msgs, next, err := q.client.XAutoClaim(context.Background(), &redis.XAutoClaimArgs{

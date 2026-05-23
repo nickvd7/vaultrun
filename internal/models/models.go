@@ -107,6 +107,7 @@ type APIKey struct {
 	CreatedAt  time.Time  `db:"created_at"   json:"created_at"`
 	LastUsedAt *time.Time `db:"last_used_at" json:"last_used_at,omitempty"`
 	ExpiresAt  *time.Time `db:"expires_at"   json:"expires_at,omitempty"`
+	RevokedAt  *time.Time `db:"revoked_at"   json:"revoked_at,omitempty"`
 	Active     bool       `db:"active"       json:"active"`
 	OrgID      *uuid.UUID `db:"org_id"     json:"org_id,omitempty"`
 }

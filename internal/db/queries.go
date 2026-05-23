@@ -277,7 +277,15 @@ func RevokeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 	// No active=TRUE filter: makes revocation idempotent (revoking an already-
 	// revoked key returns success rather than 404, preventing oracle attacks).
 	// We still return ErrNoRows if the key never existed at all.
-	res, err := db.ExecContext(ctx, `UPDATE api_keys SET active = FALSE WHERE id = $1`, id)
+	//
+	// revoked_at is set only when transitioning from active=TRUE so that the
+	// timestamp records when the key was first revoked (not re-revoked).
+	res, err := db.ExecContext(ctx,
+		`UPDATE api_keys
+		    SET active = FALSE,
+		        revoked_at = COALESCE(revoked_at, NOW())
+		  WHERE id = $1`,
+		id)
 	if err != nil {
 		return err
 	}

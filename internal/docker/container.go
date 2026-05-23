@@ -343,6 +343,13 @@ func resolveExtraHosts(hosts []string) []string {
 // resolveToIPs resolves each entry in hosts to a list of IP address strings.
 // Used to build the iptables allowlist. Entries that cannot be resolved are
 // skipped with a warning.
+//
+// IMPORTANT: DNS is resolved once at container-creation time. If the IP of an
+// allowed hostname changes after the container is started the iptables rule
+// will still match the original IP. For services with stable IPs (e.g. a
+// known internal API gateway) this is fine. For external CDN-backed services
+// or any service that rotates IPs frequently, use explicit CIDR notation
+// instead of a hostname in AllowedHosts to avoid partial enforcement.
 func resolveToIPs(hosts []string) []string {
 	var ips []string
 	seen := make(map[string]bool)

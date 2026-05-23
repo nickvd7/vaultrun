@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nickvd7/vaultrun/internal/models"
@@ -32,10 +33,14 @@ import (
 
 // Queue is the interface satisfied by both MemQueue and RedisQueue.
 type Queue interface {
-	// Submit enqueues a job. Returns false (job dropped) when at capacity.
+	// Submit enqueues a job. Returns false (job dropped) when at capacity or
+	// when the queue is shutting down.
 	Submit(j Job) bool
 	// Len returns the approximate number of pending jobs.
 	Len() int
+	// Drain signals the queue to stop accepting new jobs and blocks until all
+	// in-flight workers have finished or ctx expires. Safe to call multiple times.
+	Drain(ctx context.Context)
 }
 
 // Job is one unit of async work.
@@ -64,6 +69,7 @@ func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) Queue {
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		webhookSecret: webhookSecret,
 	}
+	q.wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go q.work()
 	}
@@ -76,11 +82,17 @@ type memQueue struct {
 	runner        *runner.Runner
 	httpClient    *http.Client
 	webhookSecret string
+	wg            sync.WaitGroup
+	closeOnce     sync.Once
 }
 
-// Submit enqueues a job. Returns false (job dropped) when the buffer is full.
-// The caller should return HTTP 503 in that case.
+// Submit enqueues a job. Returns false (job dropped) when the buffer is full
+// or when the queue has been drained. The caller should return HTTP 503.
 func (q *memQueue) Submit(j Job) bool {
+	// Use a non-blocking send so we can detect a closed channel without panicking.
+	// A recover here handles the case where Drain closes the channel between the
+	// channel-not-full check and the send.
+	defer func() { recover() }() //nolint:errcheck
 	select {
 	case q.ch <- j:
 		return true
@@ -94,9 +106,35 @@ func (q *memQueue) Submit(j Job) bool {
 // Len returns the number of jobs currently waiting in the buffer.
 func (q *memQueue) Len() int { return len(q.ch) }
 
+// Drain stops accepting new jobs and waits for all workers to finish or ctx expires.
+func (q *memQueue) Drain(ctx context.Context) {
+	q.closeOnce.Do(func() { close(q.ch) })
+
+	done := make(chan struct{})
+	go func() {
+		q.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		slog.Info("jobqueue: all workers drained")
+	case <-ctx.Done():
+		slog.Warn("jobqueue: drain timed out, some in-flight runs may not have completed")
+	}
+}
+
 func (q *memQueue) work() {
+	defer q.wg.Done()
 	for j := range q.ch {
-		run, err := q.runner.ExecutePrepared(context.Background(), j.Req, j.Run)
+		// Each run has its own execution timeout (TimeoutSeconds). Derive a
+		// context with that timeout so the runner can cancel on deadline.
+		timeout := time.Duration(j.Req.TimeoutSeconds) * time.Second
+		if timeout <= 0 {
+			timeout = 5 * time.Minute // safe fallback
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		run, err := q.runner.ExecutePrepared(ctx, j.Req, j.Run)
+		cancel()
 		if j.CallbackURL != "" {
 			sendCallback(q.httpClient, q.webhookSecret, j.CallbackURL, run, err)
 		}

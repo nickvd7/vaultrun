@@ -105,7 +105,12 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 	finishedAt := time.Now().UTC()
 
 	status := resolveStatus(execErr, result)
-	durationMS := result.DurationMS
+	var durationMS int64
+	if result != nil {
+		durationMS = result.DurationMS
+	} else {
+		durationMS = time.Since(startedAt).Milliseconds()
+	}
 
 	params := dbpkg.UpdateRunParams{
 		ID:         run.ID,
@@ -114,7 +119,7 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 		FinishedAt: &finishedAt,
 		DurationMS: &durationMS,
 	}
-	if execErr == nil {
+	if execErr == nil && result != nil {
 		params.ExitCode = &result.ExitCode
 		params.Stdout = &result.Stdout
 		params.Stderr = &result.Stderr
@@ -161,7 +166,12 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 	finishedAt := time.Now().UTC()
 
 	status := resolveStatus(execErr, result)
-	durationMS := result.DurationMS
+	var durationMS int64
+	if result != nil {
+		durationMS = result.DurationMS
+	} else {
+		durationMS = time.Since(startedAt).Milliseconds()
+	}
 
 	params := dbpkg.UpdateRunParams{
 		ID:         run.ID,
@@ -170,7 +180,7 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 		FinishedAt: &finishedAt,
 		DurationMS: &durationMS,
 	}
-	if execErr == nil {
+	if execErr == nil && result != nil {
 		params.ExitCode = &result.ExitCode
 	}
 
@@ -297,6 +307,10 @@ func (r *Runner) emitFinish(ctx context.Context, req RunRequest, run *models.Run
 func resolveStatus(execErr error, result *dockerpkg.ExecResult) string {
 	if execErr != nil {
 		slog.Error("exec error", "err", execErr)
+		return models.RunStatusFailed
+	}
+	if result == nil {
+		// Defensive: should not happen when execErr == nil, but guard anyway.
 		return models.RunStatusFailed
 	}
 	if result.TimedOut {

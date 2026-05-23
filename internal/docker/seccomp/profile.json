@@ -14,6 +14,7 @@
     {
       "names": [
         "accept", "accept4", "access", "adjtimex", "alarm",
+        "arch_prctl",
         "bind", "brk",
         "capget", "capset", "chdir", "chmod", "chown", "chown32",
         "clock_adjtime", "clock_adjtime64", "clock_getres",

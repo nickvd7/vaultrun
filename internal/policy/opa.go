@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/google/uuid"
@@ -85,8 +86,12 @@ func (h *OPAHook) evalBool(ctx context.Context, query rego.PreparedEvalQuery, in
 
 	allowed, ok := results[0].Expressions[0].Value.(bool)
 	if !ok {
-		// Undefined result (rule not matched) — treat as deny
-		return Decision{Allowed: false, Reason: "denied by policy"}
+		// The policy rule returned a non-boolean value (e.g. a set or string),
+		// or the rule was undefined. Treat as deny and log the actual value type
+		// so operators can diagnose policy authoring errors.
+		slog.Warn("opa: policy rule returned non-boolean result — treating as deny; check policy for undefined rules or type errors",
+			"value_type", fmt.Sprintf("%T", results[0].Expressions[0].Value))
+		return Decision{Allowed: false, Reason: "policy evaluation error: rule returned non-boolean result"}
 	}
 	if allowed {
 		return Decision{Allowed: true}

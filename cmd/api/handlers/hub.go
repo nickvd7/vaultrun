@@ -76,6 +76,9 @@ func pagination(c *gin.Context) paginationParams {
 	if page < 1 {
 		page = 1
 	}
+	if page > 1_000_000 {
+		page = 1_000_000
+	}
 	offset := (page - 1) * limit
 	return paginationParams{limit: limit, offset: offset, page: page}
 }

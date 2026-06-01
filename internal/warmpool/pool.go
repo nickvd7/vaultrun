@@ -16,8 +16,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
 	"github.com/google/uuid"
+
+	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 )
 
 // Entry is a pre-warmed container ready for takeover by a new session.
@@ -29,11 +30,10 @@ type Entry struct {
 // Pool maintains a buffered channel of warm containers and refills it in the
 // background. All methods are goroutine-safe.
 type Pool struct {
-	dockerCli   *client.Client
-	image       string
-	size        int
-	baseDir     string // workspace base; each warm container gets its own sub-dir
-	seccompJSON string // raw JSON profile, "default", or ""
+	dockerCli *dockerpkg.Client
+	image     string
+	size      int
+	baseDir   string // workspace base; each warm container gets its own sub-dir
 
 	pool   chan Entry
 	stopCh chan struct{}
@@ -41,15 +41,16 @@ type Pool struct {
 }
 
 // New creates a warm pool. Call Start to begin filling it.
-func New(dockerCli *client.Client, image string, size int, baseDir, seccompJSON string) *Pool {
+// The pool uses the docker client's seccomp profile and performs cosign
+// verification before creating each container.
+func New(dockerCli *dockerpkg.Client, image string, size int, baseDir string) *Pool {
 	return &Pool{
-		dockerCli:   dockerCli,
-		image:       image,
-		size:        size,
-		baseDir:     baseDir,
-		seccompJSON: seccompJSON,
-		pool:        make(chan Entry, size),
-		stopCh:      make(chan struct{}),
+		dockerCli: dockerCli,
+		image:     image,
+		size:      size,
+		baseDir:   baseDir,
+		pool:      make(chan Entry, size),
+		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -82,7 +83,7 @@ func (p *Pool) Stop() {
 		for {
 			select {
 			case e := <-p.pool:
-				if err := p.dockerCli.ContainerRemove(ctx, e.ContainerID,
+				if err := p.dockerCli.Inner().ContainerRemove(ctx, e.ContainerID,
 					container.RemoveOptions{Force: true}); err != nil {
 					slog.Warn("warmpool: remove on stop", "id", e.ContainerID, "err", err)
 				}
@@ -128,7 +129,7 @@ func (p *Pool) fill(ctx context.Context) {
 				slog.Debug("warmpool: ready", "image", p.image, "id", e.ContainerID[:12], "depth", len(p.pool))
 			case <-p.stopCh:
 				rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = p.dockerCli.ContainerRemove(rmCtx, e.ContainerID, container.RemoveOptions{Force: true})
+				_ = p.dockerCli.Inner().ContainerRemove(rmCtx, e.ContainerID, container.RemoveOptions{Force: true})
 				_ = os.RemoveAll(e.WorkspacePath)
 				cancel()
 				return
@@ -146,7 +147,14 @@ func (p *Pool) fill(ctx context.Context) {
 }
 
 // createOne starts a single warm container with a fresh temporary workspace.
+// It performs cosign signature verification before creating the container and
+// applies the same seccomp profile as CreateSandbox.
 func (p *Pool) createOne(ctx context.Context) (Entry, error) {
+	// Verify image signature before creating a container — same policy as CreateSandbox.
+	if err := p.dockerCli.VerifyImage(ctx, p.image); err != nil {
+		return Entry{}, fmt.Errorf("image verification: %w", err)
+	}
+
 	wsID := uuid.New()
 	wsPath := fmt.Sprintf("%s/warm-%s", p.baseDir, wsID.String())
 	if err := os.MkdirAll(wsPath, 0o777); err != nil {
@@ -156,9 +164,15 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 		return Entry{}, fmt.Errorf("chmod workspace: %w", err)
 	}
 
+	seccompJSON := p.dockerCli.SeccompJSON()
 	secOpt := []string{"no-new-privileges"}
-	if p.seccompJSON != "" {
-		secOpt = append(secOpt, "seccomp="+p.seccompJSON)
+	switch seccompJSON {
+	case "":
+		// Rely on daemon default.
+	case "default":
+		secOpt = append(secOpt, "seccomp=default")
+	default:
+		secOpt = append(secOpt, "seccomp="+seccompJSON)
 	}
 
 	hostCfg := &container.HostConfig{
@@ -189,7 +203,7 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 	}
 
 	name := fmt.Sprintf("vaultrun-warm-%s", wsID.String()[:8])
-	resp, err := p.dockerCli.ContainerCreate(ctx,
+	resp, err := p.dockerCli.Inner().ContainerCreate(ctx,
 		&container.Config{
 			Image:      p.image,
 			Cmd:        []string{"sleep", "infinity"},
@@ -204,8 +218,8 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 		return Entry{}, fmt.Errorf("container create: %w", err)
 	}
 
-	if err := p.dockerCli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = p.dockerCli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+	if err := p.dockerCli.Inner().ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		_ = p.dockerCli.Inner().ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		_ = os.RemoveAll(wsPath)
 		return Entry{}, fmt.Errorf("container start: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -82,6 +83,13 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 	workingDir := cfg.WorkingDir
 	if workingDir == "" {
 		workingDir = "/workspace"
+	}
+	// Restrict working_dir to the workspace or /tmp to prevent access to
+	// arbitrary container filesystem paths (e.g. /proc, /etc).
+	if workingDir != "/workspace" && workingDir != "/tmp" &&
+		!strings.HasPrefix(workingDir, "/workspace/") &&
+		!strings.HasPrefix(workingDir, "/tmp/") {
+		return nil, fmt.Errorf("working_dir must be within /workspace or /tmp, got: %q", workingDir)
 	}
 
 	execID, err := c.inner.ContainerExecCreate(ctx, cfg.ContainerID, types.ExecConfig{

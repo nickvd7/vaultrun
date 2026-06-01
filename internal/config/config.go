@@ -144,7 +144,7 @@ func Load() (*Config, error) {
 			ACMECacheDir:    getEnv("ACME_CACHE_DIR", "/data/acme-cache"),
 		},
 		Database: DatabaseConfig{
-			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),
+			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=prefer"),
 			MaxOpenConns:    dbMaxOpen,
 			MaxIdleConns:    dbMaxIdle,
 			ConnMaxLifetime: 5 * time.Minute,
@@ -240,8 +240,11 @@ func (c *Config) ImageAllowed(image string) bool {
 	if len(c.Docker.ImageAllowlist) == 0 {
 		return true
 	}
+	// Case-insensitive comparison: Docker normalises image names to lowercase
+	// internally, so "Python:3.12-slim" and "python:3.12-slim" refer to the
+	// same image. A case-sensitive allowlist would be trivially bypassed.
 	for _, allowed := range c.Docker.ImageAllowlist {
-		if allowed == image {
+		if strings.EqualFold(allowed, image) {
 			return true
 		}
 	}

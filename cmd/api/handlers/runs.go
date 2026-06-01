@@ -59,18 +59,18 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	// Resolve requested secrets and merge into env
+	// Resolve requested secrets into a separate map that is passed to the container
+	// at runtime but never written to the database.
+	var secretEnv map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
-		if req.Env == nil {
-			req.Env = make(map[string]string)
-		}
+		secretEnv = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
 				return
 			}
-			req.Env[name] = val
+			secretEnv[name] = val
 		}
 	}
 
@@ -90,6 +90,7 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		Command:        req.Command,
 		Args:           req.Args,
 		Env:            req.Env,
+		SecretEnv:      secretEnv,
 		WorkingDir:     req.WorkingDir,
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          middleware.Actor(c),
@@ -135,18 +136,16 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	// Resolve requested secrets and merge into env
+	var secretEnvStream map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
-		if req.Env == nil {
-			req.Env = make(map[string]string)
-		}
+		secretEnvStream = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
 				return
 			}
-			req.Env[name] = val
+			secretEnvStream[name] = val
 		}
 	}
 
@@ -180,6 +179,7 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		Command:        req.Command,
 		Args:           req.Args,
 		Env:            req.Env,
+		SecretEnv:      secretEnvStream,
 		WorkingDir:     req.WorkingDir,
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          middleware.Actor(c),
@@ -294,18 +294,16 @@ func (rh *RunHandler) Async(c *gin.Context) {
 		}
 	}
 
-	// Resolve requested secrets and merge into env
+	var secretEnvAsync map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
-		if req.Env == nil {
-			req.Env = make(map[string]string)
-		}
+		secretEnvAsync = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
 				return
 			}
-			req.Env[name] = val
+			secretEnvAsync[name] = val
 		}
 	}
 
@@ -326,6 +324,7 @@ func (rh *RunHandler) Async(c *gin.Context) {
 		Command:        req.Command,
 		Args:           req.Args,
 		Env:            req.Env,
+		SecretEnv:      secretEnvAsync,
 		WorkingDir:     req.WorkingDir,
 		TimeoutSeconds: req.TimeoutSeconds,
 		Actor:          actor,

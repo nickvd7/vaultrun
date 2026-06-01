@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/models"
 )
 
 type AuditHandler struct {
@@ -33,14 +34,21 @@ func (ah *AuditHandler) List(c *gin.Context) {
 	}
 
 	// C-2: Non-master callers only see their own audit logs.
-	// When a session_id filter is provided, verify the caller owns that session
-	// before listing — prevents cross-tenant audit log enumeration via UUID guessing.
+	// When a session_id filter is provided, use the full org-aware access check
+	// (same logic as other session endpoints) to determine whether the caller
+	// has at least viewer access. This correctly handles org members who are not
+	// the session creator but do have read access via org membership.
 	actor := middleware.Actor(c)
+	auditActor := actor
+	if actor == "master" {
+		auditActor = "" // empty = all actors in the DB query
+	}
 	if actor != "master" && sessionIDPtr != nil {
+		// checkSessionAccess writes a 404 if access is denied; we want an empty list
+		// instead to avoid leaking session existence, so we call it on a throwaway
+		// response writer substitute — actually just replicate the logic inline.
 		session, err := dbpkg.GetSession(c.Request.Context(), ah.h.db, *sessionIDPtr)
-		if err == sql.ErrNoRows || (err == nil && session.CreatedBy != actor) {
-			// Return an empty list (not 404) so the caller cannot use error
-			// shape to confirm whether the session UUID exists at all.
+		if err == sql.ErrNoRows {
 			c.JSON(http.StatusOK, gin.H{"audit_logs": []any{}, "pagination": pg})
 			return
 		}
@@ -48,12 +56,23 @@ func (ah *AuditHandler) List(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify session"})
 			return
 		}
-	}
-
-	// Master gets an empty string which means "all actors" in the query.
-	auditActor := actor
-	if actor == "master" {
-		auditActor = ""
+		hasAccess := session.CreatedBy == actor
+		if !hasAccess && session.OrgID != nil {
+			role, roleErr := dbpkg.GetOrgMemberRole(c.Request.Context(), ah.h.db, *session.OrgID, actor)
+			if roleErr == nil && models.RoleAtLeast(role, models.OrgRoleViewer) {
+				hasAccess = true
+			}
+		}
+		if !hasAccess {
+			// Return empty list rather than 404 to avoid leaking session existence.
+			c.JSON(http.StatusOK, gin.H{"audit_logs": []any{}, "pagination": pg})
+			return
+		}
+		// For sessions the actor has access to (but did not create), show all
+		// audit events for that session rather than filtering by actor.
+		if session.CreatedBy != actor {
+			auditActor = ""
+		}
 	}
 
 	logs, err := dbpkg.ListAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor, pg.limit, pg.offset)

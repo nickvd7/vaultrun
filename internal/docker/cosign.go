@@ -33,10 +33,14 @@ func (c *Client) VerifyImage(ctx context.Context, image string) error {
 		)
 	}
 
-	// Validate image name to prevent argument injection (e.g. image="--insecure-ignore-tlog").
-	// Allow: registry/repo:tag@sha256:digest — reject anything starting with '-'.
+	// Validate image name: reject argument injection (leading '-'), null bytes,
+	// newlines, and other non-printable characters that could confuse cosign or
+	// cause a mismatch between what is verified and what Docker actually pulls.
 	if strings.HasPrefix(image, "-") {
 		return fmt.Errorf("invalid image name: must not start with '-'")
+	}
+	if strings.ContainsAny(image, "\x00\n\r") {
+		return fmt.Errorf("invalid image name: contains disallowed control characters")
 	}
 
 	cmd := exec.CommandContext(ctx, cosignPath, "verify",

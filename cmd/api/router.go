@@ -1,7 +1,9 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -81,9 +83,25 @@ func newRouter(
 
 	health := handlers.NewHealthHandler(hub)
 	r.GET("/health", health.Health)
-	// Prometheus metrics endpoint — unauthenticated but only bound on loopback
-	// in production (or protected by an external gateway).
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	// Prometheus metrics endpoint. Protected by METRICS_TOKEN when set — callers
+	// must send "Authorization: Bearer <token>". When the env var is not set the
+	// endpoint is unprotected; operators MUST restrict it via a firewall or
+	// reverse-proxy in production.
+	metricsHandler := gin.WrapH(promhttp.Handler())
+	if metricsToken := os.Getenv("METRICS_TOKEN"); metricsToken != "" {
+		r.GET("/metrics", func(c *gin.Context) {
+			auth := c.GetHeader("Authorization")
+			if auth != "Bearer "+metricsToken {
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+			metricsHandler(c)
+		})
+	} else {
+		slog.Warn("METRICS_TOKEN is not set — /metrics endpoint is unauthenticated; " +
+			"set METRICS_TOKEN or restrict the endpoint via firewall/reverse-proxy")
+		r.GET("/metrics", metricsHandler)
+	}
 
 	// API documentation — OpenAPI spec + Redoc UI.
 	//

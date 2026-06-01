@@ -81,6 +81,12 @@ func (c *Client) Inner() *client.Client {
 	return c.inner
 }
 
+// SeccompJSON returns the raw seccomp profile JSON configured for this client.
+// Used by the warm pool so it can apply the same profile as CreateSandbox.
+func (c *Client) SeccompJSON() string {
+	return c.seccompJSON
+}
+
 // PullImage pulls an image if not already present.
 func (c *Client) PullImage(ctx context.Context, image string) error {
 	out, err := c.inner.ImagePull(ctx, image, dockerImagePullOptions())

@@ -5,24 +5,49 @@ import (
 	"testing"
 )
 
-// TestResolveToIPsRawIP verifies that raw IP addresses pass through unchanged.
+// TestResolveToIPsRawIP verifies that public raw IP addresses pass through unchanged.
 func TestResolveToIPsRawIP(t *testing.T) {
-	ips := resolveToIPs([]string{"1.2.3.4", "10.0.0.1"})
+	ips, err := resolveToIPs([]string{"1.2.3.4", "8.8.8.8"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(ips) != 2 {
 		t.Fatalf("want 2 IPs, got %d: %v", len(ips), ips)
 	}
 	if ips[0] != "1.2.3.4" {
 		t.Errorf("want 1.2.3.4, got %q", ips[0])
 	}
-	if ips[1] != "10.0.0.1" {
-		t.Errorf("want 10.0.0.1, got %q", ips[1])
+	if ips[1] != "8.8.8.8" {
+		t.Errorf("want 8.8.8.8, got %q", ips[1])
+	}
+}
+
+// TestResolveToIPsRejectsPrivate verifies that private/internal IPs are rejected
+// to prevent DNS-rebinding attacks that could allow containers to reach the host
+// metadata service or internal network services.
+func TestResolveToIPsRejectsPrivate(t *testing.T) {
+	privateIPs := []string{
+		"10.0.0.1",
+		"172.16.0.1",
+		"192.168.1.1",
+		"127.0.0.1",
+		"169.254.169.254", // AWS IMDS
+	}
+	for _, ip := range privateIPs {
+		_, err := resolveToIPs([]string{ip})
+		if err == nil {
+			t.Errorf("expected rejection for private IP %q, got nil error", ip)
+		}
 	}
 }
 
 // TestResolveToIPsDeduplicates ensures the same IP from multiple entries
 // only appears once.
 func TestResolveToIPsDeduplicates(t *testing.T) {
-	ips := resolveToIPs([]string{"1.2.3.4", "1.2.3.4"})
+	ips, err := resolveToIPs([]string{"1.2.3.4", "1.2.3.4"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(ips) != 1 {
 		t.Errorf("want 1 (deduplicated) IP, got %d: %v", len(ips), ips)
 	}
@@ -30,7 +55,10 @@ func TestResolveToIPsDeduplicates(t *testing.T) {
 
 // TestResolveToIPsEmpty returns nil for an empty host list.
 func TestResolveToIPsEmpty(t *testing.T) {
-	ips := resolveToIPs(nil)
+	ips, err := resolveToIPs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(ips) != 0 {
 		t.Errorf("want empty, got %v", ips)
 	}

@@ -379,6 +379,12 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 	}
 	defer gr.Close()
 
+	const (
+		maxExtractFileBytes  int64 = 2 * 1024 * 1024 * 1024  // 2 GB per file
+		maxExtractTotalBytes int64 = 10 * 1024 * 1024 * 1024 // 10 GB total
+	)
+	var totalExtracted int64
+
 	tr := tar.NewReader(gr)
 	for {
 		hdr, err := tr.Next()
@@ -412,11 +418,24 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 			if err != nil {
 				return fmt.Errorf("create %s: %w", hdr.Name, err)
 			}
-			if _, err := io.Copy(out, tr); err != nil {
+			remaining := maxExtractTotalBytes - totalExtracted
+			if remaining <= 0 {
 				_ = out.Close()
-				return fmt.Errorf("write %s: %w", hdr.Name, err)
+				return fmt.Errorf("archive extraction limit exceeded (%d GB total)", maxExtractTotalBytes/1024/1024/1024)
 			}
+			perFileCap := maxExtractFileBytes
+			if remaining < perFileCap {
+				perFileCap = remaining
+			}
+			n, copyErr := io.Copy(out, io.LimitReader(tr, perFileCap+1))
 			_ = out.Close()
+			if copyErr != nil {
+				return fmt.Errorf("write %s: %w", hdr.Name, copyErr)
+			}
+			if n > perFileCap {
+				return fmt.Errorf("file %s exceeds extraction size limit", hdr.Name)
+			}
+			totalExtracted += n
 			_ = os.Chmod(dest, 0o644)
 		}
 	}

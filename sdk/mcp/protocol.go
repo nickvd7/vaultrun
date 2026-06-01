@@ -140,7 +140,17 @@ func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		slog.Debug("mcp: received", "method", req.Method, "id", req.ID)
 		s.handle(ctx, out, &req)
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err == bufio.ErrTooLong {
+		// A single message exceeded the 4 MB buffer. Return a proper JSON-RPC
+		// error instead of terminating the session — the host can retry with a
+		// smaller payload (e.g. use chunked file upload instead of inline content).
+		slog.Warn("mcp: message too large, sending error response")
+		s.writeError(out, nil, errInvalidRequest, "message too large (max 4 MB)")
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *server) handle(ctx context.Context, out io.Writer, req *jsonRPCRequest) {

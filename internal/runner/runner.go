@@ -45,7 +45,8 @@ type RunRequest struct {
 	ContainerID    string
 	Command        string
 	Args           []string
-	Env            map[string]string
+	Env            map[string]string // persisted to DB; must NOT contain resolved secrets
+	SecretEnv      map[string]string // injected into the container but never persisted
 	WorkingDir     string
 	TimeoutSeconds int
 	Actor          string
@@ -92,12 +93,25 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 	// Snapshot workspace before execution so we can detect new/modified files afterwards.
 	preSnap := snapshotDir(req.WorkspacePath)
 
+	// Merge non-secret env and secret env for Docker exec only.
+	// SecretEnv values are never stored in the DB — only passed to the container at runtime.
+	execEnv := req.Env
+	if len(req.SecretEnv) > 0 {
+		execEnv = make(map[string]string, len(req.Env)+len(req.SecretEnv))
+		for k, v := range req.Env {
+			execEnv[k] = v
+		}
+		for k, v := range req.SecretEnv {
+			execEnv[k] = v
+		}
+	}
+
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.Exec(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
 		Command:        req.Command,
 		Args:           req.Args,
-		Env:            req.Env,
+		Env:            execEnv,
 		WorkingDir:     run.WorkingDir,
 		TimeoutSeconds: run.TimeoutSeconds,
 		MaxOutputBytes: maxOutputBytes,
@@ -153,12 +167,24 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 	// Snapshot workspace before execution so we can detect new/modified files afterwards.
 	preSnap := snapshotDir(req.WorkspacePath)
 
+	// Merge non-secret env and secret env for Docker exec only (same logic as executeImpl).
+	execEnv := req.Env
+	if len(req.SecretEnv) > 0 {
+		execEnv = make(map[string]string, len(req.Env)+len(req.SecretEnv))
+		for k, v := range req.Env {
+			execEnv[k] = v
+		}
+		for k, v := range req.SecretEnv {
+			execEnv[k] = v
+		}
+	}
+
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.ExecStream(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
 		Command:        req.Command,
 		Args:           req.Args,
-		Env:            req.Env,
+		Env:            execEnv,
 		WorkingDir:     run.WorkingDir,
 		TimeoutSeconds: run.TimeoutSeconds,
 		MaxOutputBytes: maxOutputBytes,
@@ -211,9 +237,6 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, error) {
 	if req.Command == "" {
 		return nil, fmt.Errorf("command is required")
-	}
-	if strings.ContainsAny(req.Command, ";|&$`\\<>{}()") {
-		return nil, fmt.Errorf("command contains disallowed characters")
 	}
 
 	// Validate env var keys: reject null bytes, newlines, and '=' which could

@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/httputil"
 	"github.com/nickvd7/vaultrun/internal/runner"
 )
 
@@ -114,7 +115,7 @@ func NewRedis(
 		client:        rdb,
 		runner:        rnr,
 		db:            db,
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		httpClient:    httputil.NoRedirectClient(30 * time.Second),
 		webhookSecret: webhookSecret,
 		workers:       workers,
 		stopCtx:       stopCtx,

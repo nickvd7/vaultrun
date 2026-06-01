@@ -119,8 +119,10 @@ func ActorRateLimit(requestsPerMinute int) gin.HandlerFunc {
 	l := newLimiter(requestsPerMinute)
 	return func(c *gin.Context) {
 		actor := Actor(c)
-		// Master key and unauthenticated (already rejected by auth) are exempt.
-		if actor == "master" || actor == "unknown" {
+		// Master key is exempt. "unknown" should never reach this middleware
+		// (APIKeyAuth rejects unauthenticated requests first), but if it does,
+		// apply the rate limit rather than exempting it to fail closed.
+		if actor == "master" {
 			c.Next()
 			return
 		}
@@ -177,8 +179,9 @@ func NewRedisActorRateLimit(addr, password string, db, limit int) gin.HandlerFun
 	rdb := redis.NewClient(opts)
 	return func(c *gin.Context) {
 		actor := Actor(c)
-		// Master key and unauthenticated (already rejected by auth) are exempt.
-		if actor == "master" || actor == "unknown" {
+		// Master key is exempt. Apply limit to all other actors (including "unknown")
+		// so this middleware fails closed if reached without prior auth.
+		if actor == "master" {
 			c.Next()
 			return
 		}

@@ -236,7 +236,15 @@ func (c *vaultRunClient) UploadFile(ctx context.Context, sessionID, destPath, co
 }
 
 func (c *vaultRunClient) DownloadFile(ctx context.Context, sessionID, filePath string) (string, error) {
-	path := "/api/v1/sessions/" + url.PathEscape(sessionID) + "/files/" + strings.TrimPrefix(filePath, "/")
+	// URL-escape each path segment individually so that slashes that are part of
+	// the path structure are preserved while special characters within a segment
+	// (including "..", "?", "#") are percent-encoded.
+	segments := strings.Split(strings.TrimPrefix(filePath, "/"), "/")
+	escapedSegments := make([]string, len(segments))
+	for i, s := range segments {
+		escapedSegments[i] = url.PathEscape(s)
+	}
+	path := "/api/v1/sessions/" + url.PathEscape(sessionID) + "/files/" + strings.Join(escapedSegments, "/")
 	resp, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return "", err

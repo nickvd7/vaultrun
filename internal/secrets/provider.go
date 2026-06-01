@@ -19,6 +19,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -36,6 +37,25 @@ type Provider interface {
 	Name() string
 }
 
+// validateSecretName rejects names that could cause path traversal in Vault/AWS
+// URL construction or OS env var manipulation. Only alphanumeric, underscore,
+// and hyphen characters are allowed; max 128 characters.
+func validateSecretName(name string) error {
+	if name == "" {
+		return fmt.Errorf("secret name must not be empty")
+	}
+	if len(name) > 128 {
+		return fmt.Errorf("secret name exceeds maximum length of 128 characters")
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-') {
+			return fmt.Errorf("secret name %q contains disallowed character %q (only [a-zA-Z0-9_-] permitted)", name, r)
+		}
+	}
+	return nil
+}
+
 // EnvProvider reads secrets from the server's process environment.
 // Each secret named "FOO" is looked up as VAULTRUN_SECRET_FOO.
 // Ideal for development and single-host deployments.
@@ -44,6 +64,9 @@ type EnvProvider struct{}
 func (p *EnvProvider) Name() string { return "env" }
 
 func (p *EnvProvider) GetSecret(_ context.Context, name string) (string, error) {
+	if err := validateSecretName(name); err != nil {
+		return "", err
+	}
 	key := "VAULTRUN_SECRET_" + strings.ToUpper(name)
 	v := os.Getenv(key)
 	if v == "" {
@@ -93,7 +116,10 @@ func NewVaultProvider(addr, token, mount, path string) *VaultProvider {
 func (p *VaultProvider) Name() string { return "vault" }
 
 func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, error) {
-	url := fmt.Sprintf("%s/v1/%s/data/%s/%s", p.addr, p.mount, p.path, name)
+	if err := validateSecretName(name); err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("%s/v1/%s/data/%s/%s", p.addr, p.mount, p.path, neturl.PathEscape(name))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("vault: build request: %w", err)
@@ -175,6 +201,9 @@ func NewAWSProvider(region, prefix string) *AWSProvider {
 func (p *AWSProvider) Name() string { return "aws" }
 
 func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error) {
+	if err := validateSecretName(name); err != nil {
+		return "", err
+	}
 	// Use the AWS Secrets Manager endpoint directly.
 	// We implement a minimal SigV4 signing flow so we don't need the full AWS SDK.
 	secretID := p.prefix + name

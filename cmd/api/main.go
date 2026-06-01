@@ -178,8 +178,8 @@ func main() {
 		slog.Info("warm container pool enabled",
 			"image", cfg.Docker.WarmPoolImage,
 			"size", cfg.Docker.WarmPoolSize)
-		pool = warmpool.New(docker.Inner(), cfg.Docker.WarmPoolImage,
-			cfg.Docker.WarmPoolSize, cfg.Workspace.BaseDir, "")
+		pool = warmpool.New(docker, cfg.Docker.WarmPoolImage,
+			cfg.Docker.WarmPoolSize, cfg.Workspace.BaseDir)
 		pool.Start(poolCtx)
 	}
 

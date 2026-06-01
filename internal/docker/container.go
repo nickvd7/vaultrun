@@ -14,6 +14,13 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 )
 
+// isPrivateIP returns true for loopback, link-local, and private addresses.
+// Used to block DNS-rebinding attacks in AllowedHosts resolution.
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified()
+}
+
 // SandboxConfig holds the parameters for creating a session container.
 type SandboxConfig struct {
 	SessionID      uuid.UUID
@@ -87,8 +94,8 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	if cfg.NetworkEnabled {
 		if len(cfg.AllowedHosts) > 0 {
 			// Create a per-session bridge network for iptables-enforced egress.
-			// Shorten the session UUID so the network name stays reasonable.
-			sessionNetName = "vaultrun-" + cfg.SessionID.String()[:8]
+			// Use the full session UUID to avoid birthday collisions at high session volumes.
+			sessionNetName = "vaultrun-net-" + cfg.SessionID.String()
 			netResp, err := c.inner.NetworkCreate(ctx, sessionNetName, network.CreateOptions{
 				Driver: "bridge",
 				Labels: map[string]string{
@@ -108,6 +115,11 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 				},
 			}
 		} else {
+			// No AllowedHosts: default bridge without iptables filtering.
+			// Containers have unrestricted egress — operator is responsible for
+			// host-level firewall rules to prevent access to internal services.
+			slog.Warn("sandbox: network_enabled=true with no allowed_hosts — container has unrestricted egress",
+				"session_id", cfg.SessionID)
 			networkMode = container.NetworkMode("bridge")
 		}
 	}
@@ -117,6 +129,10 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	// Convert fractional CPUs to nano-CPUs (1 CPU = 1e9 nano-CPUs)
 	nanoCPUs := int64(cfg.CPULimit * 1e9)
 	memoryBytes := int64(cfg.MemoryLimitMB) * 1024 * 1024
+	if memoryBytes < 0 {
+		// Guard against integer overflow from very large MemoryLimitMB values.
+		return "", fmt.Errorf("memory_limit_mb=%d overflows int64 byte conversion", cfg.MemoryLimitMB)
+	}
 
 	// Always enforce no-new-privileges; append the seccomp profile when one is
 	// configured on the client (c.seccompJSON).
@@ -235,7 +251,13 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	// returning an error prevents a sandbox declared with AllowedHosts from
 	// running with unrestricted network access.
 	if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
-		allowedIPs := resolveToIPs(cfg.AllowedHosts)
+		allowedIPs, err := resolveToIPs(cfg.AllowedHosts)
+		if err != nil {
+			_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+			_ = c.inner.NetworkRemove(ctx, sessionNetID)
+			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+			return "", fmt.Errorf("allowed hosts validation: %w", err)
+		}
 		chain := chainName(resp.ID)
 		iface := bridgeIface(sessionNetID)
 		if err := applyEgressPolicy(chain, iface, allowedIPs); err != nil {
@@ -324,6 +346,11 @@ func resolveExtraHosts(hosts []string) []string {
 	var extra []string
 	for _, h := range hosts {
 		if ip := net.ParseIP(h); ip != nil {
+			if isPrivateIP(ip) {
+				slog.Warn("sandbox: allowed host is a private IP, skipping extra-hosts entry",
+					"host", h, "ip", ip.String())
+				continue
+			}
 			extra = append(extra, h+":"+ip.String())
 			continue
 		}
@@ -334,6 +361,11 @@ func resolveExtraHosts(hosts []string) []string {
 			continue
 		}
 		for _, addr := range addrs {
+			if ip := net.ParseIP(addr); ip != nil && isPrivateIP(ip) {
+				slog.Warn("sandbox: allowed host resolves to private IP, skipping extra-hosts entry",
+					"host", h, "ip", addr)
+				continue
+			}
 			extra = append(extra, h+":"+addr)
 		}
 	}
@@ -350,11 +382,14 @@ func resolveExtraHosts(hosts []string) []string {
 // known internal API gateway) this is fine. For external CDN-backed services
 // or any service that rotates IPs frequently, use explicit CIDR notation
 // instead of a hostname in AllowedHosts to avoid partial enforcement.
-func resolveToIPs(hosts []string) []string {
+func resolveToIPs(hosts []string) ([]string, error) {
 	var ips []string
 	seen := make(map[string]bool)
 	for _, h := range hosts {
 		if ip := net.ParseIP(h); ip != nil {
+			if isPrivateIP(ip) {
+				return nil, fmt.Errorf("allowed host %q is a private/internal address (%s) — DNS rebinding protection", h, ip.String())
+			}
 			if !seen[ip.String()] {
 				ips = append(ips, ip.String())
 				seen[ip.String()] = true
@@ -368,11 +403,14 @@ func resolveToIPs(hosts []string) []string {
 			continue
 		}
 		for _, addr := range addrs {
+			if ip := net.ParseIP(addr); ip != nil && isPrivateIP(ip) {
+				return nil, fmt.Errorf("allowed host %q resolves to private/internal address (%s) — DNS rebinding protection", h, addr)
+			}
 			if !seen[addr] {
 				ips = append(ips, addr)
 				seen[addr] = true
 			}
 		}
 	}
-	return ips
+	return ips, nil
 }

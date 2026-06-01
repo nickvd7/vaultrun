@@ -23,6 +23,10 @@ const (
 	// for the same API key. Without this, every authenticated request would
 	// issue a write query, adding unnecessary DB load at high request rates.
 	lastUsedWriteInterval = 60 * time.Second
+
+	// maxLastUsedCacheSize caps the in-memory cache to prevent unbounded growth
+	// when many API keys are created and revoked over the server's lifetime.
+	maxLastUsedCacheSize = 50_000
 )
 
 // lastUsedCache stores the most-recent time we wrote last_used_at to the DB
@@ -31,6 +35,17 @@ var (
 	lastUsedMu    sync.Mutex
 	lastUsedCache = make(map[uuid.UUID]time.Time)
 )
+
+// pruneLastUsedCache evicts entries older than 2×lastUsedWriteInterval.
+// Must be called with lastUsedMu held.
+func pruneLastUsedCache() {
+	cutoff := time.Now().UTC().Add(-2 * lastUsedWriteInterval)
+	for id, t := range lastUsedCache {
+		if t.Before(cutoff) {
+			delete(lastUsedCache, id)
+		}
+	}
+}
 
 // GenerateKey creates a cryptographically random API key with a readable prefix.
 // Returns the plaintext key (shown once) and a models.APIKey ready to persist.
@@ -79,7 +94,7 @@ func Validate(ctx context.Context, db *sqlx.DB, plaintext string) (*models.APIKe
 		return nil, fmt.Errorf("invalid api key")
 	}
 
-	if key.ExpiresAt != nil && key.ExpiresAt.Before(time.Now()) {
+	if key.ExpiresAt != nil && key.ExpiresAt.Before(time.Now().UTC()) {
 		return nil, fmt.Errorf("api key expired")
 	}
 
@@ -90,6 +105,10 @@ func Validate(ctx context.Context, db *sqlx.DB, plaintext string) (*models.APIKe
 	lastUsedMu.Lock()
 	lastWrite, seen := lastUsedCache[key.ID]
 	if !seen || now.Sub(lastWrite) >= lastUsedWriteInterval {
+		// Prune stale entries when the cache grows too large to prevent OOM.
+		if len(lastUsedCache) >= maxLastUsedCacheSize {
+			pruneLastUsedCache()
+		}
 		lastUsedCache[key.ID] = now
 		lastUsedMu.Unlock()
 		_ = dbpkg.UpdateAPIKeyLastUsed(ctx, db, key.ID)

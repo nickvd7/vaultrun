@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickvd7/vaultrun/internal/httputil"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/runner"
 )
@@ -66,7 +67,7 @@ func New(rnr *runner.Runner, workers, bufSize int, webhookSecret string) Queue {
 	q := &memQueue{
 		ch:            make(chan Job, bufSize),
 		runner:        rnr,
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		httpClient:    httputil.NoRedirectClient(30 * time.Second),
 		webhookSecret: webhookSecret,
 	}
 	q.wg.Add(workers)

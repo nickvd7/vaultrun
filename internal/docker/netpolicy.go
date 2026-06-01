@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"regexp"
 	"strings"
 )
+
+// iptablesNameRe matches valid iptables chain names and Linux interface names:
+// only alphanumeric characters, hyphens, and underscores.
+var iptablesNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // chainName returns the iptables chain name for a container.
 // Uses the first 12 hex chars of the container ID (matching the convention
@@ -43,6 +48,16 @@ func bridgeIface(networkID string) string {
 // Returns an error if iptables is unavailable or a rule fails. Callers should
 // treat this as a hard failure when strict enforcement is required.
 func applyEgressPolicy(chain, iface string, allowedIPs []string) error {
+	// Validate chain and interface names to ensure they consist only of safe
+	// characters. Both values are derived from Docker-generated IDs, but an
+	// explicit check makes the safety assumption visible and auditable.
+	if !iptablesNameRe.MatchString(chain) {
+		return fmt.Errorf("invalid iptables chain name: %q", chain)
+	}
+	if !iptablesNameRe.MatchString(iface) {
+		return fmt.Errorf("invalid network interface name: %q", iface)
+	}
+
 	// 1. Create the chain; idempotent (ignore "already exists" errors).
 	if err := ipt("-N", chain); err != nil && !isIPTExistsErr(err) {
 		return fmt.Errorf("create chain %q: %w", chain, err)

@@ -106,7 +106,7 @@ func TestE2ESmoke(t *testing.T) {
 		Workspace: config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
 	}
 
-	al := audit.New(db)
+	al := audit.New(db, "")
 	ws := workspace.New(wsDir)
 	rnr := runner.New(db, dockerClient, al, policy.AllowAll{})
 	queue := jobqueue.New(rnr, 2, 64, "")

@@ -203,8 +203,8 @@ func DeleteFile(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, path stri
 
 func CreateAuditLog(ctx context.Context, db *sqlx.DB, a *models.AuditLog) error {
 	q := `
-		INSERT INTO audit_logs (id, timestamp, actor, session_id, run_id, action, metadata)
-		VALUES (:id, :timestamp, :actor, :session_id, :run_id, :action, :metadata)
+		INSERT INTO audit_logs (id, timestamp, actor, session_id, run_id, action, metadata, sig)
+		VALUES (:id, :timestamp, :actor, :session_id, :run_id, :action, :metadata, :sig)
 	`
 	_, err := db.NamedExecContext(ctx, q, a)
 	return err

@@ -14,6 +14,7 @@ import (
 )
 
 const actorKey = "actor"
+const actorNameKey = "actor_name"
 
 // masterKeyMAC computes HMAC-SHA256 of key under a fixed label so that two
 // values can be compared in constant time regardless of their length (L-1).
@@ -26,8 +27,11 @@ func masterKeyMAC(key string) []byte {
 
 // APIKeyAuth validates Bearer or X-API-Key tokens against the database.
 // Master key comparison is length-safe via HMAC before ConstantTimeCompare.
+//
+// Actor(c) returns the API key UUID — a stable, immutable identity used for
+// access-control checks and stored as sessions.created_by. ActorName(c)
+// returns the human-readable key name used in audit log entries.
 func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
-	// Pre-compute once at startup.
 	expectedMAC := masterKeyMAC(masterKey)
 
 	return func(c *gin.Context) {
@@ -37,10 +41,9 @@ func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
 			return
 		}
 
-		// Master key check: HMAC both sides to a fixed-length value so the
-		// comparison is constant-time regardless of candidate length (L-1).
 		if masterKey != "" && subtle.ConstantTimeCompare(masterKeyMAC(key), expectedMAC) == 1 {
 			c.Set(actorKey, "master")
+			c.Set(actorNameKey, "master")
 			c.Next()
 			return
 		}
@@ -51,7 +54,8 @@ func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(actorKey, apiKey.Name)
+		c.Set(actorKey, apiKey.ID.String())
+		c.Set(actorNameKey, apiKey.Name)
 		c.Next()
 	}
 }
@@ -68,6 +72,9 @@ func RequireMasterKey() gin.HandlerFunc {
 	}
 }
 
+// Actor returns the canonical identity of the authenticated caller: the API
+// key UUID string, or "master" for the master key, or "unknown" if unset.
+// Use this for access-control checks and as the stored identity in the DB.
 func Actor(c *gin.Context) string {
 	if v, ok := c.Get(actorKey); ok {
 		if s, ok := v.(string); ok {
@@ -75,6 +82,18 @@ func Actor(c *gin.Context) string {
 		}
 	}
 	return "unknown"
+}
+
+// ActorName returns the human-readable key name for the authenticated caller.
+// Use this for audit log entries and display. Falls back to Actor(c) when
+// the display name is not set (e.g. in tests that don't go through APIKeyAuth).
+func ActorName(c *gin.Context) string {
+	if v, ok := c.Get(actorNameKey); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return Actor(c)
 }
 
 func extractKey(c *gin.Context) string {

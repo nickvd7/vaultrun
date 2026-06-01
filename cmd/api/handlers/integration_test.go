@@ -110,7 +110,7 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 		Workspace: config.WorkspaceConfig{BaseDir: os.TempDir(), MaxFileMB: 100},
 	}
 
-	al := audit.New(db)
+	al := audit.New(db, "")
 	ws := workspace.New(cfg.Workspace.BaseDir)
 	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
 	authMW := middleware.APIKeyAuth(db, testMasterKey)
@@ -330,6 +330,30 @@ func TestKeyExpiryFutureAccepted(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["expires_at"] == nil {
 		t.Error("response must include expires_at when set")
+	}
+}
+
+// TestKeyDuplicateNameConflict verifies that creating two API keys with the
+// same name returns HTTP 409. This enforces the unique-name constraint that
+// makes the actor identity (key name) unambiguous.
+func TestKeyDuplicateNameConflict(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+	body := `{"name":"dup-key-test"}`
+
+	w := rec(r, "POST", "/api/v1/keys", body, masterHdr())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("first create: want 201, got %d: %s", w.Code, w.Body)
+	}
+
+	w2 := rec(r, "POST", "/api/v1/keys", body, masterHdr())
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("duplicate name: want 409, got %d: %s", w2.Code, w2.Body)
+	}
+	var errResp map[string]string
+	_ = json.NewDecoder(w2.Body).Decode(&errResp)
+	if !strings.Contains(errResp["error"], "already exists") {
+		t.Errorf("expected error mentioning 'already exists', got %q", errResp["error"])
 	}
 }
 
@@ -698,7 +722,7 @@ func newActorLimitRouter(db *sqlx.DB, requestsPerMinute int) *gin.Engine {
 		Docker:    config.DockerConfig{DefaultImage: "python:3.12-slim"},
 		Workspace: config.WorkspaceConfig{BaseDir: os.TempDir(), MaxFileMB: 100},
 	}
-	al := audit.New(db)
+	al := audit.New(db, "")
 	ws := workspace.New(cfg.Workspace.BaseDir)
 	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
 
@@ -779,7 +803,7 @@ func newSessionQuotaRouter(t *testing.T, db *sqlx.DB, maxSessions int) *gin.Engi
 		Docker:    config.DockerConfig{DefaultImage: "python:3.12-slim"},
 		Workspace: config.WorkspaceConfig{BaseDir: os.TempDir(), MaxFileMB: 100},
 	}
-	al := audit.New(db)
+	al := audit.New(db, "")
 	ws := workspace.New(cfg.Workspace.BaseDir)
 	// docker client is nil — quota check fires before any Docker call.
 	hub := handlers.NewHub(db, nil, ws, nil, al, cfg, policy.AllowAll{}, nil, nil, nil)
@@ -825,15 +849,16 @@ func TestSessionQuotaEnforced(t *testing.T) {
 		t.Fatalf("create key: want 201, got %d: %s", w.Code, w.Body)
 	}
 	var keyResp struct {
+		ID  string `json:"id"`
 		Key string `json:"key"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&keyResp); err != nil || keyResp.Key == "" {
 		t.Fatal("no plaintext key in create-key response")
 	}
 
-	// The actor name used by the middleware is the key's Name field ("quota-actor").
-	// Seed 1 session owned by that actor so the quota (1) is already reached.
-	seedSession(t, testDB, "quota-actor")
+	// Actor identity is now the key UUID. Seed a session with that UUID so the
+	// quota check (WHERE created_by = $1) matches correctly.
+	seedSession(t, testDB, keyResp.ID)
 
 	// Build a router with MAX_SESSIONS_PER_ACTOR=1.
 	r := newSessionQuotaRouter(t, testDB, 1)

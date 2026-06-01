@@ -177,6 +177,10 @@ type AuditLog struct {
 	RunID     *uuid.UUID `db:"run_id"     json:"run_id,omitempty"`
 	Action    string     `db:"action"     json:"action"`
 	Metadata  JSONB      `db:"metadata"   json:"metadata"`
+	// Sig is an HMAC-SHA256 hex digest over the immutable fields of this entry.
+	// It is empty when AUDIT_HMAC_KEY is not configured. Non-empty values can be
+	// verified with VerifyAuditSig to detect tampering after the fact.
+	Sig string `db:"sig" json:"sig,omitempty"`
 }
 
 // Org RBAC roles

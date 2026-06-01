@@ -96,6 +96,7 @@ type ObservabilityConfig struct {
 	StopContainersOnShutdown bool   // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
 	WebhookSecret            string // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
 	AuditLogRetentionDays    int    // AUDIT_LOG_RETENTION_DAYS: delete audit logs older than N days (0 = keep forever)
+	AuditHMACKey             string // AUDIT_HMAC_KEY: HMAC-SHA256 key for audit log integrity signatures; empty = disabled
 }
 
 // Limits caps applied to session creation requests.
@@ -196,6 +197,7 @@ func Load() (*Config, error) {
 			StopContainersOnShutdown: stopOnShutdown,
 			WebhookSecret:            getEnv("WEBHOOK_SECRET", ""),
 			AuditLogRetentionDays:    func() int { n, _ := strconv.Atoi(getEnv("AUDIT_LOG_RETENTION_DAYS", "90")); return n }(),
+			AuditHMACKey:             getEnv("AUDIT_HMAC_KEY", ""),
 		},
 	}
 

@@ -47,11 +47,17 @@ func (c *Client) VerifyImage(ctx context.Context, image string) (string, error) 
 		return "", fmt.Errorf("invalid image name: contains disallowed control characters")
 	}
 
-	cmd := exec.CommandContext(ctx, cosignPath, "verify",
-		"--key", c.cosignPublicKey,
-		"--",
-		image,
-	)
+	// Build the cosign verify argument list. --tlog-verify requires the image
+	// signature to be present in the Rekor transparency log, preventing use of
+	// offline-only signatures. Opt-in via COSIGN_REQUIRE_TLOG=true because
+	// private/air-gapped registries typically do not publish to Rekor.
+	cosignArgs := []string{"verify", "--key", c.cosignPublicKey}
+	if c.requireTlog {
+		cosignArgs = append(cosignArgs, "--tlog-verify")
+	}
+	cosignArgs = append(cosignArgs, "--", image)
+
+	cmd := exec.CommandContext(ctx, cosignPath, cosignArgs...)
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {

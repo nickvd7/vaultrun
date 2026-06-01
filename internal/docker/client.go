@@ -23,6 +23,7 @@ type Client struct {
 	inner           *client.Client
 	seccompJSON     string // raw JSON profile; "default" = daemon explicit default
 	cosignPublicKey string // path to cosign public key file; empty = verification disabled
+	requireTlog     bool   // COSIGN_REQUIRE_TLOG=true: pass --tlog-verify to cosign (requires Rekor)
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
@@ -69,7 +70,9 @@ func New() (*Client, error) {
 	// Cosign image verification — optional but strongly recommended in production.
 	dc.cosignPublicKey = os.Getenv("COSIGN_PUBLIC_KEY")
 	if dc.cosignPublicKey != "" {
-		slog.Info("docker: cosign image verification enabled", "key", dc.cosignPublicKey)
+		dc.requireTlog = os.Getenv("COSIGN_REQUIRE_TLOG") == "true"
+		slog.Info("docker: cosign image verification enabled",
+			"key", dc.cosignPublicKey, "require_tlog", dc.requireTlog)
 	} else {
 		slog.Warn("docker: cosign image verification disabled (set COSIGN_PUBLIC_KEY to enable)")
 	}

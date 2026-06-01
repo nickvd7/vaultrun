@@ -162,3 +162,58 @@ func TestRateLimitIsolatedByIP(t *testing.T) {
 		}
 	}
 }
+
+// TestRedisRateLimitFallback verifies that when Redis is unreachable the
+// in-memory fallback limiter still enforces the rate limit rather than
+// allowing all requests through (fail-open).
+func TestRedisRateLimitFallback(t *testing.T) {
+	// Port 19999 is almost certainly not listening — Redis calls will error.
+	h := NewRedisRateLimit("127.0.0.1:19999", "", 0, 1)
+	r := gin.New()
+	r.GET("/ping", h, func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	ip := "9.8.7.6:1234"
+
+	req1 := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req1.RemoteAddr = ip
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request (within fallback limit): want 200, got %d", w1.Code)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	req2.RemoteAddr = ip
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request (exceeds fallback limit=1): want 429, got %d", w2.Code)
+	}
+}
+
+// TestRedisActorRateLimitFallback mirrors TestRedisRateLimitFallback for the
+// actor-keyed variant.
+func TestRedisActorRateLimitFallback(t *testing.T) {
+	h := NewRedisActorRateLimit("127.0.0.1:19999", "", 0, 1)
+	r := gin.New()
+	// Inject an actor directly since we're not running through APIKeyAuth.
+	r.GET("/ping",
+		func(c *gin.Context) { c.Set("actor", "test-actor"); c.Set("actor_name", "test-actor"); c.Next() },
+		h,
+		func(c *gin.Context) { c.Status(http.StatusOK) },
+	)
+
+	req1 := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request: want 200, got %d", w1.Code)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request: want 429, got %d", w2.Code)
+	}
+}

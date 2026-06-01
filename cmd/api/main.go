@@ -136,7 +136,7 @@ func main() {
 	}
 	_ = os.Remove(probeFile)
 
-	al := audit.New(db)
+	al := audit.New(db, cfg.Observability.AuditHMACKey)
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
 	sec := secrets.New()

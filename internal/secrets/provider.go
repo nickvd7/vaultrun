@@ -137,7 +137,10 @@ func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, err
 		return "", fmt.Errorf("vault: secret %q not found", name)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("vault: unexpected status %d for secret %q: %s", resp.StatusCode, name, body)
+		// Log full details server-side only — the raw Vault error body must not
+		// propagate to API callers (it may contain internal path or policy info).
+		slog.Debug("vault: unexpected response", "secret", name, "status", resp.StatusCode, "body_len", len(body))
+		return "", fmt.Errorf("vault: unexpected status %d for secret %q", resp.StatusCode, name)
 	}
 
 	// KV v2 response: {"data":{"data":{"value":"<secret>"},...},...}

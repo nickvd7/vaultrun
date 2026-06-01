@@ -306,7 +306,7 @@ func (r *Runner) prepareRun(ctx context.Context, req RunRequest) (*models.Run, e
 		SessionID: &sidCopy,
 		RunID:     &run.ID,
 		Action:    models.ActionCommandStarted,
-		Metadata:  models.JSONB{"command": req.Command, "args": req.Args},
+		Metadata:  models.JSONB{"command": req.Command, "args": redactSensitiveArgs(req.Args)},
 	})
 
 	return run, nil
@@ -419,6 +419,37 @@ func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir s
 		}
 		return nil
 	})
+}
+
+// sensitiveArgPrefixes lists CLI flag prefixes whose values must not appear in
+// audit logs (DB-persisted, visible to all org members with viewer role).
+var sensitiveArgPrefixes = []string{
+	"--password", "--passwd", "--token", "--secret",
+	"--api-key", "--apikey", "--auth", "--credential", "--private-key",
+}
+
+// redactSensitiveArgs returns a copy of args with flag values that look like
+// credentials replaced by "***". Handles both "--flag=value" and "--flag value" forms.
+func redactSensitiveArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+	out := make([]string, len(args))
+	copy(out, args)
+	for i, a := range out {
+		lower := strings.ToLower(a)
+		for _, prefix := range sensitiveArgPrefixes {
+			if strings.HasPrefix(lower, prefix+"=") {
+				out[i] = a[:len(prefix)] + "=***"
+				break
+			}
+			if lower == prefix && i+1 < len(out) {
+				out[i+1] = "***"
+				break
+			}
+		}
+	}
+	return out
 }
 
 // snapshotDirForTest exposes snapshotDir for unit tests (same package).

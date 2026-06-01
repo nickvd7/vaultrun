@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -266,7 +267,9 @@ func main() {
 				}
 			}()
 			srv.Addr = ":443"
-			srv.TLSConfig = m.TLSConfig()
+			tc := m.TLSConfig()
+			tc.MinVersion = tls.VersionTLS12
+			srv.TLSConfig = tc
 			slog.Info("vaultrun api starting (ACME/Let's Encrypt)",
 				"domain", cfg.Server.ACMEDomain, "cache", cfg.Server.ACMECacheDir)
 			if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
@@ -274,6 +277,7 @@ func main() {
 				os.Exit(1)
 			}
 		case cfg.TLSEnabled():
+			srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 			slog.Info("vaultrun api starting (TLS)", "addr", cfg.ServerAddr(),
 				"cert", cfg.Server.TLSCertFile)
 			if err := srv.ListenAndServeTLS(cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile); err != nil && err != http.ErrServerClosed {
@@ -281,6 +285,8 @@ func main() {
 				os.Exit(1)
 			}
 		default:
+			slog.Warn("vaultrun api starting without TLS — API keys are transmitted in plaintext; " +
+				"configure TLS_CERT_FILE/TLS_KEY_FILE or ACME_DOMAIN before exposing to untrusted networks")
 			slog.Info("vaultrun api starting", "addr", cfg.ServerAddr())
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				slog.Error("server error", "err", err)

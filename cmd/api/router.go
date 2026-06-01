@@ -82,7 +82,9 @@ func newRouter(
 	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool)
 
 	health := handlers.NewHealthHandler(hub)
-	r.GET("/health", health.Health)
+	// Health endpoint is unauthenticated (needed by load-balancer probes) but
+	// rate-limited to prevent use as a trivial DoS amplifier.
+	r.GET("/health", middleware.RateLimit(120), health.Health)
 	// Prometheus metrics endpoint. Protected by METRICS_TOKEN when set — callers
 	// must send "Authorization: Bearer <token>". When the env var is not set the
 	// endpoint is unprotected; operators MUST restrict it via a firewall or

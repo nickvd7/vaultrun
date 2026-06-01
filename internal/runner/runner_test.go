@@ -299,6 +299,49 @@ func TestSnapshotDirIgnoresDirectories(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// redactSensitiveArgs tests
+// ---------------------------------------------------------------------------
+
+func TestRedactSensitiveArgsEqualsForm(t *testing.T) {
+	args := []string{"--password=s3cr3t", "--user=alice"}
+	got := redactSensitiveArgs(args)
+	if got[0] != "--password=***" {
+		t.Errorf("want --password=***, got %q", got[0])
+	}
+	if got[1] != "--user=alice" {
+		t.Errorf("non-sensitive arg should be unchanged, got %q", got[1])
+	}
+}
+
+func TestRedactSensitiveArgsSeparateValueForm(t *testing.T) {
+	args := []string{"--token", "abc123", "cmd"}
+	got := redactSensitiveArgs(args)
+	if got[1] != "***" {
+		t.Errorf("want ***, got %q", got[1])
+	}
+	if got[0] != "--token" {
+		t.Errorf("flag name should be unchanged, got %q", got[0])
+	}
+	if got[2] != "cmd" {
+		t.Errorf("trailing arg should be unchanged, got %q", got[2])
+	}
+}
+
+func TestRedactSensitiveArgsCaseInsensitive(t *testing.T) {
+	args := []string{"--PASSWORD=s3cr3t"}
+	got := redactSensitiveArgs(args)
+	if got[0] != "--PASSWORD=***" {
+		t.Errorf("want --PASSWORD=***, got %q", got[0])
+	}
+}
+
+func TestRedactSensitiveArgsNilSafe(t *testing.T) {
+	if got := redactSensitiveArgs(nil); len(got) != 0 {
+		t.Errorf("expected empty, got %v", got)
+	}
+}
+
 // Ensure deleteFileForTest (exposed for cleanup) and timestamp helpers are exercised.
 func TestHelperFunctions(t *testing.T) {
 	dir := t.TempDir()

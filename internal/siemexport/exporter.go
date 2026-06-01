@@ -85,6 +85,13 @@ func (e *Exporter) loop(ctx context.Context) {
 }
 
 func (e *Exporter) export(ctx context.Context) error {
+	// Re-validate the export URL on every batch. DNS TTLs expire between export
+	// cycles, and an attacker who controls the hostname could change its A-record
+	// to a private/metadata IP after the one-time startup check (DNS rebinding).
+	if err := httputil.ValidatePublicURL(e.exportURL, false); err != nil {
+		return fmt.Errorf("siem export URL failed re-validation (possible DNS rebinding): %w", err)
+	}
+
 	since := e.bookmark.Load().(time.Time)
 
 	entries, err := dbpkg.ListAuditSince(ctx, e.db, since, 500)

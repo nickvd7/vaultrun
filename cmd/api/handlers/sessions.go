@@ -219,13 +219,13 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		gpuDevices = sh.h.cfg.Docker.GPUDevices
 	}
 
+	// Warm pool acquire is disabled: pooled containers are bound to warm-<uuid>
+	// workspaces and always have NetworkMode:none, so acquiring one would break
+	// the Files API, artifact detection, snapshot restore, and network-policy
+	// enforcement for the new session. The pool still pre-starts containers for
+	// future use once workspace-adoption is redesigned. On-demand CreateSandbox
+	// is always used for correctness.
 	var containerID string
-	if sh.h.warmPool != nil && req.Image == sh.h.cfg.Docker.WarmPoolImage {
-		if entry, ok := sh.h.warmPool.Acquire(); ok {
-			containerID = entry.ContainerID
-			slog.Info("warm pool container acquired", "session_id", sessionID, "container_id", containerID)
-		}
-	}
 
 	if containerID == "" {
 		containerID, err = sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{

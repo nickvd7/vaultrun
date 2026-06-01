@@ -68,8 +68,12 @@ func TestResolveToIPsEmpty(t *testing.T) {
 // no cosign public key is configured (the common dev case).
 func TestVerifyImageNoOpWhenKeyNotSet(t *testing.T) {
 	c := &Client{cosignPublicKey: ""}
-	if err := c.VerifyImage(context.Background(), "python:3.12-slim"); err != nil {
+	ref, err := c.VerifyImage(context.Background(), "python:3.12-slim")
+	if err != nil {
 		t.Errorf("expected no-op when cosignPublicKey is empty, got err: %v", err)
+	}
+	if ref != "python:3.12-slim" {
+		t.Errorf("expected original image ref when verification is disabled, got %q", ref)
 	}
 }
 
@@ -77,7 +81,7 @@ func TestVerifyImageNoOpWhenKeyNotSet(t *testing.T) {
 // closed (returns an error) when a key is set but the cosign binary is absent.
 func TestVerifyImageFailsClosedWhenBinaryMissing(t *testing.T) {
 	c := &Client{cosignPublicKey: "/nonexistent/key.pem"}
-	err := c.VerifyImage(context.Background(), "python:3.12-slim")
+	_, err := c.VerifyImage(context.Background(), "python:3.12-slim")
 	if err == nil {
 		t.Error("expected error when cosign binary is missing, got nil")
 	}
@@ -91,5 +95,78 @@ func TestBridgeIfaceMatchesDockerConvention(t *testing.T) {
 	want := "br-abc123def456"
 	if got := bridgeIface(networkID); got != want {
 		t.Errorf("bridgeIface(%q) = %q, want %q", networkID, got, want)
+	}
+}
+
+func TestExtractCosignDigest(t *testing.T) {
+	cases := []struct {
+		name    string
+		output  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "clean JSON on its own line",
+			output: `[{"critical":{"identity":{"docker-reference":"docker.io/library/python"}` +
+				`,"image":{"docker-manifest-digest":"sha256:abc123def456"}` +
+				`,"type":"cosign container image signature"},"optional":null}]`,
+			want: "sha256:abc123def456",
+		},
+		{
+			name: "JSON preceded by informational text",
+			output: "Verification for docker.io/library/python:3.12-slim --\n" +
+				"The following checks were performed on each of these signatures:\n" +
+				`[{"critical":{"identity":{"docker-reference":"docker.io/library/python"}` +
+				`,"image":{"docker-manifest-digest":"sha256:deadbeef"}` +
+				`,"type":"cosign container image signature"},"optional":null}]`,
+			want: "sha256:deadbeef",
+		},
+		{
+			name:    "no JSON at all",
+			output:  "some random output without json",
+			wantErr: true,
+		},
+		{
+			name:    "empty output",
+			output:  "",
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := extractCosignDigest([]byte(tc.output))
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPinnedImageRef(t *testing.T) {
+	digest := "sha256:abc123"
+	cases := []struct {
+		image string
+		want  string
+	}{
+		{"python:3.12-slim", "python@sha256:abc123"},
+		{"docker.io/library/python:3.12-slim", "docker.io/library/python@sha256:abc123"},
+		{"registry:5000/myimage:v1", "registry:5000/myimage@sha256:abc123"},
+		{"myimage", "myimage@sha256:abc123"},
+		{"myimage@sha256:old", "myimage@sha256:abc123"},
+	}
+	for _, tc := range cases {
+		got := pinnedImageRef(tc.image, digest)
+		if got != tc.want {
+			t.Errorf("pinnedImageRef(%q, %q) = %q, want %q", tc.image, digest, got, tc.want)
+		}
 	}
 }

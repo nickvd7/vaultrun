@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
@@ -72,6 +73,10 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 	}
 
 	if err := dbpkg.CreateAPIKey(c.Request.Context(), kh.h.db, key); err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			c.JSON(http.StatusConflict, gin.H{"error": "api key name already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist key"})
 		return
 	}

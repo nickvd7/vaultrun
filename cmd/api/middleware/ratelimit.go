@@ -139,10 +139,13 @@ func ActorRateLimit(requestsPerMinute int) gin.HandlerFunc {
 
 // NewRedisRateLimit returns a per-minute rate-limit middleware backed by Redis.
 // Uses a sliding-window approximation: each 1-minute bucket has its own key.
-// On Redis error the middleware fails open (allows the request) and logs a warning.
+// On Redis error the middleware falls back to an in-memory token-bucket limiter
+// rather than failing open. The fallback is less precise under concurrent
+// instances but always enforces a limit — it never allows unlimited traffic.
 func NewRedisRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
 	opts := &redis.Options{Addr: addr, Password: password, DB: db}
 	rdb := redis.NewClient(opts)
+	fallback := newLimiter(limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		minute := time.Now().Unix() / 60
@@ -151,7 +154,14 @@ func NewRedisRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
 
 		count, err := rdb.Incr(ctx, key).Result()
 		if err != nil {
-			slog.Warn("redis rate limit: incr failed, allowing request", "err", err)
+			slog.Warn("redis rate limit: incr failed, applying in-memory fallback", "err", err)
+			if !fallback.allow(ip) {
+				metrics.RateLimitHitsTotal.WithLabelValues("ip").Inc()
+				c.Header("X-RateLimit-Limit", strconv.Itoa(limit))
+				c.Header("Retry-After", "60")
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+				return
+			}
 			c.Next()
 			return
 		}
@@ -174,9 +184,11 @@ func NewRedisRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
 // NewRedisActorRateLimit is like NewRedisRateLimit but keys on the authenticated actor.
 // Must run AFTER APIKeyAuth so that Actor(c) is populated.
 // The master actor is always exempt — it should never be throttled.
+// On Redis error the middleware falls back to an in-memory token-bucket limiter.
 func NewRedisActorRateLimit(addr, password string, db, limit int) gin.HandlerFunc {
 	opts := &redis.Options{Addr: addr, Password: password, DB: db}
 	rdb := redis.NewClient(opts)
+	fallback := newLimiter(limit)
 	return func(c *gin.Context) {
 		actor := Actor(c)
 		// Master key is exempt. Apply limit to all other actors (including "unknown")
@@ -191,7 +203,13 @@ func NewRedisActorRateLimit(addr, password string, db, limit int) gin.HandlerFun
 
 		count, err := rdb.Incr(ctx, key).Result()
 		if err != nil {
-			slog.Warn("redis actor rate limit: incr failed, allowing request", "err", err)
+			slog.Warn("redis actor rate limit: incr failed, applying in-memory fallback", "err", err)
+			if !fallback.allow(actor) {
+				metrics.RateLimitHitsTotal.WithLabelValues("actor").Inc()
+				c.Header("Retry-After", "60")
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
+				return
+			}
 			c.Next()
 			return
 		}

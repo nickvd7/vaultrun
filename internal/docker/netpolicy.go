@@ -3,6 +3,7 @@ package docker
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -38,16 +39,20 @@ func bridgeIface(networkID string) string {
 //
 // Rules created (in the custom chain named by chainName(containerID)):
 //  1. ACCEPT ESTABLISHED,RELATED (permit reply traffic)
-//  2. ACCEPT DNS (UDP + TCP port 53)
+//  2. ACCEPT DNS to dnsServer only (UDP + TCP port 53, destination == bridge gateway)
 //  3. ACCEPT for each IP in allowedIPs
 //  4. DROP everything else (default-deny)
+//
+// dnsServer must be the bridge network's gateway IP. Restricting DNS to this
+// address prevents a container from exfiltrating data by querying an
+// attacker-controlled nameserver on port 53 to an arbitrary external host.
 //
 // A jump from the FORWARD chain routes traffic from the bridge interface into
 // this chain.
 //
 // Returns an error if iptables is unavailable or a rule fails. Callers should
 // treat this as a hard failure when strict enforcement is required.
-func applyEgressPolicy(chain, iface string, allowedIPs []string) error {
+func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) error {
 	// Validate chain and interface names to ensure they consist only of safe
 	// characters. Both values are derived from Docker-generated IDs, but an
 	// explicit check makes the safety assumption visible and auditable.
@@ -56,6 +61,9 @@ func applyEgressPolicy(chain, iface string, allowedIPs []string) error {
 	}
 	if !iptablesNameRe.MatchString(iface) {
 		return fmt.Errorf("invalid network interface name: %q", iface)
+	}
+	if net.ParseIP(dnsServer) == nil {
+		return fmt.Errorf("invalid DNS server IP: %q", dnsServer)
 	}
 
 	// 1. Create the chain; idempotent (ignore "already exists" errors).
@@ -73,11 +81,14 @@ func applyEgressPolicy(chain, iface string, allowedIPs []string) error {
 		return fmt.Errorf("add conntrack rule: %w", err)
 	}
 
-	// 4. DNS — containers need name resolution to reach allowlisted hosts.
-	if err := ipt("-A", chain, "-p", "udp", "--dport", "53", "-j", "ACCEPT"); err != nil {
+	// 4. DNS — restricted to the bridge gateway only (dnsServer). Allowing port
+	// 53 to any destination would let a container tunnel data to an attacker's
+	// nameserver via DNS queries. The Docker bridge gateway handles internal
+	// name resolution for the session's allowed hosts.
+	if err := ipt("-A", chain, "-p", "udp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"); err != nil {
 		return fmt.Errorf("add DNS/UDP rule: %w", err)
 	}
-	if err := ipt("-A", chain, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"); err != nil {
+	if err := ipt("-A", chain, "-p", "tcp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"); err != nil {
 		return fmt.Errorf("add DNS/TCP rule: %w", err)
 	}
 
@@ -101,7 +112,7 @@ func applyEgressPolicy(chain, iface string, allowedIPs []string) error {
 	}
 
 	slog.Info("netpolicy: egress policy applied",
-		"chain", chain, "iface", iface, "allowed_ips", len(allowedIPs))
+		"chain", chain, "iface", iface, "dns_server", dnsServer, "allowed_ips", len(allowedIPs))
 	return nil
 }
 

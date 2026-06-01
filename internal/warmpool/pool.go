@@ -151,7 +151,10 @@ func (p *Pool) fill(ctx context.Context) {
 // applies the same seccomp profile as CreateSandbox.
 func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 	// Verify image signature before creating a container — same policy as CreateSandbox.
-	if err := p.dockerCli.VerifyImage(ctx, p.image); err != nil {
+	// VerifyImage returns the digest-pinned reference; use it for ContainerCreate
+	// so the warm container always runs the exact manifest that was verified.
+	pinnedImage, err := p.dockerCli.VerifyImage(ctx, p.image)
+	if err != nil {
 		return Entry{}, fmt.Errorf("image verification: %w", err)
 	}
 
@@ -205,7 +208,7 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 	name := fmt.Sprintf("vaultrun-warm-%s", wsID.String()[:8])
 	resp, err := p.dockerCli.Inner().ContainerCreate(ctx,
 		&container.Config{
-			Image:      p.image,
+			Image:      pinnedImage,
 			Cmd:        []string{"sleep", "infinity"},
 			WorkingDir: "/workspace",
 			User:       "nobody",

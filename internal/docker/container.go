@@ -59,19 +59,25 @@ const labelNetID = "vaultrun.netid" // Docker container label that records the s
 //  4. Container create + start with seccomp, CapDrop ALL, no-new-privileges
 func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, error) {
 	// ── Step 1: image signature verification ────────────────────────────────
-	if err := c.VerifyImage(ctx, cfg.Image); err != nil {
+	//
+	// VerifyImage returns a digest-pinned reference (e.g. "python@sha256:…")
+	// that we use for all subsequent operations. This closes the TOCTOU window:
+	// a mutable tag cannot be rewritten between verify and pull because we
+	// immediately pin to the exact manifest digest that cosign verified.
+	pinnedImage, err := c.VerifyImage(ctx, cfg.Image)
+	if err != nil {
 		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("image verification: %w", err)
 	}
 
 	// ── Step 2: ensure image is locally available ────────────────────────────
-	exists, err := c.ImageExists(ctx, cfg.Image)
+	exists, err := c.ImageExists(ctx, pinnedImage)
 	if err != nil {
 		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 		return "", fmt.Errorf("check image: %w", err)
 	}
 	if !exists {
-		if err := c.PullImage(ctx, cfg.Image); err != nil {
+		if err := c.PullImage(ctx, pinnedImage); err != nil {
 			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
 			return "", err
 		}
@@ -90,6 +96,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	var sessionNetID string        // set when a dedicated bridge network was created
 	var sessionNetName string      // used in NetworkingConfig endpoint key
 	var networkingCfg *network.NetworkingConfig
+	var sessionDNSServer string    // Docker bridge gateway; DNS is restricted to this IP
 
 	if cfg.NetworkEnabled {
 		if len(cfg.AllowedHosts) > 0 {
@@ -114,6 +121,20 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 					sessionNetName: {},
 				},
 			}
+
+			// Inspect the newly created network to get the bridge gateway IP.
+			// The DNS iptables rules are restricted to this address so containers
+			// cannot exfiltrate data by querying an attacker-controlled nameserver.
+			netInfo, err := c.inner.NetworkInspect(ctx, sessionNetID, network.InspectOptions{})
+			if err != nil || len(netInfo.IPAM.Config) == 0 || netInfo.IPAM.Config[0].Gateway == "" {
+				_ = c.inner.NetworkRemove(ctx, sessionNetID)
+				metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+				if err != nil {
+					return "", fmt.Errorf("inspect session network for DNS gateway: %w", err)
+				}
+				return "", fmt.Errorf("session network has no IPAM gateway — cannot enforce DNS policy")
+			}
+			sessionDNSServer = netInfo.IPAM.Config[0].Gateway
 		} else {
 			// No AllowedHosts: default bridge without iptables filtering.
 			// Containers have unrestricted egress — operator is responsible for
@@ -222,7 +243,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 
 	resp, err := c.inner.ContainerCreate(ctx,
 		&container.Config{
-			Image:      cfg.Image,
+			Image:      pinnedImage,
 			Cmd:        []string{"sleep", "infinity"},
 			WorkingDir: "/workspace",
 			User:       "nobody",
@@ -260,7 +281,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		}
 		chain := chainName(resp.ID)
 		iface := bridgeIface(sessionNetID)
-		if err := applyEgressPolicy(chain, iface, allowedIPs); err != nil {
+		if err := applyEgressPolicy(chain, iface, sessionDNSServer, allowedIPs); err != nil {
 			// Policy failed — tear down the container and network rather than
 			// starting a sandbox with no egress controls.
 			_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})

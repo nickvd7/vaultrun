@@ -173,6 +173,15 @@ func (oh *OrgHandler) AddMember(c *gin.Context) {
 		return
 	}
 
+	// Reject reserved identity sentinels as principals. These strings short-circuit
+	// RBAC checks elsewhere (e.g. "master" bypasses role lookups, "unknown" is the
+	// unauthenticated default), so allowing them as org members would let an org
+	// admin mint a poisoned membership row or squat on a sentinel identity.
+	if _, reserved := reservedActorNames[strings.ToLower(strings.TrimSpace(req.Principal))]; reserved {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "principal name is reserved"})
+		return
+	}
+
 	role := req.Role
 	if role == "" {
 		role = models.OrgRoleExecutor

@@ -117,7 +117,12 @@ func Load() (*Config, error) {
 	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
 	idleTimeout, _ := strconv.Atoi(getEnv("DOCKER_IDLE_TIMEOUT_MINS", "30"))
 	maxFileMB, _ := strconv.ParseInt(getEnv("MAX_FILE_MB", "100"), 10, 64)
+	// Clamp to a sane range. Without this, a huge value overflows the int64
+	// byte computation (MB*1024*1024) to a negative number, which makes
+	// io.LimitReader return EOF immediately and silently writes 0-byte files.
+	maxFileMB = clampInt64(maxFileMB, 1, 1<<20) // 1 MB .. 1 TB
 	maxOutputMB, _ := strconv.ParseInt(getEnv("MAX_OUTPUT_MB", "10"), 10, 64)
+	maxOutputMB = clampInt64(maxOutputMB, 1, 1<<20)
 	rateLimit, _ := strconv.Atoi(getEnv("RATE_LIMIT_PER_MIN", "120"))
 	actorRateLimit, _ := strconv.Atoi(getEnv("ACTOR_RATE_LIMIT_PER_MIN", "0")) // 0 = inherit RateLimit
 	stopOnShutdown, _ := strconv.ParseBool(getEnv("STOP_CONTAINERS_ON_SHUTDOWN", "false"))
@@ -149,8 +154,12 @@ func Load() (*Config, error) {
 			MaxIdleConns:    dbMaxIdle,
 			ConnMaxLifetime: 5 * time.Minute,
 			// SSL/TLS: these env vars override whatever is in the DSN.
-			// DB_SSL_MODE defaults to "prefer" (encrypted when server supports it).
-			SSLMode:     getEnv("DB_SSL_MODE", ""),
+			// DB_SSL_MODE defaults to "prefer" so that a stray sslmode=disable in a
+			// custom DATABASE_URL is upgraded to an encrypted connection where the
+			// server supports it (prefer still falls back to plaintext if it does
+			// not, so connectivity is preserved). Operators must explicitly set
+			// DB_SSL_MODE=disable to opt out.
+			SSLMode:     getEnv("DB_SSL_MODE", "prefer"),
 			SSLRootCert: getEnv("DB_SSL_ROOT_CERT", ""),
 			SSLCert:     getEnv("DB_SSL_CERT", ""),
 			SSLKey:      getEnv("DB_SSL_KEY", ""),
@@ -260,6 +269,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// clampInt64 bounds v to [min, max]. Used to keep operator-supplied size limits
+// within a range that cannot overflow when later multiplied into a byte count.
+func clampInt64(v, min, max int64) int64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 func splitAndTrim(s string) []string {

@@ -385,6 +385,9 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 	)
 	var totalExtracted int64
 
+	const maxExtractEntries = 200_000 // guard against inode-exhaustion via many tiny entries
+	var entryCount int
+
 	tr := tar.NewReader(gr)
 	for {
 		hdr, err := tr.Next()
@@ -393,6 +396,11 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 		}
 		if err != nil {
 			return fmt.Errorf("read archive: %w", err)
+		}
+
+		entryCount++
+		if entryCount > maxExtractEntries {
+			return fmt.Errorf("archive exceeds maximum entry count (%d)", maxExtractEntries)
 		}
 
 		// Sanitize path: reject any traversal attempts.

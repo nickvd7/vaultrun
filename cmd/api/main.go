@@ -63,6 +63,13 @@ func main() {
 	if cfg.Auth.MasterKey == "" {
 		slog.Warn("MASTER_API_KEY is not set — POST /api/v1/keys will be inaccessible; " +
 			"set the key to create new API keys or verify existing keys are present in the database")
+	} else if len(cfg.Auth.MasterKey) < 32 {
+		// The master key grants full cross-tenant admin. A short, low-entropy key
+		// is brute-forceable despite the constant-time comparison. Warn loudly
+		// rather than exit, to avoid breaking an already-bootstrapped deployment.
+		slog.Warn("MASTER_API_KEY is shorter than 32 characters — it grants full admin access "+
+			"and should be a high-entropy random secret; regenerate it (e.g. `openssl rand -hex 32`)",
+			"length", len(cfg.Auth.MasterKey))
 	}
 
 	db, err := dbpkg.Connect(cfg.Database)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"os"
@@ -91,9 +92,12 @@ func newRouter(
 	// reverse-proxy in production.
 	metricsHandler := gin.WrapH(promhttp.Handler())
 	if metricsToken := os.Getenv("METRICS_TOKEN"); metricsToken != "" {
+		expected := "Bearer " + metricsToken
 		r.GET("/metrics", func(c *gin.Context) {
 			auth := c.GetHeader("Authorization")
-			if auth != "Bearer "+metricsToken {
+			// Constant-time compare to avoid leaking the token via timing,
+			// consistent with the master-key comparison in internal/auth.
+			if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
 				c.AbortWithStatus(http.StatusUnauthorized)
 				return
 			}

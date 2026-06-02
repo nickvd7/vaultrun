@@ -133,7 +133,7 @@ func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		var req jsonRPCRequest
 		if err := json.Unmarshal(line, &req); err != nil {
 			slog.Warn("mcp: parse error", "err", err)
-			s.writeError(out, nil, errParse, "parse error")
+			s.write(out, jsonRPCResponse{JSONRPC: "2.0", Error: &jsonRPCError{Code: errParse, Message: "parse error"}})
 			continue
 		}
 
@@ -145,7 +145,7 @@ func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		// error instead of terminating the session — the host can retry with a
 		// smaller payload (e.g. use chunked file upload instead of inline content).
 		slog.Warn("mcp: message too large, sending error response")
-		s.writeError(out, nil, errInvalidRequest, "message too large (max 4 MB)")
+		s.write(out, jsonRPCResponse{JSONRPC: "2.0", Error: &jsonRPCError{Code: errInvalidRequest, Message: "message too large (max 4 MB)"}})
 		return nil
 	} else if err != nil {
 		return err
@@ -154,87 +154,91 @@ func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
 }
 
 func (s *server) handle(ctx context.Context, out io.Writer, req *jsonRPCRequest) {
-	// Notifications have no ID and require no response.
+	resp := s.handleRequest(ctx, req)
+	if resp != nil {
+		s.write(out, resp)
+	}
+}
+
+// handleRequest processes a single JSON-RPC request and returns the response,
+// or nil for notifications that require no response. It is transport-agnostic:
+// both the stdio loop and the HTTP handler call this method.
+func (s *server) handleRequest(ctx context.Context, req *jsonRPCRequest) *jsonRPCResponse {
 	isNotification := req.ID == nil
 
 	switch req.Method {
 	case "initialize":
 		if isNotification {
-			return
+			return nil
 		}
-		s.writeResult(out, req.ID, mcpInitializeResult{
-			ProtocolVersion: "2024-11-05",
-			Capabilities: mcpCapabilities{
-				Tools: &mcpToolsCapability{ListChanged: false},
+		return &jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: mcpInitializeResult{
+				ProtocolVersion: "2024-11-05",
+				Capabilities: mcpCapabilities{
+					Tools: &mcpToolsCapability{ListChanged: false},
+				},
+				ServerInfo: mcpServerInfo{Name: "vaultrun-mcp", Version: "0.1.0"},
+				Instructions: "Use VaultRun tools to create isolated sandbox sessions, execute " +
+					"code, and manage files within those sessions. Always delete sessions when " +
+					"finished to free resources.",
 			},
-			ServerInfo: mcpServerInfo{Name: "vaultrun-mcp", Version: "0.1.0"},
-			Instructions: "Use VaultRun tools to create isolated sandbox sessions, execute " +
-				"code, and manage files within those sessions. Always delete sessions when " +
-				"finished to free resources.",
-		})
+		}
 
 	case "initialized":
-		// Notification from client — no response required.
-		return
+		return nil
 
 	case "ping":
 		if isNotification {
-			return
+			return nil
 		}
-		s.writeResult(out, req.ID, struct{}{})
+		return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: struct{}{}}
 
 	case "tools/list":
 		if isNotification {
-			return
+			return nil
 		}
-		s.writeResult(out, req.ID, mcpToolsListResult{Tools: toolDefinitions()})
+		return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: mcpToolsListResult{Tools: toolDefinitions()}}
 
 	case "tools/call":
 		if isNotification {
-			return
+			return nil
 		}
 		var params mcpToolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			s.writeError(out, req.ID, errInvalidParams, "invalid params: "+err.Error())
-			return
+			return &jsonRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &jsonRPCError{Code: errInvalidParams, Message: "invalid params: " + err.Error()},
+			}
 		}
 		result, err := s.callTool(ctx, params.Name, params.Arguments)
 		if err != nil {
 			// Tool errors are returned as MCP tool results with isError=true,
 			// NOT as JSON-RPC errors. This lets the AI model see the error message
 			// and decide how to recover.
-			s.writeResult(out, req.ID, mcpToolResult{
-				Content: []mcpContent{{Type: "text", Text: fmt.Sprintf("error: %s", err.Error())}},
-				IsError: true,
-			})
-			return
+			return &jsonRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: mcpToolResult{
+					Content: []mcpContent{{Type: "text", Text: fmt.Sprintf("error: %s", err.Error())}},
+					IsError: true,
+				},
+			}
 		}
-		s.writeResult(out, req.ID, result)
+		return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}
 
 	default:
 		if isNotification {
-			return
+			return nil
 		}
-		s.writeError(out, req.ID, errMethodNotFound, fmt.Sprintf("method %q not found", req.Method))
+		return &jsonRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error:   &jsonRPCError{Code: errMethodNotFound, Message: fmt.Sprintf("method %q not found", req.Method)},
+		}
 	}
-}
-
-func (s *server) writeResult(out io.Writer, id *json.RawMessage, result any) {
-	resp := jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	}
-	s.write(out, resp)
-}
-
-func (s *server) writeError(out io.Writer, id *json.RawMessage, code int, msg string) {
-	resp := jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error:   &jsonRPCError{Code: code, Message: msg},
-	}
-	s.write(out, resp)
 }
 
 func (s *server) write(out io.Writer, v any) {

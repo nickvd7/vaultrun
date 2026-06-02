@@ -272,3 +272,128 @@ func (c *vaultRunClient) ListFiles(ctx context.Context, sessionID string) ([]Fil
 	}
 	return result.Files, nil
 }
+
+func (c *vaultRunClient) DeleteFile(ctx context.Context, sessionID, filePath string) error {
+	segments := strings.Split(strings.TrimPrefix(filePath, "/"), "/")
+	escapedSegments := make([]string, len(segments))
+	for i, s := range segments {
+		escapedSegments[i] = url.PathEscape(s)
+	}
+	path := "/api/v1/sessions/" + url.PathEscape(sessionID) + "/files/" + strings.Join(escapedSegments, "/")
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// ── Runs ─────────────────────────────────────────────────────────────────────
+
+func (c *vaultRunClient) ListRuns(ctx context.Context, sessionID string) ([]Run, error) {
+	var result struct {
+		Runs []Run `json:"runs"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet,
+		"/api/v1/sessions/"+url.PathEscape(sessionID)+"/runs?limit=50", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Runs, nil
+}
+
+// ── Snapshots ────────────────────────────────────────────────────────────────
+
+type Snapshot struct {
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	Name      string    `json:"name"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (c *vaultRunClient) CreateSnapshot(ctx context.Context, sessionID, name string) (*Snapshot, error) {
+	var snap Snapshot
+	if err := c.doJSON(ctx, http.MethodPost,
+		"/api/v1/sessions/"+url.PathEscape(sessionID)+"/snapshots",
+		map[string]string{"name": name}, &snap); err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+func (c *vaultRunClient) ListSnapshots(ctx context.Context, sessionID string) ([]Snapshot, error) {
+	var result struct {
+		Snapshots []Snapshot `json:"snapshots"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet,
+		"/api/v1/sessions/"+url.PathEscape(sessionID)+"/snapshots", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Snapshots, nil
+}
+
+// ── Artifacts ────────────────────────────────────────────────────────────────
+
+type SharedArtifact struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ContentType string    `json:"content_type"`
+	SizeBytes   int64     `json:"size_bytes"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (c *vaultRunClient) CreateArtifact(ctx context.Context, sessionID, filePath, name string) (*SharedArtifact, error) {
+	body := map[string]string{"path": filePath}
+	if name != "" {
+		body["name"] = name
+	}
+	var art SharedArtifact
+	if err := c.doJSON(ctx, http.MethodPost,
+		"/api/v1/sessions/"+url.PathEscape(sessionID)+"/artifacts", body, &art); err != nil {
+		return nil, err
+	}
+	return &art, nil
+}
+
+func (c *vaultRunClient) ListArtifacts(ctx context.Context) ([]SharedArtifact, error) {
+	var result struct {
+		Artifacts []SharedArtifact `json:"artifacts"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/artifacts?limit=50", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Artifacts, nil
+}
+
+// ── Audit ────────────────────────────────────────────────────────────────────
+
+type AuditLog struct {
+	ID        string    `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	Actor     string    `json:"actor"`
+	Action    string    `json:"action"`
+	SessionID string    `json:"session_id,omitempty"`
+}
+
+func (c *vaultRunClient) ListAuditLogs(ctx context.Context, sessionID string, limit int) ([]AuditLog, error) {
+	query := fmt.Sprintf("?limit=%d", limit)
+	if sessionID != "" {
+		query += "&session_id=" + url.QueryEscape(sessionID)
+	}
+	var result struct {
+		AuditLogs []AuditLog `json:"audit_logs"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/audit"+query, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.AuditLogs, nil
+}
+
+// ── Health ───────────────────────────────────────────────────────────────────
+
+func (c *vaultRunClient) HealthCheck(ctx context.Context) error {
+	resp, err := c.do(ctx, http.MethodGet, "/health", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("health check failed: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}

@@ -74,11 +74,18 @@ func httpConfigFromEnv() (httpConfig, error) {
 	return cfg, nil
 }
 
+// sweepInterval is the number of allow() calls between full map sweeps that
+// evict dormant, fully-expired IP entries. This bounds memory growth from
+// one-shot or rotating source IPs (a cheap DoS vector) without a background
+// goroutine or per-request O(n) scan.
+const sweepInterval = 1024
+
 // ipRateLimiter is a sliding-window rate limiter keyed by IP address.
 type ipRateLimiter struct {
-	mu      sync.Mutex
-	windows map[string][]time.Time
-	limit   int
+	mu        sync.Mutex
+	windows   map[string][]time.Time
+	limit     int
+	sinceSwip int // allow() calls since the last sweep
 }
 
 func newIPRateLimiter(limit int) *ipRateLimiter {
@@ -89,6 +96,12 @@ func newIPRateLimiter(limit int) *ipRateLimiter {
 func (r *ipRateLimiter) allow(ip string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.sinceSwip++; r.sinceSwip >= sweepInterval {
+		r.sweepLocked()
+		r.sinceSwip = 0
+	}
+
 	cutoff := time.Now().Add(-time.Minute)
 	ts := r.windows[ip]
 	n := 0
@@ -105,6 +118,24 @@ func (r *ipRateLimiter) allow(ip string) bool {
 	}
 	r.windows[ip] = append(ts, time.Now())
 	return true
+}
+
+// sweepLocked drops IP entries whose timestamps are all outside the window.
+// Caller must hold r.mu.
+func (r *ipRateLimiter) sweepLocked() {
+	cutoff := time.Now().Add(-time.Minute)
+	for ip, ts := range r.windows {
+		fresh := false
+		for _, t := range ts {
+			if t.After(cutoff) {
+				fresh = true
+				break
+			}
+		}
+		if !fresh {
+			delete(r.windows, ip)
+		}
+	}
 }
 
 // buildHTTPEngine constructs the Gin router with all middleware and routes.

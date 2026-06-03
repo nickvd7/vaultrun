@@ -25,7 +25,7 @@ jobs:
         run: go build -ldflags="-s -w" ./cmd/api ./cmd/cli
 
       - name: Unit tests
-        run: go test ./internal/... ./cmd/api/middleware/... ./sdk/go/... -race -timeout 120s
+        run: go test ./internal/... ./cmd/api/middleware/... ./sdk/go/... ./sdk/mcp/... -race -timeout 120s
 
   integration:
     name: Handler integration tests

@@ -24,7 +24,7 @@ import (
 // This must be called before PullImage / ImageExists so that unverified images
 // are never instantiated as containers.
 func (c *Client) VerifyImage(ctx context.Context, image string) (string, error) {
-	if c.cosignPublicKey == "" {
+	if c == nil || c.cosignPublicKey == "" {
 		return image, nil // verification disabled — operator opt-out
 	}
 

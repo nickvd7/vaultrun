@@ -167,7 +167,8 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		}
 		if err := sh.h.ws.RestoreSnapshot(sessionID, snap.ArchivePath); err != nil {
 			_ = sh.h.ws.Delete(sessionID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "restore snapshot failed: " + err.Error()})
+			slog.Error("restore snapshot failed", "session_id", sessionID, "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "restore snapshot failed"})
 			return
 		}
 	}

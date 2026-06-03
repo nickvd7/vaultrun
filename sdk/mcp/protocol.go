@@ -16,10 +16,10 @@ import (
 // ---------------------------------------------------------------------------
 
 type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JSONRPC string           `json:"jsonrpc"`
 	ID      *json.RawMessage `json:"id,omitempty"` // nil for notifications
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	Method  string           `json:"method"`
+	Params  json.RawMessage  `json:"params,omitempty"`
 }
 
 type jsonRPCResponse struct {
@@ -74,17 +74,17 @@ type mcpTool struct {
 }
 
 type inputSchema struct {
-	Type       string                    `json:"type"`
-	Properties map[string]schemaProp     `json:"properties,omitempty"`
-	Required   []string                  `json:"required,omitempty"`
+	Type       string                `json:"type"`
+	Properties map[string]schemaProp `json:"properties,omitempty"`
+	Required   []string              `json:"required,omitempty"`
 }
 
 type schemaProp struct {
-	Type        string            `json:"type"`
-	Description string            `json:"description,omitempty"`
-	Enum        []string          `json:"enum,omitempty"`
-	Items       *schemaProp       `json:"items,omitempty"`
-	Default     any               `json:"default,omitempty"`
+	Type        string      `json:"type"`
+	Description string      `json:"description,omitempty"`
+	Enum        []string    `json:"enum,omitempty"`
+	Items       *schemaProp `json:"items,omitempty"`
+	Default     any         `json:"default,omitempty"`
 }
 
 type mcpToolsListResult struct {

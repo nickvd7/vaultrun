@@ -98,16 +98,16 @@ type Session struct {
 }
 
 type Run struct {
-	ID             string  `json:"id"`
-	SessionID      string  `json:"session_id"`
-	Command        string  `json:"command"`
-	Args           []string `json:"args,omitempty"`
-	Status         string  `json:"status"`
-	ExitCode       *int    `json:"exit_code,omitempty"`
-	Stdout         *string `json:"stdout,omitempty"`
-	Stderr         *string `json:"stderr,omitempty"`
-	DurationMS     int64   `json:"duration_ms,omitempty"`
-	OutputTruncated bool   `json:"output_truncated,omitempty"`
+	ID              string   `json:"id"`
+	SessionID       string   `json:"session_id"`
+	Command         string   `json:"command"`
+	Args            []string `json:"args,omitempty"`
+	Status          string   `json:"status"`
+	ExitCode        *int     `json:"exit_code,omitempty"`
+	Stdout          *string  `json:"stdout,omitempty"`
+	Stderr          *string  `json:"stderr,omitempty"`
+	DurationMS      int64    `json:"duration_ms,omitempty"`
+	OutputTruncated bool     `json:"output_truncated,omitempty"`
 }
 
 type FileEntry struct {
@@ -221,7 +221,9 @@ func (c *vaultRunClient) UploadFile(ctx context.Context, sessionID, destPath, co
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		var errBody struct{ Error string `json:"error"` }
+		var errBody struct {
+			Error string `json:"error"`
+		}
 		if e := json.Unmarshal(raw, &errBody); e == nil && errBody.Error != "" {
 			return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, errBody.Error)
 		}
@@ -253,7 +255,9 @@ func (c *vaultRunClient) DownloadFile(ctx context.Context, sessionID, filePath s
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		var errBody struct{ Error string `json:"error"` }
+		var errBody struct {
+			Error string `json:"error"`
+		}
 		if e := json.Unmarshal(body, &errBody); e == nil && errBody.Error != "" {
 			return "", fmt.Errorf("API error %d: %s", resp.StatusCode, errBody.Error)
 		}

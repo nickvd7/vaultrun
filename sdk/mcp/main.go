@@ -25,7 +25,8 @@
 // Additional environment variables for MCP_TRANSPORT=http (see http.go):
 //
 //	MCP_AUTH_TOKEN, MCP_PORT, MCP_ALLOWED_ORIGINS, MCP_RATE_LIMIT
-//	MCP_ACME_DOMAIN, MCP_ACME_CACHE_DIR  (Let's Encrypt auto-TLS)
+//	MCP_TRUSTED_PROXIES                  (CIDRs/IPs of trusted reverse proxies)
+//	MCP_ACME_DOMAIN, MCP_ACME_CACHE_DIR, MCP_ACME_EMAIL  (Let's Encrypt auto-TLS)
 //	MCP_TLS_CERT, MCP_TLS_KEY            (static cert, alternative to ACME)
 package main
 

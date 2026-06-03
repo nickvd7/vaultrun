@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -232,6 +233,123 @@ func TestSecCORSPreflight(t *testing.T) {
 	}
 	if resp.Header.Get("Access-Control-Allow-Origin") == "" {
 		t.Error("preflight missing Access-Control-Allow-Origin header")
+	}
+}
+
+// TestSecModernSecurityHeaders: CSP is set, the deprecated X-XSS-Protection is
+// gone, and HSTS is absent when the server is not terminating TLS.
+func TestSecModernSecurityHeaders(t *testing.T) {
+	ts, cleanup := newSecTestServer("tok", 1000)
+	defer cleanup()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(pingBody))
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("Content-Security-Policy"); got == "" {
+		t.Error("expected Content-Security-Policy header")
+	}
+	if got := resp.Header.Get("X-XSS-Protection"); got != "" {
+		t.Errorf("deprecated X-XSS-Protection should not be set, got %q", got)
+	}
+	// No TLS in this test server → no HSTS.
+	if got := resp.Header.Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("HSTS must not be sent over plain HTTP, got %q", got)
+	}
+}
+
+// TestSecHSTSWhenTLSActive: HSTS is emitted when the process terminates TLS.
+func TestSecHSTSWhenTLSActive(t *testing.T) {
+	eng := buildHTTPEngine(newTestServer(), httpConfig{
+		authToken:      "tok",
+		allowedOrigins: []string{"*"},
+		rateLimit:      1000,
+		acmeDomain:     "mcp.example.com", // makes tlsActive() true
+	})
+	ts := httptest.NewServer(eng)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(pingBody))
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("Strict-Transport-Security"); got == "" {
+		t.Error("expected HSTS header when TLS is active")
+	}
+}
+
+// TestSecRateLimitAppliesBeforeAuth: unauthenticated requests are throttled too,
+// so the bearer token cannot be brute-forced without limit. With limit=2 the
+// first two wrong-token requests reach auth (401) and the third is rejected by
+// the rate limiter (429) before auth ever runs.
+func TestSecRateLimitAppliesBeforeAuth(t *testing.T) {
+	ts, cleanup := newSecTestServer("the-real-token", 2)
+	defer cleanup()
+
+	codes := make([]int, 0, 3)
+	for i := 0; i < 3; i++ {
+		status, _ := post(t, ts.URL, "Bearer wrong-guess", pingBody)
+		codes = append(codes, status)
+	}
+	if codes[0] != http.StatusUnauthorized || codes[1] != http.StatusUnauthorized {
+		t.Errorf("first two wrong-token requests should be 401, got %v", codes)
+	}
+	if codes[2] != http.StatusTooManyRequests {
+		t.Errorf("third request should be rate-limited (429) before auth, got %d", codes[2])
+	}
+}
+
+// TestSecForwardedForCannotBypassRateLimit: with no trusted proxies (the default),
+// a client rotating X-Forwarded-For on every request cannot evade the per-IP
+// limit — c.ClientIP() resolves to the real TCP peer, not the spoofed header.
+func TestSecForwardedForCannotBypassRateLimit(t *testing.T) {
+	ts, cleanup := newSecTestServer("tok", 3)
+	defer cleanup()
+
+	var got429 bool
+	for i := 0; i < 6; i++ {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(pingBody))
+		req.Header.Set("Authorization", "Bearer tok")
+		// A different spoofed source IP on every request.
+		req.Header.Set("X-Forwarded-For", "10.1.2."+strconv.Itoa(i))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			got429 = true
+		}
+	}
+	if !got429 {
+		t.Error("rotating X-Forwarded-For bypassed the rate limiter — XFF must not be trusted by default")
+	}
+}
+
+// TestSecConfigParsesTrustedProxiesAndACMEEmail: env parsing for the new knobs.
+func TestSecConfigParsesTrustedProxiesAndACMEEmail(t *testing.T) {
+	t.Setenv("MCP_AUTH_TOKEN", "tok")
+	t.Setenv("MCP_TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.1 ")
+	t.Setenv("MCP_ACME_EMAIL", "ops@example.com")
+	t.Setenv("MCP_ACME_DOMAIN", "")
+	t.Setenv("MCP_TLS_CERT", "")
+	t.Setenv("MCP_TLS_KEY", "")
+	cfg, err := httpConfigFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.trustedProxies) != 2 || cfg.trustedProxies[0] != "10.0.0.0/8" || cfg.trustedProxies[1] != "192.168.1.1" {
+		t.Errorf("trusted proxies not parsed/trimmed correctly: %#v", cfg.trustedProxies)
+	}
+	if cfg.acmeEmail != "ops@example.com" {
+		t.Errorf("acmeEmail: want ops@example.com, got %q", cfg.acmeEmail)
 	}
 }
 

@@ -152,6 +152,95 @@ func toolDefinitions() []mcpTool {
 				Required: []string{"session_id"},
 			},
 		},
+		{
+			Name:        "delete_file",
+			Description: "Delete a file from the session workspace.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+					"path":       {Type: "string", Description: "Path of the file to delete (e.g. '/output.txt')."},
+				},
+				Required: []string{"session_id", "path"},
+			},
+		},
+		{
+			Name:        "get_run",
+			Description: "Get details of a specific command run including its stdout, stderr, exit code, and status.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"run_id": {Type: "string", Description: "The run ID to look up."},
+				},
+				Required: []string{"run_id"},
+			},
+		},
+		{
+			Name:        "list_runs",
+			Description: "List all command runs for a session, showing their status, exit codes, and durations.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name: "create_snapshot",
+			Description: "Save the current workspace state as a named snapshot archive. " +
+				"Snapshots can be used to checkpoint progress or restore state later.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+					"name":       {Type: "string", Description: "Human-readable name for the snapshot."},
+				},
+				Required: []string{"session_id", "name"},
+			},
+		},
+		{
+			Name:        "list_snapshots",
+			Description: "List all workspace snapshots for a session.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name: "create_artifact",
+			Description: "Promote a file from the session workspace to the shared artifact registry. " +
+				"Artifacts are accessible across sessions and can be downloaded independently.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID containing the source file."},
+					"file_path":  {Type: "string", Description: "Workspace path of the file to promote (e.g. '/output.csv')."},
+					"name":       {Type: "string", Description: "Optional name for the artifact. Defaults to the filename."},
+				},
+				Required: []string{"session_id", "file_path"},
+			},
+		},
+		{
+			Name:        "list_artifacts",
+			Description: "List all shared artifacts available across sessions.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name: "list_audit_logs",
+			Description: "Query the immutable audit trail. Returns a chronological log of all actions " +
+				"(session creation, command execution, file uploads, etc.).",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "Filter by session ID (optional)."},
+					"limit":      {Type: "string", Description: "Maximum number of entries to return (default 20, max 100)."},
+				},
+			},
+		},
 	}
 }
 
@@ -184,6 +273,22 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolReadFile(ctx, args)
 	case "list_files":
 		return s.toolListFiles(ctx, args)
+	case "delete_file":
+		return s.toolDeleteFile(ctx, args)
+	case "get_run":
+		return s.toolGetRun(ctx, args)
+	case "list_runs":
+		return s.toolListRuns(ctx, args)
+	case "create_snapshot":
+		return s.toolCreateSnapshot(ctx, args)
+	case "list_snapshots":
+		return s.toolListSnapshots(ctx, args)
+	case "create_artifact":
+		return s.toolCreateArtifact(ctx, args)
+	case "list_artifacts":
+		return s.toolListArtifacts(ctx)
+	case "list_audit_logs":
+		return s.toolListAuditLogs(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}
@@ -349,8 +454,8 @@ func (s *server) toolUploadFile(ctx context.Context, args map[string]string) (mc
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if path == "" {
-		return mcpToolResult{}, fmt.Errorf("path is required")
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
 	}
 
 	f, err := s.client.UploadFile(ctx, sessionID, path, content)
@@ -366,8 +471,8 @@ func (s *server) toolReadFile(ctx context.Context, args map[string]string) (mcpT
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if path == "" {
-		return mcpToolResult{}, fmt.Errorf("path is required")
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
 	}
 	content, err := s.client.DownloadFile(ctx, sessionID, path)
 	if err != nil {
@@ -396,6 +501,175 @@ func (s *server) toolListFiles(ctx context.Context, args map[string]string) (mcp
 	return textResult(sb.String()), nil
 }
 
+func (s *server) toolDeleteFile(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	path := args["path"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
+	}
+	if err := s.client.DeleteFile(ctx, sessionID, path); err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("File deleted: %s", path)), nil
+}
+
+func (s *server) toolGetRun(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	runID := args["run_id"]
+	if runID == "" {
+		return mcpToolResult{}, fmt.Errorf("run_id is required")
+	}
+	run, err := s.client.GetRun(ctx, runID)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "run_id: %s\nstatus: %s\n", run.ID, run.Status)
+	if run.ExitCode != nil {
+		fmt.Fprintf(&sb, "exit_code: %d\n", *run.ExitCode)
+	}
+	fmt.Fprintf(&sb, "duration_ms: %d\n", run.DurationMS)
+	if run.Stdout != nil && *run.Stdout != "" {
+		fmt.Fprintf(&sb, "\n--- stdout ---\n%s", *run.Stdout)
+	}
+	if run.Stderr != nil && *run.Stderr != "" {
+		fmt.Fprintf(&sb, "\n--- stderr ---\n%s", *run.Stderr)
+	}
+	if run.OutputTruncated {
+		fmt.Fprintf(&sb, "\n[output truncated]")
+	}
+	isError := run.Status == "failed" || run.Status == "timeout"
+	return mcpToolResult{
+		Content: []mcpContent{{Type: "text", Text: sb.String()}},
+		IsError: isError,
+	}, nil
+}
+
+func (s *server) toolListRuns(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	runs, err := s.client.ListRuns(ctx, sessionID)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(runs) == 0 {
+		return textResult("No runs for this session."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d run(s):\n", len(runs))
+	for _, r := range runs {
+		exitStr := "-"
+		if r.ExitCode != nil {
+			exitStr = fmt.Sprintf("%d", *r.ExitCode)
+		}
+		fmt.Fprintf(&sb, "  %s  cmd=%s  status=%s  exit=%s  duration=%dms\n",
+			r.ID, r.Command, r.Status, exitStr, r.DurationMS)
+	}
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolCreateSnapshot(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	name := args["name"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	if name == "" {
+		return mcpToolResult{}, fmt.Errorf("name is required")
+	}
+	snap, err := s.client.CreateSnapshot(ctx, sessionID, name)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("Snapshot created.\nsnapshot_id: %s\nname: %s\nsize_bytes: %d\ncreated: %s",
+		snap.ID, snap.Name, snap.SizeBytes, snap.CreatedAt.Format("2006-01-02 15:04:05"))), nil
+}
+
+func (s *server) toolListSnapshots(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	snaps, err := s.client.ListSnapshots(ctx, sessionID)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(snaps) == 0 {
+		return textResult("No snapshots for this session."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d snapshot(s):\n", len(snaps))
+	for _, sn := range snaps {
+		fmt.Fprintf(&sb, "  %s  name=%s  size=%d bytes  created=%s\n",
+			sn.ID, sn.Name, sn.SizeBytes, sn.CreatedAt.Format("2006-01-02 15:04:05"))
+	}
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolCreateArtifact(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	filePath := args["file_path"]
+	name := args["name"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	if err := sanitizePath(filePath); err != nil {
+		return mcpToolResult{}, err
+	}
+	art, err := s.client.CreateArtifact(ctx, sessionID, filePath, name)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("Artifact created.\nartifact_id: %s\nname: %s\nsize_bytes: %d\ncreated: %s",
+		art.ID, art.Name, art.SizeBytes, art.CreatedAt.Format("2006-01-02 15:04:05"))), nil
+}
+
+func (s *server) toolListArtifacts(ctx context.Context) (mcpToolResult, error) {
+	arts, err := s.client.ListArtifacts(ctx)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(arts) == 0 {
+		return textResult("No shared artifacts."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d artifact(s):\n", len(arts))
+	for _, a := range arts {
+		fmt.Fprintf(&sb, "  %s  name=%s  size=%d bytes  type=%s  created=%s\n",
+			a.ID, a.Name, a.SizeBytes, a.ContentType, a.CreatedAt.Format("2006-01-02 15:04:05"))
+	}
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolListAuditLogs(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	limit := 20
+	if v := args["limit"]; v != "" {
+		var n int
+		fmt.Sscanf(v, "%d", &n)
+		if n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	logs, err := s.client.ListAuditLogs(ctx, args["session_id"], limit)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(logs) == 0 {
+		return textResult("No audit log entries found."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d audit log entry(ies):\n", len(logs))
+	for _, l := range logs {
+		fmt.Fprintf(&sb, "  [%s]  actor=%s  action=%s  session=%s\n",
+			l.Timestamp.Format("2006-01-02 15:04:05"), l.Actor, l.Action, l.SessionID)
+	}
+	return textResult(sb.String()), nil
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -411,4 +685,31 @@ func coalesce(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// sanitizePath is a defense-in-depth check at the MCP layer. The VaultRun API
+// has its own path-traversal protection (URL-decode loop, ".." rejection,
+// filepath.Clean, EvalSymlinks, O_NOFOLLOW), but catching the attempt here:
+//   - gives the caller a clearer error message before any network round-trip
+//   - prevents ".." components that might confuse path-escaping in client.go
+//   - rejects null bytes and control characters that could confuse syscalls
+func sanitizePath(p string) error {
+	if p == "" {
+		return fmt.Errorf("path must not be empty")
+	}
+	if len(p) > 4096 {
+		return fmt.Errorf("path too long (max 4096 bytes)")
+	}
+	for _, ch := range p {
+		if ch < 0x20 || ch == 0x7F {
+			return fmt.Errorf("path %q: contains invalid control character", p)
+		}
+	}
+	// Normalize backslashes then check every component.
+	for _, part := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+		if part == ".." {
+			return fmt.Errorf("path %q: directory traversal not allowed", p)
+		}
+	}
+	return nil
 }

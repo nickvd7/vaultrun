@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -49,7 +50,8 @@ func (sh *SnapshotHandler) Create(c *gin.Context) {
 	snapshotID := uuid.New()
 	archivePath, sizeBytes, err := sh.h.ws.CreateSnapshot(sessionID, snapshotID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "snapshot creation failed: " + err.Error()})
+		slog.Error("snapshot creation failed", "session_id", sessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "snapshot creation failed"})
 		return
 	}
 

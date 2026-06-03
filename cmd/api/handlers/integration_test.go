@@ -1067,8 +1067,21 @@ func TestOrgSessionSharing(t *testing.T) {
 	_ = json.NewDecoder(wo.Body).Decode(&org)
 	orgID := org["id"].(string)
 
+	// Create a key for "dave" BEFORE adding to org, so we can use the UUID as principal.
+	wk := rec(r, "POST", "/api/v1/keys", `{"name":"dave"}`, masterHdr())
+	if wk.Code != http.StatusCreated {
+		t.Fatalf("create dave key: want 201, got %d: %s", wk.Code, wk.Body)
+	}
+	var daveKey struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}
+	_ = json.NewDecoder(wk.Body).Decode(&daveKey)
+	daveHdr := map[string]string{"X-API-Key": daveKey.Key}
+
+	// Auth middleware stores the key UUID as actor; org_members.principal must match.
 	rec(r, "POST", "/api/v1/orgs/"+orgID+"/members",
-		`{"principal":"dave","role":"viewer"}`, masterHdr())
+		`{"principal":"`+daveKey.ID+`","role":"viewer"}`, masterHdr())
 
 	// Insert a session belonging to that org owned by master
 	orgUUID := uuid.MustParse(orgID)
@@ -1084,15 +1097,6 @@ func TestOrgSessionSharing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert org session: %v", err)
 	}
-
-	// Create a key for "dave" so dave can authenticate
-	wk := rec(r, "POST", "/api/v1/keys", `{"name":"dave"}`, masterHdr())
-	if wk.Code != http.StatusCreated {
-		t.Fatalf("create dave key: want 201, got %d: %s", wk.Code, wk.Body)
-	}
-	var daveKey struct{ Key string `json:"key"` }
-	_ = json.NewDecoder(wk.Body).Decode(&daveKey)
-	daveHdr := map[string]string{"X-API-Key": daveKey.Key}
 
 	// Dave should see the org session in the global session list
 	wl := rec(r, "GET", "/api/v1/sessions", "", daveHdr)

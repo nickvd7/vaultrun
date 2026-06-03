@@ -65,6 +65,10 @@ func (ph *PolicyHandler) Eval(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": `type must be "command" or "file"`})
 		return
 	}
+	if len(req.Command) > 4096 || len(req.Path) > 4096 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "command and path must not exceed 4096 characters"})
+		return
+	}
 
 	// Parse optional session_id; fall back to a zero UUID.
 	sessionID := uuid.UUID{}

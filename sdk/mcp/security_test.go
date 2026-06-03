@@ -423,3 +423,34 @@ func TestSecHTTPConfigRejectsPartialTLS(t *testing.T) {
 		t.Error("expected error when only one of cert/key is set")
 	}
 }
+
+// TestSecHTTPConfigACMEAndStaticTLSMutuallyExclusive: setting both ACME domain and
+// static cert files is a misconfiguration that must be caught at startup.
+func TestSecHTTPConfigACMEAndStaticTLSMutuallyExclusive(t *testing.T) {
+	t.Setenv("MCP_AUTH_TOKEN", "tok")
+	t.Setenv("MCP_ACME_DOMAIN", "mcp.example.com")
+	t.Setenv("MCP_TLS_CERT", "/tmp/some.crt")
+	t.Setenv("MCP_TLS_KEY", "/tmp/some.key")
+	_, err := httpConfigFromEnv()
+	if err == nil || !strings.Contains(err.Error(), "MCP_ACME_DOMAIN") {
+		t.Errorf("expected mutual-exclusion error, got: %v", err)
+	}
+}
+
+// TestSecHTTPConfigACMEDefaults: ACME mode sets sensible defaults for cache dir and port.
+func TestSecHTTPConfigACMEDefaults(t *testing.T) {
+	t.Setenv("MCP_AUTH_TOKEN", "tok")
+	t.Setenv("MCP_ACME_DOMAIN", "mcp.example.com")
+	t.Setenv("MCP_TLS_CERT", "")
+	t.Setenv("MCP_TLS_KEY", "")
+	cfg, err := httpConfigFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.acmeDomain != "mcp.example.com" {
+		t.Errorf("expected acmeDomain=mcp.example.com, got %q", cfg.acmeDomain)
+	}
+	if cfg.acmeCacheDir != "/data/mcp-acme-cache" {
+		t.Errorf("expected default acmeCacheDir, got %q", cfg.acmeCacheDir)
+	}
+}

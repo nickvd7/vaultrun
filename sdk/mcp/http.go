@@ -3,16 +3,19 @@
 //
 // Environment variables (HTTP transport only):
 //
-//	MCP_PORT             Listen address (default: :8080)
+//	MCP_PORT             Listen address (default: :8080, or :443 in ACME mode)
 //	MCP_AUTH_TOKEN       Bearer token required on every request (required)
-//	MCP_TLS_CERT         Path to TLS certificate file (optional)
-//	MCP_TLS_KEY          Path to TLS private key file (optional)
+//	MCP_ACME_DOMAIN      Enable Let's Encrypt auto-TLS for this hostname
+//	MCP_ACME_CACHE_DIR   Directory to cache ACME account keys and certs (default: /data/mcp-acme-cache)
+//	MCP_TLS_CERT         Path to TLS certificate file (alternative to ACME)
+//	MCP_TLS_KEY          Path to TLS private key file (alternative to ACME)
 //	MCP_ALLOWED_ORIGINS  Comma-separated CORS origins (default: *)
 //	MCP_RATE_LIMIT       Max requests per minute per IP (default: 60)
 package main
 
 import (
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -25,12 +28,15 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 // httpConfig holds runtime configuration for the HTTP transport.
 type httpConfig struct {
 	port           string
 	authToken      string
+	acmeDomain     string
+	acmeCacheDir   string
 	tlsCert        string
 	tlsKey         string
 	allowedOrigins []string
@@ -38,14 +44,16 @@ type httpConfig struct {
 }
 
 // httpConfigFromEnv reads HTTP transport settings from environment variables.
-// Returns an error if required variables are missing or TLS files cannot be accessed.
+// Returns an error if required variables are missing or configuration is invalid.
 func httpConfigFromEnv() (httpConfig, error) {
 	cfg := httpConfig{
-		port:      getEnvOrDefault("MCP_PORT", ":8080"),
-		authToken: os.Getenv("MCP_AUTH_TOKEN"),
-		tlsCert:   os.Getenv("MCP_TLS_CERT"),
-		tlsKey:    os.Getenv("MCP_TLS_KEY"),
-		rateLimit: 60,
+		port:         getEnvOrDefault("MCP_PORT", ":8080"),
+		authToken:    os.Getenv("MCP_AUTH_TOKEN"),
+		acmeDomain:   os.Getenv("MCP_ACME_DOMAIN"),
+		acmeCacheDir: getEnvOrDefault("MCP_ACME_CACHE_DIR", "/data/mcp-acme-cache"),
+		tlsCert:      os.Getenv("MCP_TLS_CERT"),
+		tlsKey:       os.Getenv("MCP_TLS_KEY"),
+		rateLimit:    60,
 	}
 	if cfg.authToken == "" {
 		return httpConfig{}, fmt.Errorf("MCP_AUTH_TOKEN must be set when MCP_TRANSPORT=http")
@@ -59,6 +67,10 @@ func httpConfigFromEnv() (httpConfig, error) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.rateLimit = n
 		}
+	}
+	// ACME and static TLS are mutually exclusive.
+	if cfg.acmeDomain != "" && (cfg.tlsCert != "" || cfg.tlsKey != "") {
+		return httpConfig{}, fmt.Errorf("MCP_ACME_DOMAIN and MCP_TLS_CERT/MCP_TLS_KEY cannot be used together")
 	}
 	if cfg.tlsCert != "" || cfg.tlsKey != "" {
 		if cfg.tlsCert == "" || cfg.tlsKey == "" {
@@ -250,12 +262,42 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 }
 
 // startHTTPServer starts the HTTP MCP server on the configured address.
+// TLS priority: ACME > static cert/key > plain HTTP.
 func startHTTPServer(srv *server, cfg httpConfig) error {
 	r := buildHTTPEngine(srv, cfg)
-	slog.Info("vaultrun-mcp: HTTP server listening", "addr", cfg.port, "tls", cfg.tlsCert != "")
+
+	if cfg.acmeDomain != "" {
+		m := &autocert.Manager{
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist(cfg.acmeDomain),
+			Cache:      autocert.DirCache(cfg.acmeCacheDir),
+		}
+		// HTTP-01 challenge handler on :80.
+		go func() {
+			if err := http.ListenAndServe(":80", m.HTTPHandler(nil)); err != nil {
+				slog.Error("vaultrun-mcp: ACME HTTP-01 handler stopped", "err", err)
+			}
+		}()
+		// HTTPS on :443 (or MCP_PORT if explicitly overridden).
+		httpsAddr := cfg.port
+		if httpsAddr == ":8080" {
+			httpsAddr = ":443"
+		}
+		httpsSrv := &http.Server{
+			Addr:      httpsAddr,
+			Handler:   r,
+			TLSConfig: &tls.Config{GetCertificate: m.GetCertificate, MinVersion: tls.VersionTLS12},
+		}
+		slog.Info("vaultrun-mcp: ACME/Let's Encrypt listening", "addr", httpsAddr, "domain", cfg.acmeDomain, "cache", cfg.acmeCacheDir)
+		return httpsSrv.ListenAndServeTLS("", "")
+	}
+
 	if cfg.tlsCert != "" {
+		slog.Info("vaultrun-mcp: TLS listening", "addr", cfg.port, "cert", cfg.tlsCert)
 		return r.RunTLS(cfg.port, cfg.tlsCert, cfg.tlsKey)
 	}
+
+	slog.Info("vaultrun-mcp: HTTP listening (no TLS)", "addr", cfg.port)
 	return r.Run(cfg.port)
 }
 

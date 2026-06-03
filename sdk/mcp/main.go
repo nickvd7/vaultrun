@@ -36,7 +36,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 func main() {
@@ -62,6 +64,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Graceful shutdown: cancel ctx on SIGINT or SIGTERM. The HTTP transport
+	// listens on ctx.Done() and drains in-flight requests before exiting.
+	// The stdio transport's serve() loop exits naturally when stdin closes.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	client := newVaultRunClient(baseURL, apiKey)
 	srv := newServer(client, defaultImage)
 
@@ -72,13 +80,13 @@ func main() {
 			slog.Error("vaultrun-mcp: invalid HTTP config", "err", err)
 			os.Exit(1)
 		}
-		if err := startHTTPServer(srv, cfg); err != nil {
+		if err := startHTTPServer(ctx, srv, cfg); err != nil {
 			slog.Error("vaultrun-mcp: HTTP server error", "err", err)
 			os.Exit(1)
 		}
 	default:
 		slog.Info("vaultrun-mcp: starting stdio transport", "base_url", baseURL)
-		if err := srv.serve(context.Background(), os.Stdin, os.Stdout); err != nil && err != io.EOF {
+		if err := srv.serve(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF {
 			slog.Error("vaultrun-mcp: fatal", "err", err)
 			os.Exit(1)
 		}

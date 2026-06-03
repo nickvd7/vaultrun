@@ -251,9 +251,9 @@ func TestArgsCrazyInputs(t *testing.T) {
 		{"env not a JSON object", "run_command", `{"session_id":"s","command":"x","env":"[1,2,3]"}`, "JSON object"},
 		{"missing required session_id", "get_session", `{}`, "session_id is required"},
 		{"missing required command", "run_command", `{"session_id":"s"}`, "command is required"},
-		{"missing path for delete_file", "delete_file", `{"session_id":"s"}`, "path is required"},
+		{"missing path for delete_file", "delete_file", `{"session_id":"s"}`, "path must not be empty"},
 		{"missing name for snapshot", "create_snapshot", `{"session_id":"s"}`, "name is required"},
-		{"missing file_path for artifact", "create_artifact", `{"session_id":"s"}`, "file_path is required"},
+		{"missing file_path for artifact", "create_artifact", `{"session_id":"s"}`, "path must not be empty"},
 		{"missing run_id", "get_run", `{}`, "run_id is required"},
 	}
 

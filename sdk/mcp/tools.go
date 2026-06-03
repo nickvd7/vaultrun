@@ -454,8 +454,8 @@ func (s *server) toolUploadFile(ctx context.Context, args map[string]string) (mc
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if path == "" {
-		return mcpToolResult{}, fmt.Errorf("path is required")
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
 	}
 
 	f, err := s.client.UploadFile(ctx, sessionID, path, content)
@@ -471,8 +471,8 @@ func (s *server) toolReadFile(ctx context.Context, args map[string]string) (mcpT
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if path == "" {
-		return mcpToolResult{}, fmt.Errorf("path is required")
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
 	}
 	content, err := s.client.DownloadFile(ctx, sessionID, path)
 	if err != nil {
@@ -507,8 +507,8 @@ func (s *server) toolDeleteFile(ctx context.Context, args map[string]string) (mc
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if path == "" {
-		return mcpToolResult{}, fmt.Errorf("path is required")
+	if err := sanitizePath(path); err != nil {
+		return mcpToolResult{}, err
 	}
 	if err := s.client.DeleteFile(ctx, sessionID, path); err != nil {
 		return mcpToolResult{}, err
@@ -617,8 +617,8 @@ func (s *server) toolCreateArtifact(ctx context.Context, args map[string]string)
 	if sessionID == "" {
 		return mcpToolResult{}, fmt.Errorf("session_id is required")
 	}
-	if filePath == "" {
-		return mcpToolResult{}, fmt.Errorf("file_path is required")
+	if err := sanitizePath(filePath); err != nil {
+		return mcpToolResult{}, err
 	}
 	art, err := s.client.CreateArtifact(ctx, sessionID, filePath, name)
 	if err != nil {
@@ -685,4 +685,31 @@ func coalesce(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// sanitizePath is a defense-in-depth check at the MCP layer. The VaultRun API
+// has its own path-traversal protection (URL-decode loop, ".." rejection,
+// filepath.Clean, EvalSymlinks, O_NOFOLLOW), but catching the attempt here:
+//   - gives the caller a clearer error message before any network round-trip
+//   - prevents ".." components that might confuse path-escaping in client.go
+//   - rejects null bytes and control characters that could confuse syscalls
+func sanitizePath(p string) error {
+	if p == "" {
+		return fmt.Errorf("path must not be empty")
+	}
+	if len(p) > 4096 {
+		return fmt.Errorf("path too long (max 4096 bytes)")
+	}
+	for _, ch := range p {
+		if ch < 0x20 || ch == 0x7F {
+			return fmt.Errorf("path %q: contains invalid control character", p)
+		}
+	}
+	// Normalize backslashes then check every component.
+	for _, part := range strings.Split(strings.ReplaceAll(p, "\\", "/"), "/") {
+		if part == ".." {
+			return fmt.Errorf("path %q: directory traversal not allowed", p)
+		}
+	}
+	return nil
 }

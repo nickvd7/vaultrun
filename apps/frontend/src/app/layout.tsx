@@ -1,26 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
-import { ApiKeyGate } from "@/components/ApiKeyGate";
 
 export const metadata: Metadata = {
   title: "VaultRun — Secure AI Agent Runtime",
   description: "Self-hosted secure sandbox runtime for AI agents",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="flex h-screen overflow-hidden bg-[#0a0a0f] text-slate-200">
-        <ApiKeyGate>
-          <Sidebar />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
-        </ApiKeyGate>
-      </body>
+      <body className="bg-[#0a0a0f] text-slate-200">{children}</body>
     </html>
   );
 }

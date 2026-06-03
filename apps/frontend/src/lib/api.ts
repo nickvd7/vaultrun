@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -186,6 +186,40 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+  },
+
+  snapshots: {
+    list: (sessionId: string) =>
+      request<{ snapshots: Snapshot[] }>(`/sessions/${sessionId}/snapshots`).then(
+        (r) => r.snapshots
+      ),
+
+    create: (sessionId: string, name: string) =>
+      request<Snapshot>(`/sessions/${sessionId}/snapshots`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+
+    delete: (snapshotId: string) =>
+      request<void>(`/snapshots/${snapshotId}`, { method: "DELETE" }),
+  },
+
+  artifacts: {
+    list: (page = 1, limit = 50) =>
+      request<{ artifacts: SharedArtifact[]; pagination: Pagination }>(
+        `/artifacts?page=${page}&limit=${limit}`
+      ),
+
+    promote: (sessionId: string, path: string, name?: string) =>
+      request<SharedArtifact>(`/sessions/${sessionId}/artifacts`, {
+        method: "POST",
+        body: JSON.stringify(name ? { path, name } : { path }),
+      }),
+
+    delete: (id: string) =>
+      request<void>(`/artifacts/${id}`, { method: "DELETE" }),
+
+    downloadUrl: (id: string) => `${API_BASE}/api/v1/artifacts/${id}/download`,
   },
 };
 

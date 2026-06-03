@@ -85,3 +85,22 @@ export interface PolicyEvalResult {
   type: string;
   reason?: string;
 }
+
+export interface Snapshot {
+  id: string;
+  session_id: string;
+  name: string;
+  size_bytes: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface SharedArtifact {
+  id: string;
+  name: string;
+  content_type: string;
+  size_bytes: number;
+  session_id?: string;
+  created_by: string;
+  created_at: string;
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/cleanup"
 	"github.com/nickvd7/vaultrun/internal/config"
@@ -244,7 +245,33 @@ func main() {
 		slog.Info("siem audit export started", "url", os.Getenv("AUDIT_EXPORT_URL"))
 	}
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool)
+	// Artifact storage backend: S3 when configured, local filesystem otherwise.
+	var artStore artifacts.Store
+	if cfg.Workspace.ArtifactS3Bucket != "" {
+		s3store, err := artifacts.NewS3Store(context.Background(), artifacts.S3Config{
+			Bucket:          cfg.Workspace.ArtifactS3Bucket,
+			Region:          cfg.Workspace.ArtifactS3Region,
+			Prefix:          cfg.Workspace.ArtifactS3Prefix,
+			Endpoint:        cfg.Workspace.ArtifactS3Endpoint,
+			AccessKeyID:     cfg.Workspace.ArtifactS3AccessKeyID,
+			SecretAccessKey: cfg.Workspace.ArtifactS3SecretAccessKey,
+			ForcePathStyle:  cfg.Workspace.ArtifactS3ForcePathStyle,
+		})
+		if err != nil {
+			slog.Error("create s3 artifact store", "err", err)
+			os.Exit(1)
+		}
+		artStore = s3store
+		slog.Info("artifact storage: s3",
+			"bucket", cfg.Workspace.ArtifactS3Bucket,
+			"region", cfg.Workspace.ArtifactS3Region)
+	} else {
+		artDir := cfg.Workspace.BaseDir + "/artifacts"
+		artStore = artifacts.NewLocalStore(artDir)
+		slog.Info("artifact storage: local filesystem", "dir", artDir)
+	}
+
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

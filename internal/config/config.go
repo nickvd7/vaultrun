@@ -83,6 +83,16 @@ type WorkspaceConfig struct {
 	MaxOutputMB          int64
 	MaxWorkspaceMB       int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
 	MaxArtifactStorageMB int64 // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
+	// S3 artifact storage — when ArtifactS3Bucket is set, artifacts are stored
+	// in S3 instead of the local filesystem. Supports AWS S3 and S3-compatible
+	// stores (MinIO, etc.) via the endpoint override.
+	ArtifactS3Bucket          string // ARTIFACT_S3_BUCKET
+	ArtifactS3Region          string // ARTIFACT_S3_REGION (default: us-east-1)
+	ArtifactS3Prefix          string // ARTIFACT_S3_PREFIX (optional key prefix, e.g. "artifacts/")
+	ArtifactS3Endpoint        string // ARTIFACT_S3_ENDPOINT (custom endpoint for MinIO / S3-compatible)
+	ArtifactS3AccessKeyID     string // ARTIFACT_S3_ACCESS_KEY_ID
+	ArtifactS3SecretAccessKey string // ARTIFACT_S3_SECRET_ACCESS_KEY
+	ArtifactS3ForcePathStyle  bool   // ARTIFACT_S3_FORCE_PATH_STYLE (required for MinIO)
 }
 
 type AuthConfig struct {
@@ -187,6 +197,13 @@ func Load() (*Config, error) {
 			MaxOutputMB:          maxOutputMB,
 			MaxWorkspaceMB:       func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
 			MaxArtifactStorageMB: func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
+			ArtifactS3Bucket:          getEnv("ARTIFACT_S3_BUCKET", ""),
+			ArtifactS3Region:          getEnv("ARTIFACT_S3_REGION", "us-east-1"),
+			ArtifactS3Prefix:          getEnv("ARTIFACT_S3_PREFIX", ""),
+			ArtifactS3Endpoint:        getEnv("ARTIFACT_S3_ENDPOINT", ""),
+			ArtifactS3AccessKeyID:     getEnv("ARTIFACT_S3_ACCESS_KEY_ID", ""),
+			ArtifactS3SecretAccessKey: getEnv("ARTIFACT_S3_SECRET_ACCESS_KEY", ""),
+			ArtifactS3ForcePathStyle:  func() bool { v, _ := strconv.ParseBool(getEnv("ARTIFACT_S3_FORCE_PATH_STYLE", "false")); return v }(),
 		},
 		Auth: AuthConfig{
 			MasterKey:     getEnv("MASTER_API_KEY", ""),

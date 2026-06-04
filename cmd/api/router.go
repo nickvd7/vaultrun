@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/handlers"
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
@@ -38,6 +39,7 @@ func newRouter(
 	queue jobqueue.Queue,
 	sec secrets.Provider,
 	pool *warmpool.Pool,
+	artStore artifacts.Store,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -80,7 +82,7 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool)
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool, artStore)
 
 	health := handlers.NewHealthHandler(hub)
 	// Health endpoint is unauthenticated (needed by load-balancer probes) but

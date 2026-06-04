@@ -72,7 +72,7 @@ func (dh *DockerHandler) SessionStats(c *gin.Context) {
 	containerName := fmt.Sprintf("%s-%s", dh.h.cfg.Docker.ContainerPrefix, sessionID.String())
 	stats, err := dh.h.docker.ContainerStats(c.Request.Context(), containerName)
 	if err != nil {
-		slog.Error("docker: container stats", "container", containerName, "err", err)
+		slog.Error("docker: container stats", "session", sessionID.String(), "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get container stats"})
 		return
 	}
@@ -96,17 +96,20 @@ func (dh *DockerHandler) SessionLogs(c *gin.Context) {
 
 	tail := 100
 	if v := c.Query("tail"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 10000 {
-			tail = n
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tail must be between 1 and 10000"})
+			return
 		}
+		tail = n
 	}
 
 	containerName := fmt.Sprintf("%s-%s", dh.h.cfg.Docker.ContainerPrefix, sessionID.String())
 	logs, err := dh.h.docker.ContainerLogs(c.Request.Context(), containerName, tail)
 	if err != nil {
-		slog.Error("docker: container logs", "container", containerName, "err", err)
+		slog.Error("docker: container logs", "session", sessionID.String(), "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get container logs"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"logs": logs, "container": containerName})
+	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }

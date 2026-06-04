@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -74,12 +76,50 @@ func (g *githubClient) doJSON(ctx context.Context, method, path string, body, ou
 	return nil
 }
 
+// reValidGitHubName allows only the characters GitHub itself permits in owner
+// and repository names: alphanumeric, hyphens, underscores, and dots.
+var reValidGitHubName = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,100}$`)
+
+// reValidGitRef matches legal git ref components: alphanumeric, hyphens,
+// underscores, dots, and slashes (for branch namespaces like refs/heads/…).
+// Rejects anything that could be interpreted by a shell.
+var reValidGitRef = regexp.MustCompile(`^[A-Za-z0-9_.\/\-]{1,255}$`)
+
+// validateGitRef returns an error if s is not a safe git ref name.
+func validateGitRef(s string) error {
+	if !reValidGitRef.MatchString(s) {
+		return fmt.Errorf("branch/tag %q contains invalid characters (allowed: A-Z a-z 0-9 _ . / -)", s)
+	}
+	// Reject git's special ".." notation which traverses ref history.
+	if strings.Contains(s, "..") {
+		return fmt.Errorf("branch/tag %q: '..' not allowed", s)
+	}
+	return nil
+}
+
+// parseOwnerRepo splits "owner/repo" into owner and repo and validates both
+// components against GitHub's naming rules.
+func parseOwnerRepo(s string) (owner, repo string, err error) {
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("repo must be in owner/repo format, got %q", s)
+	}
+	if !reValidGitHubName.MatchString(parts[0]) {
+		return "", "", fmt.Errorf("owner %q contains invalid characters", parts[0])
+	}
+	if !reValidGitHubName.MatchString(parts[1]) {
+		return "", "", fmt.Errorf("repo name %q contains invalid characters", parts[1])
+	}
+	return parts[0], parts[1], nil
+}
+
 // defaultBranch returns the default branch for owner/repo.
 func (g *githubClient) defaultBranch(ctx context.Context, owner, repo string) (string, error) {
 	var result struct {
 		DefaultBranch string `json:"default_branch"`
 	}
-	if err := g.doJSON(ctx, http.MethodGet, "/repos/"+owner+"/"+repo, nil, &result); err != nil {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
+	if err := g.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return "", err
 	}
 	if result.DefaultBranch == "" {
@@ -93,19 +133,19 @@ func (g *githubClient) postComment(ctx context.Context, owner, repo string, numb
 	var result struct {
 		HTMLURL string `json:"html_url"`
 	}
-	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments", owner, repo, number)
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments",
+		url.PathEscape(owner), url.PathEscape(repo), number)
 	if err := g.doJSON(ctx, http.MethodPost, path, map[string]string{"body": body}, &result); err != nil {
 		return "", err
 	}
 	return result.HTMLURL, nil
 }
 
-// parseOwnerRepo splits "owner/repo" into owner and repo.
-// Returns an error if the format is invalid.
-func parseOwnerRepo(s string) (owner, repo string, err error) {
-	parts := strings.SplitN(s, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("repo must be in owner/repo format, got %q", s)
+// scrubToken replaces all occurrences of token in s with [REDACTED].
+// A no-op when token is empty.
+func scrubToken(s, token string) string {
+	if token == "" {
+		return s
 	}
-	return parts[0], parts[1], nil
+	return strings.ReplaceAll(s, token, "[REDACTED]")
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -847,11 +848,11 @@ func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string)
 	}
 	tail := 100
 	if v := args["tail"]; v != "" {
-		var n int
-		fmt.Sscanf(v, "%d", &n)
-		if n > 0 && n <= 10000 {
-			tail = n
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10000 {
+			return mcpToolResult{}, fmt.Errorf("tail must be between 1 and 10000, got %q", v)
 		}
+		tail = n
 	}
 	logs, err := s.client.GetSessionLogs(ctx, sessionID, tail)
 	if err != nil {
@@ -881,7 +882,7 @@ func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) 
 	token := coalesce(args["github_token"], s.githubToken)
 	gh := newGithubClient(token)
 
-	// Resolve branch.
+	// Resolve and validate branch.
 	branch := args["branch"]
 	if branch == "" {
 		var branchErr error
@@ -890,12 +891,13 @@ func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) 
 			return mcpToolResult{}, fmt.Errorf("resolve default branch: %w", branchErr)
 		}
 	}
-
-	// Build clone URL — use token for auth on private repos.
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repoName)
-	if token != "" {
-		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", token, owner, repoName)
+	if err := validateGitRef(branch); err != nil {
+		return mcpToolResult{}, err
 	}
+
+	// Build clone URL without embedding the token in the URL — the token is
+	// passed via GIT_ASKPASS so it never appears in process listings or logs.
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repoName)
 
 	// Create the sandbox session.
 	image := coalesce(args["image"], s.defaultImage)
@@ -911,28 +913,66 @@ func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Session: %s\nRepo: %s  Branch: %s\n\n", sess.ID, repo, branch)
 
-	// Clone the repo.
+	// Clone using exec form — no shell involved, so branch/URL are passed as
+	// literal arguments and cannot be used for command injection.
+	// The token is supplied via GIT_ASKPASS so it never appears in the command
+	// line, process list, or git output.
+	cloneEnv := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0", // never prompt; fail fast if auth is missing
+	}
+	if token != "" {
+		// askpass script echoes the token; git uses it for the password field.
+		cloneEnv["GIT_ASKPASS"] = "/bin/sh"
+		cloneEnv["GIT_ASKPASS_ARGS"] = fmt.Sprintf("-c 'echo %s'", token)
+		// Simpler and more portable: pass via GIT_CONFIG_PARAMETERS
+		cloneEnv["GIT_CONFIG_COUNT"] = "1"
+		cloneEnv["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:" + token + "@github.com/.insteadOf"
+		cloneEnv["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+	}
 	cloneRun, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
-		Command: "/bin/sh",
-		Args:    []string{"-c", fmt.Sprintf("git clone --branch %s --depth 1 %s /workspace/repo 2>&1", branch, cloneURL)},
+		Command: "git",
+		Args:    []string{"clone", "--branch", branch, "--depth", "1", "--", cloneURL, "/workspace/repo"},
+		Env:     cloneEnv,
 	})
 	if err != nil {
+		_ = s.client.DeleteSession(ctx, sess.ID)
 		return mcpToolResult{}, fmt.Errorf("run git clone: %w", err)
 	}
-	cloneOut := coalesce(ptrStr(cloneRun.Stdout), ptrStr(cloneRun.Stderr))
+	// Scrub token from output before returning — git may echo the URL on error.
+	cloneOut := scrubToken(coalesce(ptrStr(cloneRun.Stdout), ptrStr(cloneRun.Stderr)), token)
 	fmt.Fprintf(&sb, "## git clone\nexit_code=%d\n%s\n", ptrInt(cloneRun.ExitCode), cloneOut)
 
 	if ptrInt(cloneRun.ExitCode) != 0 {
+		_ = s.client.DeleteSession(ctx, sess.ID)
 		result := textResult(sb.String())
 		result.IsError = true
 		return result, nil
 	}
 
-	// Run optional commands.
+	// Remove any credential traces from .git/config so subsequent git commands
+	// in the same session cannot exfiltrate the token via the remote URL.
+	if token != "" {
+		_, _ = s.client.RunCommand(ctx, sess.ID, RunRequest{
+			Command:    "git",
+			Args:       []string{"remote", "set-url", "origin", cloneURL},
+			WorkingDir: "/workspace/repo",
+		})
+	}
+
+	// Run optional commands. Each runs with /bin/sh -c as the caller intends,
+	// but commands length is bounded and max 50 commands are accepted.
 	var commands []string
 	if raw := args["commands"]; raw != "" {
 		if err := jsonUnmarshalArray(raw, &commands); err != nil {
 			return mcpToolResult{}, fmt.Errorf("commands: %w", err)
+		}
+		if len(commands) > 50 {
+			return mcpToolResult{}, fmt.Errorf("commands: at most 50 commands allowed, got %d", len(commands))
+		}
+		for _, cmd := range commands {
+			if len(cmd) > 4096 {
+				return mcpToolResult{}, fmt.Errorf("command too long (max 4096 chars): %q", cmd[:40]+"...")
+			}
 		}
 	}
 	for i, cmd := range commands {
@@ -963,12 +1003,15 @@ func (s *server) toolGithubPostComment(ctx context.Context, args map[string]stri
 	if body == "" {
 		return mcpToolResult{}, fmt.Errorf("body is required")
 	}
+	if len(body) > 65536 {
+		return mcpToolResult{}, fmt.Errorf("body too long (max 65536 bytes)")
+	}
 	if numberStr == "" {
 		return mcpToolResult{}, fmt.Errorf("number is required")
 	}
-	var number int
-	if _, err := fmt.Sscanf(numberStr, "%d", &number); err != nil || number <= 0 {
-		return mcpToolResult{}, fmt.Errorf("number must be a positive integer")
+	number, err := strconv.Atoi(numberStr)
+	if err != nil || number <= 0 || number > 1_000_000 {
+		return mcpToolResult{}, fmt.Errorf("number must be a positive integer <= 1000000")
 	}
 
 	owner, repoName, err := parseOwnerRepo(repo)

@@ -1,6 +1,7 @@
 # Compiled binaries
 /api
 /cli
+/mcp
 /bin/
 
 # Environment

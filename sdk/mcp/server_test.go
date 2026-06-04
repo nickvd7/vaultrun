@@ -103,6 +103,8 @@ func TestProtocolToolsList(t *testing.T) {
 		"list_images", "pull_image", "get_session_stats", "get_session_logs",
 		"run_github_repo", "github_post_comment",
 		"fs_read_file", "fs_write_file", "fs_list_dir", "fs_delete_file",
+		"s3_list_buckets", "s3_list_objects", "s3_get_object",
+		"s3_put_object", "s3_delete_object", "s3_head_object",
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range listResult.Tools {

@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // ---------------------------------------------------------------------------
@@ -115,6 +117,7 @@ type server struct {
 	defaultImage string
 	githubToken  string
 	fsConfig     fsConfig
+	s3Client     *s3.Client // nil when AWS is not configured
 	mu           sync.Mutex // guards stdout writes
 }
 

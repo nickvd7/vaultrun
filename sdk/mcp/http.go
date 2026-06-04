@@ -233,6 +233,8 @@ var writeTools = map[string]bool{
 	"github_post_comment": true,
 	"fs_write_file":       true,
 	"fs_delete_file":      true,
+	"s3_put_object":       true,
+	"s3_delete_object":    true,
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,12 @@
 //	                         tools (fs_read_file, fs_write_file, fs_list_dir,
 //	                         fs_delete_file) are allowed to access. When unset,
 //	                         all filesystem tools return an error.
+//	AWS_REGION               AWS region for S3 tools (e.g. "us-east-1"). Setting
+//	                         this (or AWS_ENDPOINT_URL) enables the S3 tools.
+//	AWS_ACCESS_KEY_ID        AWS access key ID (optional — falls back to IAM role).
+//	AWS_SECRET_ACCESS_KEY    AWS secret access key (required when access key ID set).
+//	AWS_ENDPOINT_URL         Custom S3 endpoint for MinIO, LocalStack, etc.
+//	MCP_S3_FORCE_PATH_STYLE  Set to "true" to use path-style S3 addressing (MinIO).
 //
 // Additional environment variables for MCP_TRANSPORT=http (see http.go):
 //
@@ -81,6 +87,16 @@ func main() {
 
 	client := newVaultRunClient(baseURL, apiKey)
 	srv := newServer(client, defaultImage, githubToken, fs)
+
+	s3c, err := newS3Client(ctx)
+	if err != nil {
+		slog.Error("vaultrun-mcp: S3 client init failed", "err", err)
+		os.Exit(1)
+	}
+	if s3c != nil {
+		srv.s3Client = s3c
+		slog.Info("vaultrun-mcp: S3 tools enabled", "region", getEnvOrDefault("AWS_REGION", "us-east-1"))
+	}
 
 	switch os.Getenv("MCP_TRANSPORT") {
 	case "http":

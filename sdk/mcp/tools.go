@@ -389,6 +389,75 @@ func toolDefinitions() []mcpTool {
 				Required: []string{"path"},
 			},
 		},
+		// ── AWS S3 tools ──────────────────────────────────────────────────────────
+		{
+			Name:        "s3_list_buckets",
+			Description: "List all accessible S3 buckets. Requires AWS_REGION and valid credentials.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "s3_list_objects",
+			Description: "List objects in an S3 bucket with optional prefix filter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket":   {Type: "string", Description: "S3 bucket name."},
+					"prefix":   {Type: "string", Description: "Key prefix to filter by (optional)."},
+					"max_keys": {Type: "string", Description: "Maximum number of objects to return (1–1000, default 100)."},
+				},
+				Required: []string{"bucket"},
+			},
+		},
+		{
+			Name:        "s3_get_object",
+			Description: "Download the content of an S3 object (maximum 10 MB).",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
+		{
+			Name:        "s3_put_object",
+			Description: "Upload text content to an S3 object, creating or overwriting it.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket":       {Type: "string", Description: "S3 bucket name."},
+					"key":          {Type: "string", Description: "Object key."},
+					"content":      {Type: "string", Description: "Text content to upload."},
+					"content_type": {Type: "string", Description: "MIME type (default: text/plain; charset=utf-8)."},
+				},
+				Required: []string{"bucket", "key", "content"},
+			},
+		},
+		{
+			Name:        "s3_delete_object",
+			Description: "Delete an object from an S3 bucket.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key to delete."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
+		{
+			Name:        "s3_head_object",
+			Description: "Get metadata for an S3 object (size, content-type, ETag, last-modified) without downloading it.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
 	}
 }
 
@@ -457,6 +526,18 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolFsListDir(ctx, args)
 	case "fs_delete_file":
 		return s.toolFsDeleteFile(ctx, args)
+	case "s3_list_buckets":
+		return s.toolS3ListBuckets(ctx)
+	case "s3_list_objects":
+		return s.toolS3ListObjects(ctx, args)
+	case "s3_get_object":
+		return s.toolS3GetObject(ctx, args)
+	case "s3_put_object":
+		return s.toolS3PutObject(ctx, args)
+	case "s3_delete_object":
+		return s.toolS3DeleteObject(ctx, args)
+	case "s3_head_object":
+		return s.toolS3HeadObject(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}

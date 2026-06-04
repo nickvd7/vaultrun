@@ -35,7 +35,7 @@ func runMCPRequest(t *testing.T, srv *server, reqJSON string) jsonRPCResponse {
 }
 
 func newTestServer() *server {
-	return newServer(nil, "python:3.12-slim")
+	return newServer(nil, "python:3.12-slim", "", fsConfig{})
 }
 
 func TestProtocolInitialize(t *testing.T) {
@@ -100,6 +100,9 @@ func TestProtocolToolsList(t *testing.T) {
 		"create_snapshot", "list_snapshots",
 		"create_artifact", "list_artifacts",
 		"list_audit_logs",
+		"list_images", "pull_image", "get_session_stats", "get_session_logs",
+		"run_github_repo", "github_post_comment",
+		"fs_read_file", "fs_write_file", "fs_list_dir", "fs_delete_file",
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range listResult.Tools {

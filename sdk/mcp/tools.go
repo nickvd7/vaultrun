@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -241,6 +242,153 @@ func toolDefinitions() []mcpTool {
 				},
 			},
 		},
+		// ── Docker tools ──────────────────────────────────────────────────────────
+		{
+			Name:        "list_images",
+			Description: "List Docker images available on the VaultRun host. Requires master API key.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "pull_image",
+			Description: "Pull a Docker image from a registry. Requires master API key.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"image": {Type: "string", Description: "Docker image reference (e.g. 'python:3.12-slim')."},
+				},
+				Required: []string{"image"},
+			},
+		},
+		{
+			Name:        "get_session_stats",
+			Description: "Get live CPU/memory/network stats for the session's container.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name:        "get_session_logs",
+			Description: "Retrieve recent stdout+stderr from the session's container.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID."},
+					"tail": {
+						Type:        "string",
+						Description: "Number of log lines to return (1–10000, default 100).",
+					},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		// ── GitHub tools ──────────────────────────────────────────────────────────
+		{
+			Name: "run_github_repo",
+			Description: "Clone a GitHub repository into a new sandbox session and run commands sequentially.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"repo": {
+						Type:        "string",
+						Description: "GitHub repository in owner/repo format (e.g. 'python/cpython').",
+					},
+					"commands": {
+						Type:        "string",
+						Description: "JSON array of command arrays to run after cloning, e.g. '[[\"python\",\"main.py\"]]'.",
+					},
+					"branch": {
+						Type:        "string",
+						Description: "Branch or tag to clone. Defaults to the repository's default branch.",
+					},
+					"image": {
+						Type:        "string",
+						Description: "Docker image to use. Defaults to the server's default image.",
+					},
+					"working_dir": {
+						Type:        "string",
+						Description: "Working directory for running commands. Defaults to /workspace/repo.",
+					},
+					"keep_session": {
+						Type:        "string",
+						Enum:        []string{"true", "false"},
+						Description: "Whether to keep the session after all commands finish. Default false.",
+					},
+				},
+				Required: []string{"repo", "commands"},
+			},
+		},
+		{
+			Name:        "github_post_comment",
+			Description: "Post a comment on a GitHub issue or pull request.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"repo": {
+						Type:        "string",
+						Description: "GitHub repository in owner/repo format.",
+					},
+					"number": {
+						Type:        "string",
+						Description: "Issue or pull request number.",
+					},
+					"body": {
+						Type:        "string",
+						Description: "Markdown body of the comment (max 65536 chars).",
+					},
+				},
+				Required: []string{"repo", "number", "body"},
+			},
+		},
+		// ── Filesystem tools ──────────────────────────────────────────────────────
+		{
+			Name:        "fs_read_file",
+			Description: "Read a file from the local filesystem (MCP_FS_ALLOWED_PATHS must be set).",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the file to read."},
+				},
+				Required: []string{"path"},
+			},
+		},
+		{
+			Name:        "fs_write_file",
+			Description: "Write content to a file on the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path":    {Type: "string", Description: "Absolute path to the file to write."},
+					"content": {Type: "string", Description: "Content to write to the file."},
+				},
+				Required: []string{"path", "content"},
+			},
+		},
+		{
+			Name:        "fs_list_dir",
+			Description: "List directory contents on the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the directory to list."},
+				},
+				Required: []string{"path"},
+			},
+		},
+		{
+			Name:        "fs_delete_file",
+			Description: "Delete a file from the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the file to delete."},
+				},
+				Required: []string{"path"},
+			},
+		},
 	}
 }
 
@@ -289,6 +437,26 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolListArtifacts(ctx)
 	case "list_audit_logs":
 		return s.toolListAuditLogs(ctx, args)
+	case "list_images":
+		return s.toolListImages(ctx)
+	case "pull_image":
+		return s.toolPullImage(ctx, args)
+	case "get_session_stats":
+		return s.toolGetSessionStats(ctx, args)
+	case "get_session_logs":
+		return s.toolGetSessionLogs(ctx, args)
+	case "run_github_repo":
+		return s.toolRunGithubRepo(ctx, args)
+	case "github_post_comment":
+		return s.toolGithubPostComment(ctx, args)
+	case "fs_read_file":
+		return s.toolFsReadFile(ctx, args)
+	case "fs_write_file":
+		return s.toolFsWriteFile(ctx, args)
+	case "fs_list_dir":
+		return s.toolFsListDir(ctx, args)
+	case "fs_delete_file":
+		return s.toolFsDeleteFile(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}
@@ -668,6 +836,298 @@ func (s *server) toolListAuditLogs(ctx context.Context, args map[string]string) 
 			l.Timestamp.Format("2006-01-02 15:04:05"), l.Actor, l.Action, l.SessionID)
 	}
 	return textResult(sb.String()), nil
+}
+
+// ---------------------------------------------------------------------------
+// Docker tool implementations
+// ---------------------------------------------------------------------------
+
+func (s *server) toolListImages(ctx context.Context) (mcpToolResult, error) {
+	imgs, err := s.client.ListImages(ctx)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(imgs) == 0 {
+		return textResult("No images."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d image(s):\n", len(imgs))
+	for _, img := range imgs {
+		tags := strings.Join(img.Tags, ", ")
+		if tags == "" {
+			tags = "<none>"
+		}
+		sizeMB := float64(img.SizeBytes) / (1024 * 1024)
+		fmt.Fprintf(&sb, "  %s  tags=[%s]  size=%.1fMB\n", img.ID, tags, sizeMB)
+	}
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolPullImage(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	image := args["image"]
+	if image == "" {
+		return mcpToolResult{}, fmt.Errorf("image is required")
+	}
+	if err := s.client.PullImage(ctx, image); err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("Image pulled: %s", image)), nil
+}
+
+func (s *server) toolGetSessionStats(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	stats, err := s.client.GetSessionStats(ctx, sessionID)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	text := fmt.Sprintf(
+		"cpu_percent: %.2f\n"+
+			"memory_bytes: %d\n"+
+			"memory_limit_bytes: %d\n"+
+			"network_rx_bytes: %d\n"+
+			"network_tx_bytes: %d",
+		stats.CPUPercent,
+		stats.MemoryBytes,
+		stats.MemoryLimitBytes,
+		stats.NetworkRxBytes,
+		stats.NetworkTxBytes,
+	)
+	return textResult(text), nil
+}
+
+func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	tail := 100
+	if v := args["tail"]; v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10000 {
+			return mcpToolResult{}, fmt.Errorf("tail must be between 1 and 10000")
+		}
+		tail = n
+	}
+	logs, err := s.client.GetSessionLogs(ctx, sessionID, tail)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if logs == "" {
+		return textResult("No logs."), nil
+	}
+	return textResult(logs), nil
+}
+
+// ---------------------------------------------------------------------------
+// GitHub tool implementations
+// ---------------------------------------------------------------------------
+
+func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	repoArg := args["repo"]
+	commandsArg := args["commands"]
+	if repoArg == "" {
+		return mcpToolResult{}, fmt.Errorf("repo is required")
+	}
+	if commandsArg == "" {
+		return mcpToolResult{}, fmt.Errorf("commands is required")
+	}
+
+	owner, repo, err := parseOwnerRepo(repoArg)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+
+	var commands [][]string
+	if err := json.Unmarshal([]byte(commandsArg), &commands); err != nil {
+		return mcpToolResult{}, fmt.Errorf("commands must be JSON array of arrays, e.g. '[[\"python\",\"main.py\"]]'")
+	}
+	if len(commands) > 50 {
+		return mcpToolResult{}, fmt.Errorf("max 50 commands")
+	}
+	for i, cmd := range commands {
+		if len(cmd) == 0 {
+			return mcpToolResult{}, fmt.Errorf("command %d is empty", i)
+		}
+		total := 0
+		for _, part := range cmd {
+			total += len(part) + 1
+		}
+		if total > 4096 {
+			return mcpToolResult{}, fmt.Errorf("command %d too long", i)
+		}
+	}
+
+	// Validate branch BEFORE creating a session (security critical).
+	branch := args["branch"]
+	token := s.githubToken
+
+	if branch != "" {
+		if err := validateGitRef(branch); err != nil {
+			return mcpToolResult{}, err
+		}
+	} else {
+		// Get default branch from GitHub API.
+		gc := newGithubClient(token)
+		b, err := gc.defaultBranch(ctx, owner, repo)
+		if err != nil {
+			branch = "main" // fallback
+		} else {
+			branch = b
+		}
+	}
+
+	image := coalesce(args["image"], s.defaultImage)
+	workingDir := coalesce(args["working_dir"], "/workspace/repo")
+	keepSession := args["keep_session"] == "true"
+
+	sess, err := s.client.CreateSession(ctx, CreateSessionRequest{
+		Image:          image,
+		NetworkEnabled: true,
+	})
+	if err != nil {
+		return mcpToolResult{}, fmt.Errorf("create session: %s", err.Error())
+	}
+
+	cleanup := func() {
+		if !keepSession {
+			_ = s.client.DeleteSession(ctx, sess.ID)
+		}
+	}
+
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
+
+	// Token-safe clone: use git credential env vars, never embed token in URL.
+	cloneEnv := map[string]string{
+		"GIT_TERMINAL_PROMPT": "0",
+	}
+	if token != "" {
+		cloneEnv["GIT_CONFIG_COUNT"] = "1"
+		cloneEnv["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:" + token + "@github.com/.insteadOf"
+		cloneEnv["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+	}
+
+	cloneRun, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
+		Command: "git",
+		Args:    []string{"clone", "--branch", branch, "--depth", "1", "--", cloneURL, "/workspace/repo"},
+		Env:     cloneEnv,
+	})
+
+	cloneOut := ""
+	if err == nil {
+		stdout := ""
+		stderr := ""
+		if cloneRun.Stdout != nil {
+			stdout = *cloneRun.Stdout
+		}
+		if cloneRun.Stderr != nil {
+			stderr = *cloneRun.Stderr
+		}
+		cloneOut = scrubToken(stdout+stderr, token)
+
+		if cloneRun.ExitCode == nil || *cloneRun.ExitCode != 0 {
+			cleanup()
+			return mcpToolResult{
+				Content: []mcpContent{{Type: "text", Text: "Clone failed:\n" + cloneOut}},
+				IsError: true,
+			}, nil
+		}
+	} else {
+		cleanup()
+		return mcpToolResult{}, fmt.Errorf("run clone: %s", scrubToken(err.Error(), token))
+	}
+
+	// Clean credentials from .git/config after successful clone.
+	if token != "" {
+		_, _ = s.client.RunCommand(ctx, sess.ID, RunRequest{
+			Command:    "git",
+			Args:       []string{"remote", "set-url", "origin", cloneURL},
+			WorkingDir: "/workspace/repo",
+		})
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "session_id: %s\n", sess.ID)
+	if keepSession {
+		fmt.Fprintf(&sb, "(session kept)\n")
+	} else {
+		fmt.Fprintf(&sb, "(session will be deleted)\n")
+	}
+	fmt.Fprintf(&sb, "\nCloned %s/%s@%s\n", owner, repo, branch)
+	if cloneOut != "" {
+		fmt.Fprintf(&sb, "%s\n", cloneOut)
+	}
+
+	isError := false
+	for i, cmd := range commands {
+		command := cmd[0]
+		cmdArgs := cmd[1:]
+		run, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
+			Command:    command,
+			Args:       cmdArgs,
+			WorkingDir: workingDir,
+		})
+		fmt.Fprintf(&sb, "\n--- Command %d: %s ---\n", i+1, strings.Join(cmd, " "))
+		if err != nil {
+			fmt.Fprintf(&sb, "error: %v\n", err)
+			isError = true
+			break
+		}
+		if run.ExitCode != nil {
+			fmt.Fprintf(&sb, "exit_code: %d\n", *run.ExitCode)
+		}
+		if run.Stdout != nil && *run.Stdout != "" {
+			fmt.Fprintf(&sb, "%s", *run.Stdout)
+		}
+		if run.Stderr != nil && *run.Stderr != "" {
+			fmt.Fprintf(&sb, "%s", *run.Stderr)
+		}
+		if run.ExitCode != nil && *run.ExitCode != 0 {
+			isError = true
+			break
+		}
+	}
+
+	cleanup()
+	return mcpToolResult{Content: []mcpContent{{Type: "text", Text: sb.String()}}, IsError: isError}, nil
+}
+
+func (s *server) toolGithubPostComment(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	repoArg := args["repo"]
+	numberStr := args["number"]
+	body := args["body"]
+	if repoArg == "" {
+		return mcpToolResult{}, fmt.Errorf("repo is required")
+	}
+	if numberStr == "" {
+		return mcpToolResult{}, fmt.Errorf("number is required")
+	}
+	if body == "" {
+		return mcpToolResult{}, fmt.Errorf("body is required")
+	}
+
+	if len(body) > 65536 {
+		return mcpToolResult{}, fmt.Errorf("body too long (max 65536 chars)")
+	}
+
+	owner, repo, err := parseOwnerRepo(repoArg)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+
+	number, err := strconv.Atoi(numberStr)
+	if err != nil || number <= 0 || number > 1_000_000 {
+		return mcpToolResult{}, fmt.Errorf("number must be a positive integer (1–1000000)")
+	}
+
+	gc := newGithubClient(s.githubToken)
+	commentURL, err := gc.postComment(ctx, owner, repo, number, body)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("Comment posted: %s", commentURL)), nil
 }
 
 // ---------------------------------------------------------------------------

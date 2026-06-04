@@ -113,11 +113,13 @@ type mcpToolResult struct {
 type server struct {
 	client       *vaultRunClient
 	defaultImage string
+	githubToken  string
+	fsConfig     fsConfig
 	mu           sync.Mutex // guards stdout writes
 }
 
-func newServer(client *vaultRunClient, defaultImage string) *server {
-	return &server{client: client, defaultImage: defaultImage}
+func newServer(client *vaultRunClient, defaultImage, githubToken string, fs fsConfig) *server {
+	return &server{client: client, defaultImage: defaultImage, githubToken: githubToken, fsConfig: fs}
 }
 
 func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {

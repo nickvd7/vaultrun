@@ -19,7 +19,7 @@ import (
 // newMockServer spins up a fake VaultRun API and returns an MCP server wired to it.
 func newMockServer(handler http.HandlerFunc) (*server, *httptest.Server) {
 	ts := httptest.NewServer(handler)
-	return newServer(newVaultRunClient(ts.URL, "test-key"), "python:3.12-slim"), ts
+	return newServer(newVaultRunClient(ts.URL, "test-key"), "python:3.12-slim", "", fsConfig{}), ts
 }
 
 func argsJSON(m map[string]string) json.RawMessage {
@@ -146,7 +146,7 @@ func TestIntegrationNetworkFailure(t *testing.T) {
 	srv, ts := newMockServer(func(w http.ResponseWriter, r *http.Request) {})
 	url := ts.URL
 	ts.Close() // close immediately so connections are refused
-	srv = newServer(newVaultRunClient(url, "k"), "python:3.12-slim")
+	srv = newServer(newVaultRunClient(url, "k"), "python:3.12-slim", "", fsConfig{})
 
 	_, err := srv.callTool(context.Background(), "list_sessions", argsJSON(nil))
 	if err == nil {

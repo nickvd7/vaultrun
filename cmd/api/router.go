@@ -241,6 +241,14 @@ func newRouter(
 	authGroup.GET("/policy", masterMW, polH.Get)
 	authGroup.POST("/policy/eval", masterMW, polH.Eval)
 
+	// Docker management endpoints — image operations are master-key only;
+	// per-session stats/logs use the normal session-access check.
+	dockerH := handlers.NewDockerHandler(hub)
+	api.GET("/docker/images", buildMW(masterMWKeys, dockerH.ListImages)...)
+	api.POST("/docker/images/pull", buildMW(masterMWKeys, dockerH.PullImage)...)
+	authGroup.GET("/sessions/:id/stats", dockerH.SessionStats)
+	authGroup.GET("/sessions/:id/logs", dockerH.SessionLogs)
+
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 	})

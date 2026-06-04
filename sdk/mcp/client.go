@@ -388,6 +388,58 @@ func (c *vaultRunClient) ListAuditLogs(ctx context.Context, sessionID string, li
 	return result.AuditLogs, nil
 }
 
+// ── Docker ───────────────────────────────────────────────────────────────────
+
+type DockerImage struct {
+	ID        string    `json:"id"`
+	Tags      []string  `json:"tags"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type ContainerStats struct {
+	CPUPercent       float64 `json:"cpu_percent"`
+	MemoryBytes      uint64  `json:"memory_bytes"`
+	MemoryLimitBytes uint64  `json:"memory_limit_bytes"`
+	NetworkRxBytes   uint64  `json:"network_rx_bytes"`
+	NetworkTxBytes   uint64  `json:"network_tx_bytes"`
+}
+
+func (c *vaultRunClient) ListImages(ctx context.Context) ([]DockerImage, error) {
+	var result struct {
+		Images []DockerImage `json:"images"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/docker/images", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Images, nil
+}
+
+func (c *vaultRunClient) PullImage(ctx context.Context, image string) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/v1/docker/images/pull",
+		map[string]string{"image": image}, nil)
+}
+
+func (c *vaultRunClient) GetSessionStats(ctx context.Context, sessionID string) (*ContainerStats, error) {
+	var stats ContainerStats
+	if err := c.doJSON(ctx, http.MethodGet,
+		"/api/v1/sessions/"+url.PathEscape(sessionID)+"/stats", nil, &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+func (c *vaultRunClient) GetSessionLogs(ctx context.Context, sessionID string, tail int) (string, error) {
+	path := fmt.Sprintf("/api/v1/sessions/%s/logs?tail=%d", url.PathEscape(sessionID), tail)
+	var result struct {
+		Logs string `json:"logs"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return "", err
+	}
+	return result.Logs, nil
+}
+
 // ── Health ───────────────────────────────────────────────────────────────────
 
 func (c *vaultRunClient) HealthCheck(ctx context.Context) error {

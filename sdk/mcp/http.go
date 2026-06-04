@@ -216,18 +216,21 @@ func (r *ipRateLimiter) sweepLocked() {
 // heavyTools create containers, execute code, or create durable storage.
 // They get the strictest per-IP limit on top of the global limit.
 var heavyTools = map[string]bool{
-	"run_command":     true,
-	"create_session":  true,
-	"create_snapshot": true,
-	"create_artifact": true,
+	"run_command":      true,
+	"create_session":   true,
+	"create_snapshot":  true,
+	"create_artifact":  true,
+	"run_github_repo":  true, // creates a session + runs commands
+	"pull_image":       true, // pulls from external registry
 }
 
 // writeTools modify workspace state without spawning execution. They get a
 // moderately stricter per-IP limit than read-only tools.
 var writeTools = map[string]bool{
-	"upload_file":    true,
-	"delete_file":    true,
-	"delete_session": true,
+	"upload_file":          true,
+	"delete_file":          true,
+	"delete_session":       true,
+	"github_post_comment":  true, // posts to external service
 }
 
 // ---------------------------------------------------------------------------

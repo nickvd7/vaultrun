@@ -21,6 +21,7 @@
 //	VAULTRUN_DEFAULT_IMAGE   Default Docker image for sessions (default: python:3.12-slim)
 //	VAULTRUN_LOG_FILE        Write server logs to this file instead of stderr
 //	MCP_TRANSPORT            Transport to use: "stdio" (default) or "http"
+//	GITHUB_TOKEN             GitHub personal access token for run_github_repo / github_post_comment
 //
 // Additional environment variables for MCP_TRANSPORT=http (see http.go):
 //
@@ -58,6 +59,7 @@ func main() {
 	baseURL := strings.TrimRight(os.Getenv("VAULTRUN_BASE_URL"), "/")
 	apiKey := os.Getenv("VAULTRUN_API_KEY")
 	defaultImage := getEnvOrDefault("VAULTRUN_DEFAULT_IMAGE", "python:3.12-slim")
+	githubToken := os.Getenv("GITHUB_TOKEN")
 
 	if baseURL == "" || apiKey == "" {
 		slog.Error("VAULTRUN_BASE_URL and VAULTRUN_API_KEY must be set")
@@ -71,7 +73,7 @@ func main() {
 	defer stop()
 
 	client := newVaultRunClient(baseURL, apiKey)
-	srv := newServer(client, defaultImage)
+	srv := newServer(client, defaultImage, githubToken)
 
 	switch os.Getenv("MCP_TRANSPORT") {
 	case "http":

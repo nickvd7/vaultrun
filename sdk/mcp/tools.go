@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+
 // toolDefinitions returns the full list of MCP tools this server exposes.
 func toolDefinitions() []mcpTool {
 	return []mcpTool{
@@ -241,6 +242,109 @@ func toolDefinitions() []mcpTool {
 				},
 			},
 		},
+
+		// ── Docker management ────────────────────────────────────────────────
+		{
+			Name:        "list_images",
+			Description: "List all Docker images available locally on the VaultRun host. Requires master API key.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "pull_image",
+			Description: "Pull a Docker image from a registry onto the VaultRun host. Blocks until complete. Requires master API key.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"image": {Type: "string", Description: "Full image reference, e.g. 'python:3.12-slim' or 'ghcr.io/org/app:v1.2'."},
+				},
+				Required: []string{"image"},
+			},
+		},
+		{
+			Name:        "get_session_stats",
+			Description: "Get a real-time CPU, memory, and network snapshot for a running session's container.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID to inspect."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name:        "get_session_logs",
+			Description: "Retrieve raw Docker container logs (stdout + stderr) for a session. Useful for debugging crashed containers.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"session_id": {Type: "string", Description: "The session ID to fetch logs for."},
+					"tail":       {Type: "string", Description: "Number of recent lines to return (default 100, max 10000)."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+
+		// ── GitHub integration ────────────────────────────────────────────────
+		{
+			Name: "run_github_repo",
+			Description: "Clone a GitHub repository into a new sandbox session and optionally run commands in it. " +
+				"Returns the session ID, clone result, and command outputs. " +
+				"Ideal for testing PRs, running CI checks, or exploring a repository in isolation. " +
+				"Always call delete_session when done.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"repo": {
+						Type:        "string",
+						Description: "GitHub repository in owner/repo format, e.g. 'nickvd7/vaultrun'.",
+					},
+					"branch": {
+						Type:        "string",
+						Description: "Branch, tag, or commit SHA to check out. Defaults to the repository's default branch.",
+					},
+					"commands": {
+						Type:        "string",
+						Description: "JSON array of commands to run after cloning, e.g. '[\"pip install -r requirements.txt\", \"pytest\"]'. Each entry is run with /bin/sh -c.",
+					},
+					"image": {
+						Type:        "string",
+						Description: "Docker image for the session. Defaults to python:3.12-slim.",
+					},
+					"github_token": {
+						Type:        "string",
+						Description: "GitHub token for cloning private repos. Falls back to GITHUB_TOKEN env var.",
+					},
+				},
+				Required: []string{"repo"},
+			},
+		},
+		{
+			Name: "github_post_comment",
+			Description: "Post a comment on a GitHub pull request or issue. " +
+				"Use this to report run results, test failures, or analysis back to the PR.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"repo": {
+						Type:        "string",
+						Description: "GitHub repository in owner/repo format, e.g. 'nickvd7/vaultrun'.",
+					},
+					"number": {
+						Type:        "string",
+						Description: "PR or issue number.",
+					},
+					"body": {
+						Type:        "string",
+						Description: "Comment body (Markdown supported).",
+					},
+					"github_token": {
+						Type:        "string",
+						Description: "GitHub token. Falls back to GITHUB_TOKEN env var.",
+					},
+				},
+				Required: []string{"repo", "number", "body"},
+			},
+		},
 	}
 }
 
@@ -289,6 +393,18 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolListArtifacts(ctx)
 	case "list_audit_logs":
 		return s.toolListAuditLogs(ctx, args)
+	case "list_images":
+		return s.toolListImages(ctx)
+	case "pull_image":
+		return s.toolPullImage(ctx, args)
+	case "get_session_stats":
+		return s.toolGetSessionStats(ctx, args)
+	case "get_session_logs":
+		return s.toolGetSessionLogs(ctx, args)
+	case "run_github_repo":
+		return s.toolRunGithubRepo(ctx, args)
+	case "github_post_comment":
+		return s.toolGithubPostComment(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}
@@ -668,6 +784,235 @@ func (s *server) toolListAuditLogs(ctx context.Context, args map[string]string) 
 			l.Timestamp.Format("2006-01-02 15:04:05"), l.Actor, l.Action, l.SessionID)
 	}
 	return textResult(sb.String()), nil
+}
+
+// ---------------------------------------------------------------------------
+// Docker tools
+// ---------------------------------------------------------------------------
+
+func (s *server) toolListImages(ctx context.Context) (mcpToolResult, error) {
+	imgs, err := s.client.ListImages(ctx)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if len(imgs) == 0 {
+		return textResult("No local Docker images found."), nil
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d image(s):\n", len(imgs))
+	for _, img := range imgs {
+		tags := strings.Join(img.Tags, ", ")
+		sizeMB := float64(img.SizeBytes) / 1024 / 1024
+		fmt.Fprintf(&sb, "  %-50s  %.1f MB  created=%s\n",
+			tags, sizeMB, img.CreatedAt.Format("2006-01-02"))
+	}
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolPullImage(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	image := args["image"]
+	if image == "" {
+		return mcpToolResult{}, fmt.Errorf("image is required")
+	}
+	if err := s.client.PullImage(ctx, image); err != nil {
+		return mcpToolResult{}, err
+	}
+	return textResult(fmt.Sprintf("Image %q pulled successfully.", image)), nil
+}
+
+func (s *server) toolGetSessionStats(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	stats, err := s.client.GetSessionStats(ctx, sessionID)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	memMB := float64(stats.MemoryBytes) / 1024 / 1024
+	limitMB := float64(stats.MemoryLimitBytes) / 1024 / 1024
+	rxKB := float64(stats.NetworkRxBytes) / 1024
+	txKB := float64(stats.NetworkTxBytes) / 1024
+	text := fmt.Sprintf(
+		"Container stats for session %s:\n  CPU:     %.2f%%\n  Memory:  %.1f MB / %.1f MB\n  Network: RX %.1f KB  TX %.1f KB\n",
+		sessionID, stats.CPUPercent, memMB, limitMB, rxKB, txKB,
+	)
+	return textResult(text), nil
+}
+
+func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	sessionID := args["session_id"]
+	if sessionID == "" {
+		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	}
+	tail := 100
+	if v := args["tail"]; v != "" {
+		var n int
+		fmt.Sscanf(v, "%d", &n)
+		if n > 0 && n <= 10000 {
+			tail = n
+		}
+	}
+	logs, err := s.client.GetSessionLogs(ctx, sessionID, tail)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	if logs == "" {
+		return textResult("No log output available."), nil
+	}
+	return textResult(logs), nil
+}
+
+// ---------------------------------------------------------------------------
+// GitHub tools
+// ---------------------------------------------------------------------------
+
+func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	repo := args["repo"]
+	if repo == "" {
+		return mcpToolResult{}, fmt.Errorf("repo is required")
+	}
+	owner, repoName, err := parseOwnerRepo(repo)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+
+	// Resolve GitHub token: tool arg overrides server-level token.
+	token := coalesce(args["github_token"], s.githubToken)
+	gh := newGithubClient(token)
+
+	// Resolve branch.
+	branch := args["branch"]
+	if branch == "" {
+		var branchErr error
+		branch, branchErr = gh.defaultBranch(ctx, owner, repoName)
+		if branchErr != nil {
+			return mcpToolResult{}, fmt.Errorf("resolve default branch: %w", branchErr)
+		}
+	}
+
+	// Build clone URL — use token for auth on private repos.
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repoName)
+	if token != "" {
+		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", token, owner, repoName)
+	}
+
+	// Create the sandbox session.
+	image := coalesce(args["image"], s.defaultImage)
+	sess, err := s.client.CreateSession(ctx, CreateSessionRequest{
+		Image:          image,
+		NetworkEnabled: true, // needed for git clone
+		TimeoutSeconds: 600,
+	})
+	if err != nil {
+		return mcpToolResult{}, fmt.Errorf("create session: %w", err)
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Session: %s\nRepo: %s  Branch: %s\n\n", sess.ID, repo, branch)
+
+	// Clone the repo.
+	cloneRun, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
+		Command: "/bin/sh",
+		Args:    []string{"-c", fmt.Sprintf("git clone --branch %s --depth 1 %s /workspace/repo 2>&1", branch, cloneURL)},
+	})
+	if err != nil {
+		return mcpToolResult{}, fmt.Errorf("run git clone: %w", err)
+	}
+	cloneOut := coalesce(ptrStr(cloneRun.Stdout), ptrStr(cloneRun.Stderr))
+	fmt.Fprintf(&sb, "## git clone\nexit_code=%d\n%s\n", ptrInt(cloneRun.ExitCode), cloneOut)
+
+	if ptrInt(cloneRun.ExitCode) != 0 {
+		result := textResult(sb.String())
+		result.IsError = true
+		return result, nil
+	}
+
+	// Run optional commands.
+	var commands []string
+	if raw := args["commands"]; raw != "" {
+		if err := jsonUnmarshalArray(raw, &commands); err != nil {
+			return mcpToolResult{}, fmt.Errorf("commands: %w", err)
+		}
+	}
+	for i, cmd := range commands {
+		run, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
+			Command:    "/bin/sh",
+			Args:       []string{"-c", cmd},
+			WorkingDir: "/workspace/repo",
+		})
+		if err != nil {
+			fmt.Fprintf(&sb, "## command %d: %s\nerror: %v\n", i+1, cmd, err)
+			continue
+		}
+		out := coalesce(ptrStr(run.Stdout), ptrStr(run.Stderr))
+		fmt.Fprintf(&sb, "## command %d: %s\nexit_code=%d\n%s\n", i+1, cmd, ptrInt(run.ExitCode), out)
+	}
+
+	fmt.Fprintf(&sb, "\nCall delete_session with session_id=%s when done.\n", sess.ID)
+	return textResult(sb.String()), nil
+}
+
+func (s *server) toolGithubPostComment(ctx context.Context, args map[string]string) (mcpToolResult, error) {
+	repo := args["repo"]
+	body := args["body"]
+	numberStr := args["number"]
+	if repo == "" {
+		return mcpToolResult{}, fmt.Errorf("repo is required")
+	}
+	if body == "" {
+		return mcpToolResult{}, fmt.Errorf("body is required")
+	}
+	if numberStr == "" {
+		return mcpToolResult{}, fmt.Errorf("number is required")
+	}
+	var number int
+	if _, err := fmt.Sscanf(numberStr, "%d", &number); err != nil || number <= 0 {
+		return mcpToolResult{}, fmt.Errorf("number must be a positive integer")
+	}
+
+	owner, repoName, err := parseOwnerRepo(repo)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+
+	token := coalesce(args["github_token"], s.githubToken)
+	gh := newGithubClient(token)
+
+	url, err := gh.postComment(ctx, owner, repoName, number, body)
+	if err != nil {
+		return mcpToolResult{}, fmt.Errorf("post comment: %w", err)
+	}
+	return textResult(fmt.Sprintf("Comment posted: %s", url)), nil
+}
+
+// ptrStr dereferences a *string safely.
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// ptrInt dereferences a *int safely.
+func ptrInt(n *int) int {
+	if n == nil {
+		return 0
+	}
+	return *n
+}
+
+// jsonUnmarshalArray unmarshals a JSON array string into a []string slice,
+// also accepting a plain string (treated as a single-element array).
+func jsonUnmarshalArray(raw string, out *[]string) error {
+	raw = strings.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil
+	}
+	if raw[0] != '[' {
+		return fmt.Errorf("must be a JSON array, got %q", raw)
+	}
+	return json.Unmarshal([]byte(raw), out)
 }
 
 // ---------------------------------------------------------------------------

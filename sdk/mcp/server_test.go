@@ -35,7 +35,7 @@ func runMCPRequest(t *testing.T, srv *server, reqJSON string) jsonRPCResponse {
 }
 
 func newTestServer() *server {
-	return newServer(nil, "python:3.12-slim")
+	return newServer(nil, "python:3.12-slim", "")
 }
 
 func TestProtocolInitialize(t *testing.T) {

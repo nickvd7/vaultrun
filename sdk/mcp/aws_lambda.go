@@ -71,9 +71,14 @@ func (s *server) toolLambdaInvoke(ctx context.Context, args map[string]string) (
 		return mcpToolResult{}, fmt.Errorf("invocation_type must be RequestResponse, Event, or DryRun")
 	}
 
-	// Validate payload JSON when provided.
+	// Validate payload JSON when provided. The Lambda synchronous invocation
+	// limit is 6 MB for the combined request+response payload.
+	const lambdaMaxPayload = 6 * 1024 * 1024
 	var payload []byte
 	if p := args["payload"]; p != "" {
+		if len(p) > lambdaMaxPayload {
+			return mcpToolResult{}, fmt.Errorf("payload exceeds Lambda limit (%d bytes, max 6 MB)", len(p))
+		}
 		if !json.Valid([]byte(p)) {
 			return mcpToolResult{}, fmt.Errorf("payload must be valid JSON")
 		}

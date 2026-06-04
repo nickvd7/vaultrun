@@ -664,17 +664,23 @@ func (s *server) toolCreateSession(ctx context.Context, args map[string]string) 
 	if v := args["cpu_limit"]; v != "" {
 		var f float64
 		fmt.Sscanf(v, "%f", &f)
-		req.CPULimit = f
+		if f > 0 {
+			req.CPULimit = f
+		}
 	}
 	if v := args["memory_limit_mb"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.MemoryLimitMB = n
+		if n > 0 {
+			req.MemoryLimitMB = n
+		}
 	}
 	if v := args["timeout_seconds"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.TimeoutSeconds = n
+		if n > 0 {
+			req.TimeoutSeconds = n
+		}
 	}
 
 	session, err := s.client.CreateSession(ctx, req)
@@ -771,7 +777,9 @@ func (s *server) toolRunCommand(ctx context.Context, args map[string]string) (mc
 	if v := args["timeout_seconds"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.TimeoutSeconds = n
+		if n > 0 {
+			req.TimeoutSeconds = n
+		}
 	}
 
 	run, err := s.client.RunCommand(ctx, sessionID, req)
@@ -1186,14 +1194,16 @@ func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) 
 
 	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 
-	// Token-safe clone: use git credential env vars, never embed token in URL.
+	// Token-safe clone: inject as an HTTP extraheader so the token never appears
+	// in a git remote URL or in GIT_CONFIG_KEY_* (which would embed it in the
+	// API request body as a URL fragment and appear in any server-side logs).
 	cloneEnv := map[string]string{
 		"GIT_TERMINAL_PROMPT": "0",
 	}
 	if token != "" {
 		cloneEnv["GIT_CONFIG_COUNT"] = "1"
-		cloneEnv["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:" + token + "@github.com/.insteadOf"
-		cloneEnv["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+		cloneEnv["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader"
+		cloneEnv["GIT_CONFIG_VALUE_0"] = "Authorization: Bearer " + token
 	}
 
 	cloneRun, err := s.client.RunCommand(ctx, sess.ID, RunRequest{

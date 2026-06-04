@@ -253,7 +253,11 @@ func (c *vaultRunClient) DownloadFile(ctx context.Context, sessionID, filePath s
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	const downloadMaxBytes = 10 * 1024 * 1024
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, downloadMaxBytes+1))
+	if int64(len(body)) > downloadMaxBytes {
+		return "", fmt.Errorf("file exceeds maximum download size of 10 MB")
+	}
 	if resp.StatusCode >= 400 {
 		var errBody struct {
 			Error string `json:"error"`

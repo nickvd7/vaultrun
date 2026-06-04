@@ -38,7 +38,15 @@ func (s *server) toolSSMGetParameter(ctx context.Context, args map[string]string
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Name:    %s\n", aws.ToString(p.Name))
 	fmt.Fprintf(&sb, "Type:    %s\n", string(p.Type))
-	fmt.Fprintf(&sb, "Value:   %s\n", aws.ToString(p.Value))
+	switch {
+	case p.Type == ssmtypes.ParameterTypeSecureString && !withDecryption:
+		fmt.Fprintf(&sb, "Value:   <encrypted — pass with_decryption=true to reveal>\n")
+	case p.Type == ssmtypes.ParameterTypeSecureString && withDecryption:
+		fmt.Fprintf(&sb, "Value:   %s\n", aws.ToString(p.Value))
+		fmt.Fprintf(&sb, "WARNING: decrypted secret returned in plaintext — handle with care.\n")
+	default:
+		fmt.Fprintf(&sb, "Value:   %s\n", aws.ToString(p.Value))
+	}
 	fmt.Fprintf(&sb, "Version: %d\n", p.Version)
 	if p.LastModifiedDate != nil {
 		fmt.Fprintf(&sb, "Modified: %s\n", p.LastModifiedDate.Format("2006-01-02 15:04:05 UTC"))

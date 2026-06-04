@@ -269,6 +269,11 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 
 	// CORS — must run before auth so that preflight requests from browsers get
 	// a proper response without triggering the auth check.
+	// Wildcard origins ("*") are safe here because the MCP server uses Bearer
+	// token authentication (not cookies), so cross-origin requests cannot be
+	// silently credentialed by an attacker's page. If the auth model ever
+	// changes to use session cookies, this wildcard MUST be replaced with an
+	// explicit origin allowlist (MCP_ALLOWED_ORIGINS).
 	corsConfig := cors.DefaultConfig()
 	if len(cfg.allowedOrigins) == 1 && cfg.allowedOrigins[0] == "*" {
 		corsConfig.AllowAllOrigins = true

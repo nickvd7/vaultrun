@@ -28,12 +28,15 @@
 //	                         tools (fs_read_file, fs_write_file, fs_list_dir,
 //	                         fs_delete_file) are allowed to access. When unset,
 //	                         all filesystem tools return an error.
-//	AWS_REGION               AWS region for S3 tools (e.g. "us-east-1"). Setting
-//	                         this (or AWS_ENDPOINT_URL) enables the S3 tools.
-//	AWS_ACCESS_KEY_ID        AWS access key ID (optional — falls back to IAM role).
-//	AWS_SECRET_ACCESS_KEY    AWS secret access key (required when access key ID set).
-//	AWS_ENDPOINT_URL         Custom S3 endpoint for MinIO, LocalStack, etc.
-//	MCP_S3_FORCE_PATH_STYLE  Set to "true" to use path-style S3 addressing (MinIO).
+//	MCP_AWS_ENABLED          Set to "true" to enable all AWS tools (S3, SSM,
+//	                         Secrets Manager, Lambda). Explicit opt-in prevents
+//	                         accidental activation in environments with ambient
+//	                         IAM credentials (EC2/ECS instance roles).
+//	AWS_REGION               AWS region (default: us-east-1).
+//	AWS_ACCESS_KEY_ID        Static access key (optional — falls back to IAM role).
+//	AWS_SECRET_ACCESS_KEY    Static secret key (required when access key ID is set).
+//	AWS_ENDPOINT_URL         Custom endpoint for MinIO, LocalStack, etc.
+//	MCP_S3_FORCE_PATH_STYLE  Set to "true" for path-style S3 addressing (MinIO).
 //
 // Additional environment variables for MCP_TRANSPORT=http (see http.go):
 //

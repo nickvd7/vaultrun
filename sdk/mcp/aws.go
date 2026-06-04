@@ -40,18 +40,21 @@ type awsBundle struct {
 
 // initAWSClients loads the AWS configuration from environment variables and
 // populates all AWS service clients on srv. It is a no-op (all clients remain
-// nil) when no AWS configuration is detected, so tools return a friendly error.
+// nil) when AWS is not explicitly enabled, so tools return a friendly error.
+//
+// AWS tools are enabled only when MCP_AWS_ENABLED=true is set. This prevents
+// accidental activation in environments that have ambient IAM credentials (EC2,
+// ECS, Lambda) but where the operator did not intend to expose cloud write
+// operations (ssm_put_parameter, sm_get_secret, lambda_invoke, etc.) via MCP.
 func initAWSClients(ctx context.Context, srv *server) error {
+	if os.Getenv("MCP_AWS_ENABLED") != "true" {
+		return nil
+	}
+
 	region := getEnvOrDefault("AWS_REGION", "us-east-1")
 	endpoint := os.Getenv("AWS_ENDPOINT_URL")
 	accessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
 	secretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
-
-	// Nothing configured — disable all AWS tools.
-	if os.Getenv("AWS_REGION") == "" && endpoint == "" && accessKeyID == "" {
-		return nil
-	}
-
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(region))
 	if accessKeyID != "" && secretAccessKey != "" {

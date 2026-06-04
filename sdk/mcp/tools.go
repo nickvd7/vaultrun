@@ -1315,8 +1315,8 @@ func (s *server) toolGithubPostComment(ctx context.Context, args map[string]stri
 	}
 
 	number, err := strconv.Atoi(numberStr)
-	if err != nil || number <= 0 || number > 1_000_000 {
-		return mcpToolResult{}, fmt.Errorf("number must be a positive integer (1–1000000)")
+	if err != nil || number <= 0 || number > 100_000_000 {
+		return mcpToolResult{}, fmt.Errorf("number must be a positive integer (1–100000000)")
 	}
 
 	gc := newGithubClient(s.githubToken)

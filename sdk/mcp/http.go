@@ -222,19 +222,23 @@ var heavyTools = map[string]bool{
 	"create_artifact": true,
 	"run_github_repo": true,
 	"pull_image":      true,
+	"lambda_invoke":   true, // executes arbitrary cloud workloads
 }
 
 // writeTools modify workspace state without spawning execution. They get a
 // moderately stricter per-IP limit than read-only tools.
 var writeTools = map[string]bool{
-	"upload_file":         true,
-	"delete_file":         true,
-	"delete_session":      true,
-	"github_post_comment": true,
-	"fs_write_file":       true,
-	"fs_delete_file":      true,
-	"s3_put_object":       true,
-	"s3_delete_object":    true,
+	"upload_file":          true,
+	"delete_file":          true,
+	"delete_session":       true,
+	"github_post_comment":  true,
+	"fs_write_file":        true,
+	"fs_delete_file":       true,
+	"s3_put_object":        true,
+	"s3_delete_object":     true,
+	"ssm_put_parameter":    true,
+	"ssm_delete_parameter": true,
+	"sm_get_secret":        true, // reading secrets is a sensitive write-tier op
 }
 
 // ---------------------------------------------------------------------------

@@ -105,6 +105,9 @@ func TestProtocolToolsList(t *testing.T) {
 		"fs_read_file", "fs_write_file", "fs_list_dir", "fs_delete_file",
 		"s3_list_buckets", "s3_list_objects", "s3_get_object",
 		"s3_put_object", "s3_delete_object", "s3_head_object",
+		"ssm_get_parameter", "ssm_put_parameter", "ssm_delete_parameter", "ssm_list_parameters",
+		"sm_get_secret", "sm_list_secrets",
+		"lambda_list_functions", "lambda_invoke",
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range listResult.Tools {

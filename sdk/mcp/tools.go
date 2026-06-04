@@ -389,7 +389,7 @@ func toolDefinitions() []mcpTool {
 				Required: []string{"path"},
 			},
 		},
-		// ── AWS S3 tools ──────────────────────────────────────────────────────────
+		// ── AWS S3 tools ──────────────────────────────────────────────────────
 		{
 			Name:        "s3_list_buckets",
 			Description: "List all accessible S3 buckets. Requires AWS_REGION and valid credentials.",
@@ -456,6 +456,96 @@ func toolDefinitions() []mcpTool {
 					"key":    {Type: "string", Description: "Object key."},
 				},
 				Required: []string{"bucket", "key"},
+			},
+		},
+		// ── AWS SSM Parameter Store tools ─────────────────────────────────────
+		{
+			Name:        "ssm_get_parameter",
+			Description: "Retrieve an SSM Parameter Store value by name.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name":            {Type: "string", Description: "Parameter name or full path (e.g. '/myapp/db/password')."},
+					"with_decryption": {Type: "string", Enum: []string{"true", "false"}, Description: "Decrypt SecureString values (default false)."},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name:        "ssm_put_parameter",
+			Description: "Create or update an SSM Parameter Store value.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name":      {Type: "string", Description: "Parameter name or full path."},
+					"value":     {Type: "string", Description: "Parameter value."},
+					"type":      {Type: "string", Enum: []string{"String", "StringList", "SecureString"}, Description: "Parameter type (default String)."},
+					"overwrite": {Type: "string", Enum: []string{"true", "false"}, Description: "Overwrite existing value (default false)."},
+				},
+				Required: []string{"name", "value"},
+			},
+		},
+		{
+			Name:        "ssm_delete_parameter",
+			Description: "Delete an SSM Parameter Store parameter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name": {Type: "string", Description: "Parameter name or full path to delete."},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name:        "ssm_list_parameters",
+			Description: "List SSM Parameter Store parameters under a path hierarchy.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path":        {Type: "string", Description: "Parameter path prefix (default '/'; returns all accessible parameters)."},
+					"max_results": {Type: "string", Description: "Maximum number of results (1–100, default 50)."},
+				},
+			},
+		},
+		// ── AWS Secrets Manager tools ──────────────────────────────────────────
+		{
+			Name:        "sm_get_secret",
+			Description: "Retrieve a secret value from AWS Secrets Manager.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"secret_id": {Type: "string", Description: "Secret name, ARN, or partial ARN."},
+				},
+				Required: []string{"secret_id"},
+			},
+		},
+		{
+			Name:        "sm_list_secrets",
+			Description: "List secrets in AWS Secrets Manager.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"max_results": {Type: "string", Description: "Maximum number of secrets to return (1–100, default 20)."},
+				},
+			},
+		},
+		// ── AWS Lambda tools ───────────────────────────────────────────────────
+		{
+			Name:        "lambda_list_functions",
+			Description: "List AWS Lambda functions in the configured region.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "lambda_invoke",
+			Description: "Invoke an AWS Lambda function synchronously and return its response.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"function_name":   {Type: "string", Description: "Function name or ARN."},
+					"payload":         {Type: "string", Description: "JSON payload to pass to the function (optional)."},
+					"invocation_type": {Type: "string", Enum: []string{"RequestResponse", "Event", "DryRun"}, Description: "Invocation type (default RequestResponse)."},
+				},
+				Required: []string{"function_name"},
 			},
 		},
 	}
@@ -538,6 +628,22 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolS3DeleteObject(ctx, args)
 	case "s3_head_object":
 		return s.toolS3HeadObject(ctx, args)
+	case "ssm_get_parameter":
+		return s.toolSSMGetParameter(ctx, args)
+	case "ssm_put_parameter":
+		return s.toolSSMPutParameter(ctx, args)
+	case "ssm_delete_parameter":
+		return s.toolSSMDeleteParameter(ctx, args)
+	case "ssm_list_parameters":
+		return s.toolSSMListParameters(ctx, args)
+	case "sm_get_secret":
+		return s.toolSMGetSecret(ctx, args)
+	case "sm_list_secrets":
+		return s.toolSMListSecrets(ctx, args)
+	case "lambda_list_functions":
+		return s.toolLambdaListFunctions(ctx)
+	case "lambda_invoke":
+		return s.toolLambdaInvoke(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}

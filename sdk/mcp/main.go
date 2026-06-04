@@ -88,14 +88,12 @@ func main() {
 	client := newVaultRunClient(baseURL, apiKey)
 	srv := newServer(client, defaultImage, githubToken, fs)
 
-	s3c, err := newS3Client(ctx)
-	if err != nil {
-		slog.Error("vaultrun-mcp: S3 client init failed", "err", err)
+	if err := initAWSClients(ctx, srv); err != nil {
+		slog.Error("vaultrun-mcp: AWS client init failed", "err", err)
 		os.Exit(1)
 	}
-	if s3c != nil {
-		srv.s3Client = s3c
-		slog.Info("vaultrun-mcp: S3 tools enabled", "region", getEnvOrDefault("AWS_REGION", "us-east-1"))
+	if srv.awsBundle != nil {
+		slog.Info("vaultrun-mcp: AWS tools enabled", "region", getEnvOrDefault("AWS_REGION", "us-east-1"))
 	}
 
 	switch os.Getenv("MCP_TRANSPORT") {

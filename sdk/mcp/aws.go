@@ -1,13 +1,13 @@
-// AWS S3 tools for the MCP server.
-// Access requires AWS credentials via environment variables or an IAM role.
+// AWS tools for the MCP server — S3 operations.
+// All AWS clients share a single configuration loaded by initAWSClients.
 //
 // Environment variables:
 //
 //	AWS_REGION                  AWS region (default: us-east-1)
-//	AWS_ACCESS_KEY_ID           Access key ID (optional — falls back to IAM role)
-//	AWS_SECRET_ACCESS_KEY       Secret access key (required if access key ID is set)
+//	AWS_ACCESS_KEY_ID           Static access key (optional — falls back to IAM role)
+//	AWS_SECRET_ACCESS_KEY       Static secret key (required when access key ID is set)
 //	AWS_ENDPOINT_URL            Override endpoint URL (for MinIO, LocalStack, etc.)
-//	MCP_S3_FORCE_PATH_STYLE     Use path-style addressing (required for MinIO)
+//	MCP_S3_FORCE_PATH_STYLE     Use path-style S3 addressing (required for MinIO)
 package main
 
 import (
@@ -21,25 +21,35 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 const s3MaxReadBytes = 10 * 1024 * 1024 // 10 MB
 
-// newS3Client builds an S3 client from environment variables.
-// Returns (nil, nil) when no AWS configuration is detected, meaning S3 tools
-// will be available but return a helpful "not configured" error at call time.
-func newS3Client(ctx context.Context) (*s3.Client, error) {
+// awsBundle holds all AWS service clients. It is nil when no AWS config is detected.
+type awsBundle struct {
+	s3     *s3.Client
+	ssm    *ssm.Client
+	sm     *secretsmanager.Client
+	lambda *lambda.Client
+}
+
+// initAWSClients loads the AWS configuration from environment variables and
+// populates all AWS service clients on srv. It is a no-op (all clients remain
+// nil) when no AWS configuration is detected, so tools return a friendly error.
+func initAWSClients(ctx context.Context, srv *server) error {
 	region := getEnvOrDefault("AWS_REGION", "us-east-1")
 	endpoint := os.Getenv("AWS_ENDPOINT_URL")
 	accessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
 	secretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
-	forcePathStyle := os.Getenv("MCP_S3_FORCE_PATH_STYLE") == "true"
 
-	// No AWS config detected — treat as disabled.
+	// Nothing configured — disable all AWS tools.
 	if os.Getenv("AWS_REGION") == "" && endpoint == "" && accessKeyID == "" {
-		return nil, nil
+		return nil
 	}
 
 	var opts []func(*awsconfig.LoadOptions) error
@@ -52,31 +62,78 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("load AWS config: %w", err)
+		return fmt.Errorf("load AWS config: %w", err)
 	}
 
+	bundle := &awsBundle{}
+
+	// S3 — optional path-style and endpoint override.
 	var s3Opts []func(*s3.Options)
 	if endpoint != "" {
 		s3Opts = append(s3Opts, func(o *s3.Options) { o.BaseEndpoint = aws.String(endpoint) })
 	}
-	if forcePathStyle {
+	if os.Getenv("MCP_S3_FORCE_PATH_STYLE") == "true" {
 		s3Opts = append(s3Opts, func(o *s3.Options) { o.UsePathStyle = true })
 	}
+	bundle.s3 = s3.NewFromConfig(awsCfg, s3Opts...)
 
-	return s3.NewFromConfig(awsCfg, s3Opts...), nil
+	// SSM Parameter Store.
+	var ssmOpts []func(*ssm.Options)
+	if endpoint != "" {
+		ssmOpts = append(ssmOpts, func(o *ssm.Options) { o.BaseEndpoint = aws.String(endpoint) })
+	}
+	bundle.ssm = ssm.NewFromConfig(awsCfg, ssmOpts...)
+
+	// Secrets Manager.
+	var smOpts []func(*secretsmanager.Options)
+	if endpoint != "" {
+		smOpts = append(smOpts, func(o *secretsmanager.Options) { o.BaseEndpoint = aws.String(endpoint) })
+	}
+	bundle.sm = secretsmanager.NewFromConfig(awsCfg, smOpts...)
+
+	// Lambda.
+	var lambdaOpts []func(*lambda.Options)
+	if endpoint != "" {
+		lambdaOpts = append(lambdaOpts, func(o *lambda.Options) { o.BaseEndpoint = aws.String(endpoint) })
+	}
+	bundle.lambda = lambda.NewFromConfig(awsCfg, lambdaOpts...)
+
+	srv.awsBundle = bundle
+	return nil
 }
 
-var errS3Disabled = errors.New("S3 is not configured — set AWS_REGION (and optionally " +
-	"AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL)")
+var errAWSDisabled = errors.New("AWS is not configured — set AWS_REGION (and optionally " +
+	"AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_ENDPOINT_URL)")
 
 func (s *server) s3OrErr() (*s3.Client, error) {
-	if s.s3Client == nil {
-		return nil, errS3Disabled
+	if s.awsBundle == nil {
+		return nil, errAWSDisabled
 	}
-	return s.s3Client, nil
+	return s.awsBundle.s3, nil
 }
 
-// ── Tool handlers ─────────────────────────────────────────────────────────────
+func (s *server) ssmOrErr() (*ssm.Client, error) {
+	if s.awsBundle == nil {
+		return nil, errAWSDisabled
+	}
+	return s.awsBundle.ssm, nil
+}
+
+func (s *server) smOrErr() (*secretsmanager.Client, error) {
+	if s.awsBundle == nil {
+		return nil, errAWSDisabled
+	}
+	return s.awsBundle.sm, nil
+}
+
+func (s *server) lambdaOrErr() (*lambda.Client, error) {
+	if s.awsBundle == nil {
+		return nil, errAWSDisabled
+	}
+	return s.awsBundle.lambda, nil
+}
+
+// ── S3 tool handlers ──────────────────────────────────────────────────────────
 
 func (s *server) toolS3ListBuckets(ctx context.Context) (mcpToolResult, error) {
 	client, err := s.s3OrErr()
@@ -88,7 +145,6 @@ func (s *server) toolS3ListBuckets(ctx context.Context) (mcpToolResult, error) {
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("ListBuckets: %w", err)
 	}
-
 	if len(out.Buckets) == 0 {
 		return textResult("No buckets found."), nil
 	}
@@ -125,10 +181,7 @@ func (s *server) toolS3ListObjects(ctx context.Context, args map[string]string) 
 		}
 	}
 
-	input := &s3.ListObjectsV2Input{
-		Bucket:  aws.String(bucket),
-		MaxKeys: aws.Int32(maxKeys),
-	}
+	input := &s3.ListObjectsV2Input{Bucket: aws.String(bucket), MaxKeys: aws.Int32(maxKeys)}
 	if prefix := args["prefix"]; prefix != "" {
 		input.Prefix = aws.String(prefix)
 	}
@@ -137,7 +190,6 @@ func (s *server) toolS3ListObjects(ctx context.Context, args map[string]string) 
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("ListObjectsV2 s3://%s: %w", bucket, err)
 	}
-
 	if len(out.Contents) == 0 {
 		return textResult(fmt.Sprintf("No objects found in s3://%s (prefix=%q).", bucket, args["prefix"])), nil
 	}
@@ -172,10 +224,7 @@ func (s *server) toolS3GetObject(ctx context.Context, args map[string]string) (m
 		return mcpToolResult{}, fmt.Errorf("bucket and key are required")
 	}
 
-	out, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	if err != nil {
 		var noKey *s3types.NoSuchKey
 		if errors.As(err, &noKey) {
@@ -193,7 +242,6 @@ func (s *server) toolS3GetObject(ctx context.Context, args map[string]string) (m
 	if int64(len(data)) > s3MaxReadBytes {
 		return mcpToolResult{}, fmt.Errorf("object s3://%s/%s exceeds the 10 MB read limit", bucket, key)
 	}
-
 	return textResult(string(data)), nil
 }
 
@@ -222,7 +270,6 @@ func (s *server) toolS3PutObject(ctx context.Context, args map[string]string) (m
 	}); err != nil {
 		return mcpToolResult{}, fmt.Errorf("PutObject s3://%s/%s: %w", bucket, key, err)
 	}
-
 	return textResult(fmt.Sprintf("Written %d bytes to s3://%s/%s", len(content), bucket, key)), nil
 }
 
@@ -243,7 +290,6 @@ func (s *server) toolS3DeleteObject(ctx context.Context, args map[string]string)
 	}); err != nil {
 		return mcpToolResult{}, fmt.Errorf("DeleteObject s3://%s/%s: %w", bucket, key, err)
 	}
-
 	return textResult(fmt.Sprintf("Deleted s3://%s/%s", bucket, key)), nil
 }
 
@@ -258,10 +304,7 @@ func (s *server) toolS3HeadObject(ctx context.Context, args map[string]string) (
 		return mcpToolResult{}, fmt.Errorf("bucket and key are required")
 	}
 
-	out, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	out, err := client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("HeadObject s3://%s/%s: %w", bucket, key, err)
 	}
@@ -283,6 +326,5 @@ func (s *server) toolS3HeadObject(ctx context.Context, args map[string]string) (
 	if out.StorageClass != "" {
 		fmt.Fprintf(&sb, "  storage-class: %s\n", string(out.StorageClass))
 	}
-
 	return textResult(sb.String()), nil
 }

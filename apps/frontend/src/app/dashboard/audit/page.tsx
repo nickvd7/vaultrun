@@ -3,12 +3,9 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, AlertCircle, Loader2, ScrollText } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
-
 async function apiFetch(path: string) {
-  const res = await fetch(`${API}${path}`, {
-    headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
+  const res = await fetch(`/api/proxy${path}`, {
+    headers: { "Content-Type": "application/json" },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

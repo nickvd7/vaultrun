@@ -48,6 +48,20 @@
 - [x] Session resume from snapshot (`snapshot_id` in `POST /sessions` restores workspace before container start)
 - [x] Cross-session artifact sharing (`POST /sessions/:id/artifacts`, `GET /artifacts`, `GET /artifacts/:id/download`, `DELETE /artifacts/:id`)
 
+## v0.7 — MCP Server & AI Integrations
+- [x] MCP server (`sdk/mcp/`) — JSON-RPC 2.0 stdio transport for Claude Desktop / Claude Code
+- [x] HTTP transport (`MCP_TRANSPORT=http`) — OpenAI, OpenRouter, custom agents via `POST /mcp`
+- [x] 53 MCP tools across 6 categories: core sandbox, filesystem, AWS (S3/SSM/SM/Lambda), database (SQLite/PostgreSQL/MongoDB+Mongoose), GitHub CI, run management
+- [x] MCP security: Bearer token auth, per-IP rate limiting (tiered: 10/30/60 req/min), TLS, CORS, security headers, audit logging with secret redaction
+- [x] CI Runner (`cmd/ci-runner/`) — GitHub webhook listener that runs test suites in sandboxes and posts PR comments with results
+- [x] Database MCP tools: SQLite (`sqlite_query`, `sqlite_execute`, `sqlite_schema`), PostgreSQL (`pg_query`, `pg_execute`, `pg_schema`), MongoDB (`mongo_find`, `mongo_insert_one`, `mongo_update`, `mongo_delete`, `mongo_aggregate`, `mongo_collections`, `mongo_generate_mongoose`)
+- [x] Go SDK additions: `Image`, `SessionStats`, `PullStatus` types; `GetSessionStats()`, `GetSessionLogs()`, `ListImages()`, `PullImage()` methods
+- [x] Python SDK additions: same 4 methods + dataclasses; exported from `sandbox_sdk`
+
+## v0.8 — Dashboard Improvements
+- [x] Next.js dashboard at `/dashboard` — sessions list, session detail (run/files/runs/audit tabs), global audit log
+- [x] Server-side API proxy (`/api/proxy/[...path]`) — `VAULTRUN_API_KEY` never exposed to browser bundle
+
 ## v1.0 — Enterprise
 - [ ] SSO / SAML *(deferred)*
 - [x] Enterprise audit export (SIEM integrations — `AUDIT_EXPORT_URL`; newline-delimited JSON POST every 30 s; Bearer token auth via `AUDIT_EXPORT_SECRET`)

@@ -91,6 +91,9 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      # Server-side proxy env vars (not exposed to browser bundle)
+      - VAULTRUN_API_URL=${VAULTRUN_API_URL:-http://api:8080}
+      - VAULTRUN_API_KEY=${MASTER_API_KEY}
     depends_on:
       api:
         condition: service_healthy

@@ -12,9 +12,6 @@ import {
   Loader2,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
-
 type Session = {
   id: string;
   name?: string;
@@ -36,13 +33,9 @@ function statusColor(status: string) {
 }
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api/proxy${path}`, {
     ...opts,
-    headers: {
-      "X-API-Key": API_KEY,
-      "Content-Type": "application/json",
-      ...(opts?.headers ?? {}),
-    },
+    headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

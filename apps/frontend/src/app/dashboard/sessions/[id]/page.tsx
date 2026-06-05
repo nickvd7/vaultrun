@@ -17,17 +17,10 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
-
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`/api/proxy${path}`, {
     ...opts,
-    headers: {
-      "X-API-Key": API_KEY,
-      "Content-Type": "application/json",
-      ...(opts?.headers ?? {}),
-    },
+    headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -161,9 +154,8 @@ export default function SessionDetailPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("path", file.name);
-      const res = await fetch(`${API}/api/v1/sessions/${id}/files`, {
+      const res = await fetch(`/api/proxy/api/v1/sessions/${id}/files`, {
         method: "POST",
-        headers: { "X-API-Key": API_KEY },
         body: formData,
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
@@ -178,9 +170,7 @@ export default function SessionDetailPage() {
 
   async function downloadFile(path: string) {
     const clean = path.replace(/^\//, "");
-    const res = await fetch(`${API}/api/v1/sessions/${id}/files/${clean}`, {
-      headers: { "X-API-Key": API_KEY },
-    });
+    const res = await fetch(`/api/proxy/api/v1/sessions/${id}/files/${clean}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

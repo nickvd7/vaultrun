@@ -664,6 +664,73 @@ func (c *Client) ListOrgSessions(ctx context.Context, orgID string) ([]*Session,
 	return result.Sessions, nil
 }
 
+// Image represents a Docker image available on the host.
+type Image struct {
+	ID        string   `json:"id"`
+	Tags      []string `json:"tags"`
+	SizeBytes int64    `json:"size_bytes"`
+	CreatedAt string   `json:"created_at"`
+}
+
+// SessionStats holds live resource usage for a running session.
+type SessionStats struct {
+	SessionID      string  `json:"session_id"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	MemoryUsageMB  float64 `json:"memory_usage_mb"`
+	MemoryLimitMB  int     `json:"memory_limit_mb"`
+	PIDs           int     `json:"pids"`
+}
+
+// PullStatus is returned after requesting an image pull.
+type PullStatus struct {
+	Image   string `json:"image"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// GetSessionStats returns live CPU/memory usage for the given session.
+func (c *Client) GetSessionStats(ctx context.Context, sessionID string) (*SessionStats, error) {
+	var stats SessionStats
+	if err := c.do(ctx, "GET", "/api/v1/sessions/"+sessionID+"/stats", nil, &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// GetSessionLogs returns the last n lines of container logs for the session.
+// Pass 0 to use the server default.
+func (c *Client) GetSessionLogs(ctx context.Context, sessionID string, tail int) (string, error) {
+	path := "/api/v1/sessions/" + sessionID + "/logs"
+	if tail > 0 {
+		path += fmt.Sprintf("?tail=%d", tail)
+	}
+	data, err := c.download(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// ListImages returns Docker images available on the host.
+func (c *Client) ListImages(ctx context.Context) ([]*Image, error) {
+	var result struct {
+		Images []*Image `json:"images"`
+	}
+	if err := c.do(ctx, "GET", "/api/v1/images", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Images, nil
+}
+
+// PullImage requests the host to pull the named Docker image.
+func (c *Client) PullImage(ctx context.Context, image string) (*PullStatus, error) {
+	var status PullStatus
+	if err := c.do(ctx, "POST", "/api/v1/images/pull", map[string]string{"image": image}, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 // StreamEvent is a single SSE event from the run/stream endpoint.
 type StreamEvent struct {
 	Type       string `json:"type"`        // "stdout", "stderr", or "done"

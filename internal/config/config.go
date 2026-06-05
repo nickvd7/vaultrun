@@ -114,12 +114,13 @@ type SSOConfig struct {
 	OIDCScopes       []string
 
 	// SAML 2.0 Service Provider
-	SAMLEnabled        bool
-	SAMLRootURL        string // SAML_ROOT_URL — public base URL of this server
-	SAMLEntityID       string // SAML_ENTITY_ID (default: SAML_ROOT_URL/auth/saml/metadata)
-	SAMLIDPMetadataURL string // SAML_IDP_METADATA_URL — URL of the IdP metadata XML
-	SAMLCertFile       string // SAML_CERT_FILE — PEM certificate for this SP
-	SAMLKeyFile        string // SAML_KEY_FILE  — PEM private key for this SP
+	SAMLEnabled          bool
+	SAMLRootURL          string // SAML_ROOT_URL — public base URL of this server
+	SAMLEntityID         string // SAML_ENTITY_ID (default: SAML_ROOT_URL/auth/saml/metadata)
+	SAMLIDPMetadataURL   string // SAML_IDP_METADATA_URL — URL of the IdP metadata XML
+	SAMLIDPMetadataFile  string // SAML_IDP_METADATA_FILE — local file path (preferred; avoids live-URL MITM)
+	SAMLCertFile         string // SAML_CERT_FILE — PEM certificate for this SP
+	SAMLKeyFile          string // SAML_KEY_FILE  — PEM private key for this SP
 
 	// Session cookie
 	SessionSecret  string // SSO_SESSION_SECRET — ≥32 bytes; used to sign session JWTs
@@ -245,6 +246,7 @@ func Load() (*Config, error) {
 		SSO: func() SSOConfig {
 			oidcIssuer := getEnv("OIDC_ISSUER_URL", "")
 			samlMeta := getEnv("SAML_IDP_METADATA_URL", "")
+			samlMetaFile := getEnv("SAML_IDP_METADATA_FILE", "")
 			samlCert := getEnv("SAML_CERT_FILE", "")
 			samlKey := getEnv("SAML_KEY_FILE", "")
 			tlsCert := getEnv("TLS_CERT_FILE", "")
@@ -253,19 +255,21 @@ func Load() (*Config, error) {
 			sessionSecure, _ := strconv.ParseBool(getEnv("SSO_SESSION_SECURE", fmt.Sprintf("%v", tlsActive)))
 			maxAge, _ := strconv.Atoi(getEnv("SSO_SESSION_MAX_AGE_HOURS", "24"))
 			scopes := splitAndTrim(getEnv("OIDC_SCOPES", "openid,email,profile"))
+			samlMetaConfigured := (samlMeta != "" || samlMetaFile != "") && samlCert != "" && samlKey != ""
 			return SSOConfig{
-				OIDCEnabled:        oidcIssuer != "",
-				OIDCIssuerURL:      oidcIssuer,
-				OIDCClientID:       getEnv("OIDC_CLIENT_ID", ""),
-				OIDCClientSecret:   getEnv("OIDC_CLIENT_SECRET", ""),
-				OIDCRedirectURL:    getEnv("OIDC_REDIRECT_URL", ""),
-				OIDCScopes:         scopes,
-				SAMLEnabled:        samlMeta != "" && samlCert != "" && samlKey != "",
-				SAMLRootURL:        getEnv("SAML_ROOT_URL", ""),
-				SAMLEntityID:       getEnv("SAML_ENTITY_ID", ""),
-				SAMLIDPMetadataURL: samlMeta,
-				SAMLCertFile:       samlCert,
-				SAMLKeyFile:        samlKey,
+				OIDCEnabled:          oidcIssuer != "",
+				OIDCIssuerURL:        oidcIssuer,
+				OIDCClientID:         getEnv("OIDC_CLIENT_ID", ""),
+				OIDCClientSecret:     getEnv("OIDC_CLIENT_SECRET", ""),
+				OIDCRedirectURL:      getEnv("OIDC_REDIRECT_URL", ""),
+				OIDCScopes:           scopes,
+				SAMLEnabled:          samlMetaConfigured,
+				SAMLRootURL:          getEnv("SAML_ROOT_URL", ""),
+				SAMLEntityID:         getEnv("SAML_ENTITY_ID", ""),
+				SAMLIDPMetadataURL:   samlMeta,
+				SAMLIDPMetadataFile:  samlMetaFile,
+				SAMLCertFile:         samlCert,
+				SAMLKeyFile:          samlKey,
 				SessionSecret:      getEnv("SSO_SESSION_SECRET", ""),
 				SessionMaxAge:      maxAge,
 				SessionSecure:      sessionSecure,

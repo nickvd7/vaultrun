@@ -163,9 +163,12 @@ When OIDC or SAML is configured, the following security controls apply:
 | Session expiry | Configurable via `SSO_SESSION_MAX_AGE_HOURS`; default 24 hours |
 | User → API key | Each SSO identity maps to a dedicated VaultRun API key; the key is looked up by primary key UUID from the session JWT on every request |
 | SAML signature | `crewjam/saml` validates `goxmldsig` XMLDSig on every assertion |
+| SAML metadata source | `SAML_IDP_METADATA_FILE` loads IdP metadata from a local file (eliminates live-URL MITM risk); `SAML_IDP_METADATA_URL` is the fallback for convenience |
+| OIDC token verification | ID token signature verified against IdP JWKS; `iss`, `aud`, `exp`, and `nonce` validated; JWKS cached 15 min with stale-set fallback |
+| Session jti + revocation | Every session JWT carries a unique `jti`; logout adds it to Redis (TTL = remaining session lifetime) — stolen tokens are rejected immediately after logout when `REDIS_ADDR` is configured |
 | Key re-issue | If the API key linked to an SSO user is revoked, a new key is created automatically on next login |
 | Audit logging | Every `sso_login` event is written to the audit trail with provider and actor |
-| Server validation required | `SSO_SESSION_SECRET` must be set; server refuses to start if it is empty and SSO is enabled |
+| Server validation required | `SSO_SESSION_SECRET` must be ≥32 bytes; server refuses to start if it is empty or too short and SSO is enabled |
 
 **SSO does not grant master key privileges.** SSO users are regular API key actors
 subject to the same RBAC and rate limits as any other key.
@@ -220,6 +223,8 @@ Audit logs have no update or delete endpoints.
 14. Configure `CORS_ALLOWED_ORIGINS` to include only your frontend's origin — prevents cross-origin cookie theft
 15. Use short `SSO_SESSION_MAX_AGE_HOURS` (8–24 h) and ensure users re-authenticate on sensitive actions
 16. For SAML: use a 2048-bit RSA SP key minimum; rotate annually
+17. For SAML: set `SAML_IDP_METADATA_FILE` to a locally trusted copy of the IdP metadata XML — avoids the MITM risk of fetching from a live URL on every restart
+18. Set `REDIS_ADDR` when using SSO — enables server-side session revocation so that logout immediately invalidates the JWT regardless of its expiry time
 17. Verify your IdP enforces MFA before trusting SSO assertions for admin-level API keys
 
 **MCP server (HTTP transport):**

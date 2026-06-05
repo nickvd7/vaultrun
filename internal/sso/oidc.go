@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -31,6 +32,11 @@ type OIDCProvider struct {
 	authURL  string
 	tokenURL string
 	jwksURL  string
+
+	// JWKS cache — refreshed every 15 minutes; stale set used on fetch errors.
+	jwksMu        sync.RWMutex
+	jwksSet       jwk.Set
+	jwksFetchedAt time.Time
 }
 
 // IDTokenClaims contains the relevant fields from a verified OIDC ID token.
@@ -158,16 +164,49 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce s
 	return p.verifyIDToken(ctx, tr.IDToken, nonce)
 }
 
-// verifyIDToken fetches the IdP's JWKS, verifies the ID token signature,
-// and validates iss, aud, exp, and nonce claims.
+// cachedJWKS returns the cached JWKS key set, refreshing if older than 15 minutes.
+// On fetch failure it falls back to the last-known good set so logins are not
+// blocked by transient IdP outages.
+func (p *OIDCProvider) cachedJWKS(ctx context.Context) (jwk.Set, error) {
+	const jwksTTL = 15 * time.Minute
+
+	p.jwksMu.RLock()
+	if p.jwksSet != nil && time.Since(p.jwksFetchedAt) < jwksTTL {
+		ks := p.jwksSet
+		p.jwksMu.RUnlock()
+		return ks, nil
+	}
+	p.jwksMu.RUnlock()
+
+	p.jwksMu.Lock()
+	defer p.jwksMu.Unlock()
+	// Double-check under the write lock.
+	if p.jwksSet != nil && time.Since(p.jwksFetchedAt) < jwksTTL {
+		return p.jwksSet, nil
+	}
+	ks, err := jwk.Fetch(ctx, p.jwksURL)
+	if err != nil {
+		if p.jwksSet != nil {
+			// Return stale cache rather than blocking logins on a transient error.
+			return p.jwksSet, nil
+		}
+		return nil, fmt.Errorf("fetch JWKS from %s: %w", p.jwksURL, err)
+	}
+	p.jwksSet = ks
+	p.jwksFetchedAt = time.Now()
+	return ks, nil
+}
+
+// verifyIDToken fetches (or returns cached) IdP JWKS, verifies the ID token
+// signature, and validates iss, aud, exp, and nonce claims.
 func (p *OIDCProvider) verifyIDToken(ctx context.Context, raw, nonce string) (*IDTokenClaims, error) {
 	if p.jwksURL == "" {
 		return nil, errors.New("JWKS URL not available; cannot verify ID token")
 	}
 
-	keySet, err := jwk.Fetch(ctx, p.jwksURL)
+	keySet, err := p.cachedJWKS(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch JWKS from %s: %w", p.jwksURL, err)
+		return nil, err
 	}
 
 	tok, err := jwt.Parse([]byte(raw),

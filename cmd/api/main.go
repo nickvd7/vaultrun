@@ -285,10 +285,22 @@ func main() {
 				"length", len(cfg.SSO.SessionSecret))
 			os.Exit(1)
 		}
+		// Session revocation store — uses Redis when available so that logout
+		// immediately invalidates the JWT. Without Redis, logout still clears
+		// the browser cookie but a stolen token remains valid until expiry.
+		var revokeStore sso.RevocationStore
+		if cfg.Redis.Addr != "" {
+			revokeStore = sso.NewRedisRevocationStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+			slog.Info("SSO session revocation enabled", "backend", "redis")
+		} else {
+			slog.Warn("SSO session revocation disabled — set REDIS_ADDR to enable server-side logout invalidation")
+		}
+
 		sessionMgr := sso.NewSessionManager(
 			[]byte(cfg.SSO.SessionSecret),
 			cfg.SSO.SessionMaxAge,
 			cfg.SSO.SessionSecure,
+			revokeStore,
 		)
 		var oidcProv *sso.OIDCProvider
 		if cfg.SSO.OIDCEnabled {
@@ -309,11 +321,16 @@ func main() {
 		}
 		var samlProv *sso.SAMLProvider
 		if cfg.SSO.SAMLEnabled {
+			metaSrc := cfg.SSO.SAMLIDPMetadataFile
+			if metaSrc == "" {
+				metaSrc = cfg.SSO.SAMLIDPMetadataURL
+			}
 			p, err := sso.NewSAMLProvider(
 				context.Background(),
 				cfg.SSO.SAMLRootURL,
 				cfg.SSO.SAMLEntityID,
 				cfg.SSO.SAMLIDPMetadataURL,
+				cfg.SSO.SAMLIDPMetadataFile,
 				cfg.SSO.SAMLCertFile,
 				cfg.SSO.SAMLKeyFile,
 			)
@@ -322,7 +339,7 @@ func main() {
 				os.Exit(1)
 			}
 			samlProv = p
-			slog.Info("SAML enabled", "metadata", cfg.SSO.SAMLIDPMetadataURL)
+			slog.Info("SAML enabled", "metadata_source", metaSrc)
 		}
 		authH = handlers.NewAuthHandler(db, oidcProv, samlProv, sessionMgr, al)
 	}

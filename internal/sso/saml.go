@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/crewjam/saml"
@@ -31,11 +32,12 @@ type SAMLClaims struct {
 
 // NewSAMLProvider creates a SAML Service Provider.
 //
-//   - rootURL:       public base URL of this server (e.g. "https://api.example.com")
-//   - entityID:      SP entity ID (defaults to rootURL/auth/saml/metadata)
-//   - idpMetaURL:    URL of the IdP metadata XML
-//   - certFile/key:  PEM cert + key for SP-side signing/encryption
-func NewSAMLProvider(ctx context.Context, rootURL, entityID, idpMetaURL, certFile, keyFile string) (*SAMLProvider, error) {
+//   - rootURL:      public base URL of this server (e.g. "https://api.example.com")
+//   - entityID:     SP entity ID (defaults to rootURL/auth/saml/metadata)
+//   - idpMetaURL:   URL of the IdP metadata XML (used only when idpMetaFile is empty)
+//   - idpMetaFile:  local file path to the IdP metadata XML (preferred; avoids live-URL MITM risk)
+//   - certFile/key: PEM cert + key for SP-side signing/encryption
+func NewSAMLProvider(ctx context.Context, rootURL, entityID, idpMetaURL, idpMetaFile, certFile, keyFile string) (*SAMLProvider, error) {
 	root, err := url.Parse(rootURL)
 	if err != nil {
 		return nil, fmt.Errorf("saml: invalid root URL: %w", err)
@@ -54,9 +56,9 @@ func NewSAMLProvider(ctx context.Context, rootURL, entityID, idpMetaURL, certFil
 		return nil, fmt.Errorf("saml: private key must be RSA")
 	}
 
-	meta, err := fetchIDPMetadata(ctx, idpMetaURL)
+	meta, err := loadIDPMetadata(ctx, idpMetaURL, idpMetaFile)
 	if err != nil {
-		return nil, fmt.Errorf("saml: fetch IdP metadata: %w", err)
+		return nil, fmt.Errorf("saml: load IdP metadata: %w", err)
 	}
 
 	if entityID == "" {
@@ -158,6 +160,23 @@ func attrValues(attr saml.Attribute) []string {
 		}
 	}
 	return out
+}
+
+// loadIDPMetadata loads IdP metadata from a local file (preferred) or from a
+// remote URL. Using a local file avoids MITM risk on the metadata URL and is
+// recommended for production deployments (SAML_IDP_METADATA_FILE).
+func loadIDPMetadata(ctx context.Context, metaURL, metaFile string) (*saml.EntityDescriptor, error) {
+	if metaFile != "" {
+		data, err := os.ReadFile(metaFile)
+		if err != nil {
+			return nil, fmt.Errorf("read IdP metadata file %q: %w", metaFile, err)
+		}
+		return samlsp.ParseMetadata(data)
+	}
+	if metaURL == "" {
+		return nil, fmt.Errorf("either SAML_IDP_METADATA_FILE or SAML_IDP_METADATA_URL must be set")
+	}
+	return fetchIDPMetadata(ctx, metaURL)
 }
 
 func fetchIDPMetadata(ctx context.Context, metaURL string) (*saml.EntityDescriptor, error) {

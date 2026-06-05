@@ -8,14 +8,17 @@ import (
 )
 
 type config struct {
-	port          string
-	githubToken   string
-	webhookSecret string
-	vrBaseURL     string
-	vrAPIKey      string
-	dockerImage   string
-	testCommands  [][]string // e.g. [["go","test","./..."],["go","vet","./..."]]
-	maxRunSeconds int
+	port            string
+	githubToken     string
+	webhookSecret   string
+	vrBaseURL       string
+	vrAPIKey        string
+	dockerImage     string
+	testCommands    [][]string // e.g. [["go","test","./..."],["go","vet","./..."]]
+	maxRunSeconds   int
+	slackWebhookURL string // SLACK_WEBHOOK_URL — optional
+	teamsWebhookURL string // TEAMS_WEBHOOK_URL — optional
+	notifyOnSuccess bool   // NOTIFY_ON_SUCCESS — default true
 }
 
 func loadConfig() (*config, error) {
@@ -53,6 +56,10 @@ func loadConfig() (*config, error) {
 			return nil, fmt.Errorf("CI_TEST_COMMANDS[%d] must not be empty", i)
 		}
 	}
+
+	cfg.slackWebhookURL = os.Getenv("SLACK_WEBHOOK_URL")
+	cfg.teamsWebhookURL = os.Getenv("TEAMS_WEBHOOK_URL")
+	cfg.notifyOnSuccess = getEnv("NOTIFY_ON_SUCCESS", "true") != "false"
 
 	return cfg, nil
 }

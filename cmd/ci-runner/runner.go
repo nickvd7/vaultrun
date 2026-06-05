@@ -151,7 +151,7 @@ func scrubToken(s, token string) string {
 	return strings.ReplaceAll(s, token, "[REDACTED]")
 }
 
-// postResults writes the PR comment and final commit status.
+// postResults writes the PR comment, final commit status, and chat notifications.
 func postResults(ctx context.Context, cfg *config, gh *githubClient, pr prRun, steps []stepResult, pass bool, log *slog.Logger) {
 	comment := buildComment(pr, steps, pass)
 	if err := gh.PostComment(ctx, pr.owner, pr.repo, pr.number, comment); err != nil {
@@ -173,6 +173,9 @@ func postResults(ctx context.Context, cfg *config, gh *githubClient, pr prRun, s
 	if err := gh.SetCommitStatus(ctx, pr.owner, pr.repo, pr.sha, state, desc, statusContext); err != nil {
 		log.Error("ci: set final status failed", "err", err)
 	}
+
+	sendNotifications(ctx, cfg, pr, steps, pass)
+
 	log.Info("ci: run complete", "passed", pass, "steps", len(steps))
 }
 

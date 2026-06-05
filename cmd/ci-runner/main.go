@@ -20,6 +20,10 @@
 //	                        e.g. '[["go","test","./..."],["go","vet","./..."]]'
 //	                        (default: [["make","test"]])
 //	PORT                    HTTP listen address (default: :8080)
+//	SLACK_WEBHOOK_URL       Slack Incoming Webhook URL (optional)
+//	TEAMS_WEBHOOK_URL       Microsoft Teams Workflows webhook URL (optional)
+//	NOTIFY_ON_SUCCESS       Set to "false" to suppress success notifications
+//	                        and only alert on failures (default: true)
 package main
 
 import (

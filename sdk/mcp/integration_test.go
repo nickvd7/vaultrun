@@ -288,3 +288,86 @@ func TestArgsExtraUnknownFieldsIgnored(t *testing.T) {
 		t.Errorf("extra fields should be ignored, got error: %v", res.Content)
 	}
 }
+
+// TestIntegrationListImages: list_images returns image list from mock API.
+func TestIntegrationListImages(t *testing.T) {
+	srv, ts := newMockServer(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/docker/images" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"images": []map[string]any{
+				{"id": "sha256:abc", "tags": []string{"python:3.12-slim"}, "size_bytes": 123456789, "created_at": time.Now()},
+				{"id": "sha256:def", "tags": []string{"node:20-slim"}, "size_bytes": 98765432, "created_at": time.Now()},
+			},
+			"total": 2,
+		})
+	})
+	defer ts.Close()
+
+	res, err := srv.callTool(context.Background(), "list_images", argsJSON(nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := res.Content[0].Text
+	if !strings.Contains(text, "python:3.12-slim") || !strings.Contains(text, "node:20-slim") {
+		t.Errorf("expected image tags in output, got: %s", text)
+	}
+}
+
+// TestIntegrationGetSessionStats: get_session_stats formats CPU/mem/net stats.
+func TestIntegrationGetSessionStats(t *testing.T) {
+	srv, ts := newMockServer(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/stats") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"cpu_percent":         12.5,
+			"memory_bytes":        134217728,
+			"memory_limit_bytes":  536870912,
+			"network_rx_bytes":    1024,
+			"network_tx_bytes":    512,
+		})
+	})
+	defer ts.Close()
+
+	res, err := srv.callTool(context.Background(), "get_session_stats",
+		argsJSON(map[string]string{"session_id": "s1"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := res.Content[0].Text
+	if !strings.Contains(text, "12.50%") || !strings.Contains(text, "128.0 MB") {
+		t.Errorf("expected stats in output, got: %s", text)
+	}
+}
+
+// TestIntegrationGithubPostCommentMissingToken: without a token the GitHub call
+// fails; the error propagates (no panic).
+func TestIntegrationGithubPostCommentMissingFields(t *testing.T) {
+	srv := newTestServer()
+	cases := []struct {
+		args    map[string]string
+		wantErr string
+	}{
+		{map[string]string{"number": "1", "body": "hi"}, "repo is required"},
+		{map[string]string{"repo": "o/r", "body": "hi"}, "number is required"},
+		{map[string]string{"repo": "o/r", "number": "1"}, "body is required"},
+		{map[string]string{"repo": "notvalid", "number": "1", "body": "hi"}, "owner/repo format"},
+	}
+	for _, tc := range cases {
+		_, err := srv.callTool(context.Background(), "github_post_comment", argsJSON(tc.args))
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("args %v: want error containing %q, got %v", tc.args, tc.wantErr, err)
+		}
+	}
+}
+
+// TestIntegrationRunGithubRepoMissingRepo: missing repo param returns validation error.
+func TestIntegrationRunGithubRepoMissingRepo(t *testing.T) {
+	srv := newTestServer()
+	_, err := srv.callTool(context.Background(), "run_github_repo", argsJSON(nil))
+	if err == nil || !strings.Contains(err.Error(), "repo is required") {
+		t.Errorf("expected 'repo is required', got: %v", err)
+	}
+}

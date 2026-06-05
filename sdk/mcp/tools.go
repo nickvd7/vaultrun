@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+
 // toolDefinitions returns the full list of MCP tools this server exposes.
 func toolDefinitions() []mcpTool {
 	return []mcpTool{

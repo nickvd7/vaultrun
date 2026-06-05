@@ -337,7 +337,7 @@ func TestIntegrationGetSessionStats(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	text := res.Content[0].Text
-	if !strings.Contains(text, "12.50%") || !strings.Contains(text, "128.0 MB") {
+	if !strings.Contains(text, "12.50%") || !strings.Contains(text, "128.0 MB / 512.0 MB") {
 		t.Errorf("expected stats in output, got: %s", text)
 	}
 }

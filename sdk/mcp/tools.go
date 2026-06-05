@@ -1258,18 +1258,29 @@ func (s *server) toolGetSessionStats(ctx context.Context, args map[string]string
 		return mcpToolResult{}, err
 	}
 	text := fmt.Sprintf(
-		"cpu_percent: %.2f\n"+
-			"memory_bytes: %d\n"+
-			"memory_limit_bytes: %d\n"+
-			"network_rx_bytes: %d\n"+
-			"network_tx_bytes: %d",
+		"cpu: %.2f%%\n"+
+			"memory: %.1f MB / %.1f MB\n"+
+			"network rx: %s  tx: %s",
 		stats.CPUPercent,
-		stats.MemoryBytes,
-		stats.MemoryLimitBytes,
-		stats.NetworkRxBytes,
-		stats.NetworkTxBytes,
+		float64(stats.MemoryBytes)/1024/1024,
+		float64(stats.MemoryLimitBytes)/1024/1024,
+		fmtBytes(stats.NetworkRxBytes),
+		fmtBytes(stats.NetworkTxBytes),
 	)
 	return textResult(text), nil
+}
+
+func fmtBytes(b uint64) string {
+	switch {
+	case b >= 1024*1024*1024:
+		return fmt.Sprintf("%.1f GB", float64(b)/1024/1024/1024)
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/1024/1024)
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string) (mcpToolResult, error) {

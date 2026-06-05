@@ -33,12 +33,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Server-side API proxy** (`apps/frontend/src/app/api/proxy/[...path]/route.ts`) — all dashboard API calls routed through a Next.js server-side proxy; `VAULTRUN_API_KEY` is never exposed in the browser bundle
 - Docker Compose: `VAULTRUN_API_URL` and `VAULTRUN_API_KEY` added to frontend service
 
+### Security fixes (SSO hardening — applied after initial implementation)
+
+- **C-1** — SAML InResponseTo validation: `LoginURL` now returns the `AuthnRequest` ID; it is stored in a `SameSite=Strict` HttpOnly cookie and passed to `ParseResponse`, preventing SAML response replay attacks
+- **C-2** — OIDC ID token signature verified against IdP JWKS (`lestrrat-go/jwx/v3`); `iss`, `aud`, `exp`, and `nonce` claims validated — forged tokens are rejected regardless of TLS state
+- **H-2** — IdP `error` query parameter no longer reflected in OIDC callback response (attacker-controlled); logged server-side via `slog.Warn` including `error_description`
+- **H-3** — Server-side session invalidation: every JWT carries a unique `jti`; `logout` adds it to Redis (TTL = remaining session lifetime) so stolen tokens are immediately rejected — requires `REDIS_ADDR`; graceful no-op fallback when Redis is absent
+- **H-4** — `SSO_SESSION_SECRET` minimum length enforced at startup: server exits if secret is shorter than 32 bytes
+- **H-5** — `SameSite=Lax` on session cookie; `SameSite=Strict` on all pre-auth cookies (`oidc_state`, `oidc_verifier`, `oidc_nonce`, `saml_request_id`); deletion uses matching flags to ensure browser compliance
+- **H-6** — OIDC `nonce` generated, stored in cookie, sent in authorization URL, and verified in JWKS-validated ID token — prevents ID token replay at the token endpoint
+- **M-1** — Removed dead `authpkg.Validate("","")` call in SSO middleware branch that issued a spurious DB query per SSO-authenticated request
+- **M-2** — `upsertSSOUser` wrapped in `BEGIN … SELECT FOR UPDATE … COMMIT` transaction; eliminates TOCTOU race on concurrent first-logins
+- **M-3** — `Secure` cookie flag derived from `sessionMgr.Secure()` (TLS state) rather than whether the session object is non-nil; deletion uses the same flag as creation
+- **M-5** — `SAML_IDP_METADATA_FILE` loads IdP metadata from a local file, eliminating MITM risk on the live metadata URL; `SAML_IDP_METADATA_URL` remains the fallback
+- **M-6** — `email` included in the existing-user `UPDATE` so IdP email changes are reflected in audit log actor entries
+- **L-1** — `RateLimit(30)` applied to OIDC login/callback, SAML login, and SAML ACS endpoints
+- **L-2** — `GenerateState` increased from 16 to 32 bytes (256 bits, per RFC 9126)
+- **L-3** — IdP `error_description` parameter logged server-side for diagnostics (not returned to client)
+- **L-4** — `GET /auth/me` uses API key UUID already set in Gin context by `APIKeyAuth` middleware instead of re-parsing the session JWT
+- **L-6** — `POST /auth/saml/acs` validates `Content-Type: application/x-www-form-urlencoded` and returns `415` for other content types
+- **I-2** — OIDC JWKS key set cached for 15 minutes with double-checked locking; stale cache returned on transient fetch errors to avoid blocking logins during IdP downtime
+
 ### Changed
 
 - `docs/configuration.md` — SSO, multi-region, and MCP server sections added
-- `docs/security.md` — SSO security model and updated production checklist
+- `docs/security.md` — SSO security model, updated controls table, and production checklist extended to 21 items
 - `docs/roadmap.md` — v0.7 (MCP/CI/DB/AWS) and v0.8 (dashboard) marked complete
-- `.env.example` — SSO, multi-region, MCP server, CI runner, and frontend proxy sections
+- `.env.example` — SSO, multi-region, MCP server, CI runner, frontend proxy, and SAML metadata file sections
 
 ---
 

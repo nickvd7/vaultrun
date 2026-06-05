@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -114,7 +115,14 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 
 	code := c.Query("code")
 	if code == "" {
-		// Do not reflect raw IdP error strings — they are attacker-controlled.
+		// Log IdP error details server-side for diagnostics; never reflect them
+		// to the client (attacker-controlled query parameters).
+		if errCode := c.Query("error"); errCode != "" {
+			slog.Warn("oidc callback: IdP returned error",
+				"error", errCode,
+				"error_description", c.Query("error_description"),
+			)
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "authentication failed"})
 		return
 	}
@@ -195,6 +203,13 @@ func (h *AuthHandler) SAMLACS(c *gin.Context) {
 		return
 	}
 
+	// SAML HTTP-POST binding requires form-encoded body. Reject other content
+	// types early so ParseForm cannot be confused by malformed payloads.
+	if c.ContentType() != "application/x-www-form-urlencoded" {
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "Content-Type must be application/x-www-form-urlencoded"})
+		return
+	}
+
 	// Retrieve and immediately clear the stored AuthnRequest ID.
 	requestID, _ := c.Cookie("saml_request_id")
 	http.SetCookie(c.Writer, &http.Cookie{Name: "saml_request_id", Value: "", MaxAge: -1, Path: "/auth/saml", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
@@ -228,17 +243,19 @@ func (h *AuthHandler) SAMLACS(c *gin.Context) {
 
 // Me returns the authenticated caller's SSO profile (requires active session).
 func (h *AuthHandler) Me(c *gin.Context) {
-	claims, err := h.session.Get(c)
-	if err != nil || claims == nil {
+	// APIKeyAuth middleware has already authenticated the caller and stored the
+	// API key UUID as "actor" — reuse it instead of re-parsing the JWT.
+	apiKeyID := c.GetString("actor")
+	if apiKeyID == "" || apiKeyID == "unknown" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated via SSO"})
 		return
 	}
 
 	var user models.SSOUser
-	err = h.db.GetContext(c.Request.Context(), &user,
+	err := h.db.GetContext(c.Request.Context(), &user,
 		`SELECT id, email, name, provider, created_at, last_login_at
 		   FROM sso_users WHERE api_key_id = $1`,
-		claims.APIKeyID,
+		apiKeyID,
 	)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "SSO user not found"})

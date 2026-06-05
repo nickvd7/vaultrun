@@ -27,7 +27,7 @@ type OIDCProvider struct {
 	redirectURL  string
 	scopes       []string
 
-	// Populated by Discover()
+	// Populated by discover()
 	authURL  string
 	tokenURL string
 	jwksURL  string
@@ -97,8 +97,9 @@ func (p *OIDCProvider) discover(ctx context.Context) error {
 }
 
 // AuthCodeURL returns the URL to redirect the user to for OIDC login.
-// state is a random nonce; codeVerifier is the PKCE verifier (keep it in session).
-func (p *OIDCProvider) AuthCodeURL(state, codeVerifier string) string {
+// state prevents CSRF; codeVerifier is the PKCE verifier; nonce prevents
+// ID token replay (OIDC Core §3.1.2.1).
+func (p *OIDCProvider) AuthCodeURL(state, codeVerifier, nonce string) string {
 	challenge := pkceChallenge(codeVerifier)
 	v := url.Values{}
 	v.Set("response_type", "code")
@@ -108,6 +109,7 @@ func (p *OIDCProvider) AuthCodeURL(state, codeVerifier string) string {
 	v.Set("state", state)
 	v.Set("code_challenge", challenge)
 	v.Set("code_challenge_method", "S256")
+	v.Set("nonce", nonce)
 	return p.authURL + "?" + v.Encode()
 }
 
@@ -118,7 +120,8 @@ type tokenResponse struct {
 }
 
 // Exchange swaps an authorization code for an ID token and returns the claims.
-func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier string) (*IDTokenClaims, error) {
+// nonce must match the value sent in AuthCodeURL to prevent token replay.
+func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier, nonce string) (*IDTokenClaims, error) {
 	body := url.Values{}
 	body.Set("grant_type", "authorization_code")
 	body.Set("code", code)
@@ -152,13 +155,12 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier string) 
 		return nil, errors.New("no id_token in token response")
 	}
 
-	return p.verifyIDToken(ctx, tr.IDToken)
+	return p.verifyIDToken(ctx, tr.IDToken, nonce)
 }
 
 // verifyIDToken fetches the IdP's JWKS, verifies the ID token signature,
-// and validates iss, aud, exp claims. This prevents forged tokens from
-// granting access even if the TLS connection is compromised.
-func (p *OIDCProvider) verifyIDToken(ctx context.Context, raw string) (*IDTokenClaims, error) {
+// and validates iss, aud, exp, and nonce claims.
+func (p *OIDCProvider) verifyIDToken(ctx context.Context, raw, nonce string) (*IDTokenClaims, error) {
 	if p.jwksURL == "" {
 		return nil, errors.New("JWKS URL not available; cannot verify ID token")
 	}
@@ -189,6 +191,15 @@ func (p *OIDCProvider) verifyIDToken(ctx context.Context, raw string) (*IDTokenC
 	_ = tok.Get("aud", &audVal)
 	if !audienceContains(audVal, p.clientID) {
 		return nil, errors.New("id_token aud does not contain client_id")
+	}
+
+	// Validate nonce — prevents ID token replay at the token endpoint
+	if nonce != "" {
+		var nonceVal any
+		_ = tok.Get("nonce", &nonceVal)
+		if got, _ := nonceVal.(string); got != nonce {
+			return nil, errors.New("id_token nonce mismatch")
+		}
 	}
 
 	var subVal any
@@ -254,6 +265,15 @@ func GenerateCodeVerifier() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// GenerateNonce returns a cryptographically random nonce for OIDC replay protection.
+func GenerateNonce() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 func pkceChallenge(verifier string) string {

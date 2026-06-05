@@ -64,30 +64,31 @@ func (h *AuthHandler) OIDCLogin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate PKCE verifier"})
 		return
 	}
+	nonce, err := sso.GenerateNonce()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate nonce"})
+		return
+	}
 
-	// SameSite=Strict for pre-auth cookies: these are consumed only on the
-	// callback redirect from the IdP which is a top-level navigation — no
-	// cross-site subresource requests need them.
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "oidc_state",
-		Value:    state,
-		MaxAge:   600,
-		Path:     "/auth/oidc",
-		Secure:   h.secure,
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "oidc_verifier",
-		Value:    verifier,
-		MaxAge:   600,
-		Path:     "/auth/oidc",
-		Secure:   h.secure,
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	// SameSite=Strict for pre-auth cookies: consumed only on the callback
+	// redirect from the IdP (top-level navigation), never on cross-site requests.
+	for _, ck := range []struct{ name, val string }{
+		{"oidc_state", state},
+		{"oidc_verifier", verifier},
+		{"oidc_nonce", nonce},
+	} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     ck.name,
+			Value:    ck.val,
+			MaxAge:   600,
+			Path:     "/auth/oidc",
+			Secure:   h.secure,
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+		})
+	}
 
-	c.Redirect(http.StatusFound, h.oidc.AuthCodeURL(state, verifier))
+	c.Redirect(http.StatusFound, h.oidc.AuthCodeURL(state, verifier, nonce))
 }
 
 // OIDCCallback handles the authorization code callback from the IdP.
@@ -104,10 +105,12 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 	verifier, _ := c.Cookie("oidc_verifier")
+	nonce, _ := c.Cookie("oidc_nonce")
 
-	// Clear the one-time pre-auth cookies using the same flags they were set with.
-	http.SetCookie(c.Writer, &http.Cookie{Name: "oidc_state", Value: "", MaxAge: -1, Path: "/auth/oidc", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	http.SetCookie(c.Writer, &http.Cookie{Name: "oidc_verifier", Value: "", MaxAge: -1, Path: "/auth/oidc", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	// Clear all one-time pre-auth cookies with matching flags.
+	for _, name := range []string{"oidc_state", "oidc_verifier", "oidc_nonce"} {
+		http.SetCookie(c.Writer, &http.Cookie{Name: name, Value: "", MaxAge: -1, Path: "/auth/oidc", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	}
 
 	code := c.Query("code")
 	if code == "" {
@@ -116,7 +119,7 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.oidc.Exchange(c.Request.Context(), code, verifier)
+	claims, err := h.oidc.Exchange(c.Request.Context(), code, verifier, nonce)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "OIDC exchange failed"})
 		return

@@ -11,6 +11,8 @@ VaultRun is designed to safely execute untrusted AI agent code. The primary thre
 5. **Unauthorized API access** — agents accessing other sessions' data
 6. **Data exfiltration** — unauthorized network egress from sandboxed code
 7. **Malicious images** — container images that bypass sandbox controls
+8. **SSO identity spoofing** — forged OIDC tokens or SAML assertions to impersonate users
+9. **Session hijacking** — theft of session cookies to bypass API key authentication
 
 ## Mitigations
 
@@ -147,6 +149,27 @@ The HMAC-SHA256 signature is computed over the raw JSON request body using the
 configured secret. Receivers should verify this before processing the payload.
 Failed deliveries are retried with exponential backoff (up to 3 attempts).
 
+### SSO Authentication
+
+When OIDC or SAML is configured, the following security controls apply:
+
+| Control | Implementation |
+|---|---|
+| PKCE (OIDC) | `code_challenge_method=S256` — prevents authorization code interception |
+| State parameter | Random 128-bit nonce stored in a short-lived `HttpOnly` cookie; validated on callback to prevent CSRF |
+| Code verifier | Stored in a separate short-lived cookie; cleared after one use |
+| Session cookie | `HttpOnly`, `Secure` (when TLS active), `SameSite` defaults; signed HS256 JWT |
+| JWT signing | HS256 with `SSO_SESSION_SECRET` (≥32 bytes required) via `lestrrat-go/jwx/v3` |
+| Session expiry | Configurable via `SSO_SESSION_MAX_AGE_HOURS`; default 24 hours |
+| User → API key | Each SSO identity maps to a dedicated VaultRun API key; the key is looked up by primary key UUID from the session JWT on every request |
+| SAML signature | `crewjam/saml` validates `goxmldsig` XMLDSig on every assertion |
+| Key re-issue | If the API key linked to an SSO user is revoked, a new key is created automatically on next login |
+| Audit logging | Every `sso_login` event is written to the audit trail with provider and actor |
+| Server validation required | `SSO_SESSION_SECRET` must be set; server refuses to start if it is empty and SSO is enabled |
+
+**SSO does not grant master key privileges.** SSO users are regular API key actors
+subject to the same RBAC and rate limits as any other key.
+
 ### Audit Trail
 
 Every security-relevant event generates an immutable audit log:
@@ -178,6 +201,7 @@ Audit logs have no update or delete endpoints.
 
 ## Recommendations for Production
 
+**API server:**
 1. Run the API server as a non-root user with only `CAP_NET_ADMIN` (for iptables egress filtering)
 2. Enable TLS — either via `TLS_CERT_FILE`/`TLS_KEY_FILE` or a reverse proxy (nginx/caddy)
 3. Set `DB_SSL_MODE=verify-full` with a CA certificate
@@ -189,3 +213,17 @@ Audit logs have no update or delete endpoints.
 9. Monitor audit logs for anomalous patterns (unusual commands, high file download rates)
 10. Set up log rotation for workspace directories
 11. Use the Redis Streams backend (`REDIS_ADDR`) for async runs in production
+
+**SSO (when using OIDC or SAML):**
+12. Set `SSO_SESSION_SECRET` to a 32+ byte random value (`openssl rand -hex 32`)
+13. Set `SSO_SESSION_SECURE=true` (default when TLS is active) — session cookies must not travel over plaintext HTTP
+14. Configure `CORS_ALLOWED_ORIGINS` to include only your frontend's origin — prevents cross-origin cookie theft
+15. Use short `SSO_SESSION_MAX_AGE_HOURS` (8–24 h) and ensure users re-authenticate on sensitive actions
+16. For SAML: use a 2048-bit RSA SP key minimum; rotate annually
+17. Verify your IdP enforces MFA before trusting SSO assertions for admin-level API keys
+
+**MCP server (HTTP transport):**
+18. Always set `MCP_AUTH_TOKEN` when using `MCP_TRANSPORT=http`; the server refuses to start without it
+19. Set `MCP_TLS_CERT`/`MCP_TLS_KEY` or deploy behind a TLS-terminating proxy
+20. Set `MCP_ALLOWED_ORIGINS` to the specific origin(s) of your agent — never `*` in production
+21. Keep `MCP_RATE_LIMIT` at or below 60/min; lower for public-facing deployments

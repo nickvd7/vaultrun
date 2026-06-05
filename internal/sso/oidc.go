@@ -13,6 +13,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
 // OIDCProvider performs an OIDC Authorization Code flow with PKCE.
@@ -84,6 +87,9 @@ func (p *OIDCProvider) discover(ctx context.Context) error {
 	if doc.AuthorizationEndpoint == "" || doc.TokenEndpoint == "" {
 		return errors.New("discovery doc missing required endpoints")
 	}
+	if doc.JWKsURI == "" {
+		return errors.New("discovery doc missing jwks_uri — cannot verify ID tokens")
+	}
 	p.authURL = doc.AuthorizationEndpoint
 	p.tokenURL = doc.TokenEndpoint
 	p.jwksURL = doc.JWKsURI
@@ -146,37 +152,95 @@ func (p *OIDCProvider) Exchange(ctx context.Context, code, codeVerifier string) 
 		return nil, errors.New("no id_token in token response")
 	}
 
-	return parseIDToken(tr.IDToken)
+	return p.verifyIDToken(ctx, tr.IDToken)
 }
 
-// parseIDToken decodes the JWT payload without signature verification.
-// In production you should verify the signature against the IdP's JWKS.
-// For VaultRun the ID token is received directly from the IdP over TLS,
-// so the risk of token tampering without JWKS verification is minimal.
-// Full JWKS verification can be added by using lestrrat-go/jwx/v3 with the
-// jwksURL, which is already present in the module as a direct dependency.
-func parseIDToken(raw string) (*IDTokenClaims, error) {
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("malformed id_token")
+// verifyIDToken fetches the IdP's JWKS, verifies the ID token signature,
+// and validates iss, aud, exp claims. This prevents forged tokens from
+// granting access even if the TLS connection is compromised.
+func (p *OIDCProvider) verifyIDToken(ctx context.Context, raw string) (*IDTokenClaims, error) {
+	if p.jwksURL == "" {
+		return nil, errors.New("JWKS URL not available; cannot verify ID token")
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+
+	keySet, err := jwk.Fetch(ctx, p.jwksURL)
 	if err != nil {
-		return nil, fmt.Errorf("decode id_token payload: %w", err)
+		return nil, fmt.Errorf("fetch JWKS from %s: %w", p.jwksURL, err)
 	}
-	var claims IDTokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, fmt.Errorf("unmarshal id_token: %w", err)
+
+	tok, err := jwt.Parse([]byte(raw),
+		jwt.WithKeySet(keySet),
+		jwt.WithValidate(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("id_token verification failed: %w", err)
 	}
-	if claims.Sub == "" {
+
+	// Validate issuer
+	var issVal any
+	_ = tok.Get("iss", &issVal)
+	iss, _ := issVal.(string)
+	if iss != p.issuerURL {
+		return nil, fmt.Errorf("id_token iss %q does not match expected issuer", iss)
+	}
+
+	// Validate audience — aud may be a string or []string
+	var audVal any
+	_ = tok.Get("aud", &audVal)
+	if !audienceContains(audVal, p.clientID) {
+		return nil, errors.New("id_token aud does not contain client_id")
+	}
+
+	var subVal any
+	_ = tok.Get("sub", &subVal)
+	sub, _ := subVal.(string)
+	if sub == "" {
 		return nil, errors.New("id_token missing sub claim")
 	}
-	return &claims, nil
+
+	var emailVal, nameVal any
+	_ = tok.Get("email", &emailVal)
+	_ = tok.Get("name", &nameVal)
+
+	return &IDTokenClaims{
+		Sub:   sub,
+		Email: claimString(emailVal),
+		Name:  claimString(nameVal),
+	}, nil
 }
 
-// GenerateState returns a cryptographically random state parameter.
+// audienceContains checks whether clientID appears in a JWT aud claim,
+// which may be a string, []string, or []any after JSON parsing.
+func audienceContains(aud any, clientID string) bool {
+	switch v := aud.(type) {
+	case string:
+		return v == clientID
+	case []string:
+		for _, a := range v {
+			if a == clientID {
+				return true
+			}
+		}
+	case []any:
+		for _, a := range v {
+			if s, ok := a.(string); ok && s == clientID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func claimString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// GenerateState returns a cryptographically random state parameter (256 bits).
 func GenerateState() (string, error) {
-	b := make([]byte, 16)
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}

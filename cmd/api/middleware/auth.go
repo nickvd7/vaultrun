@@ -56,10 +56,6 @@ func APIKeyAuth(db *sqlx.DB, masterKey string, sessionMgr *sso.SessionManager) g
 		if sessionMgr != nil {
 			claims, err := sessionMgr.Get(c)
 			if err == nil && claims != nil {
-				apiKey, err := authpkg.Validate(c.Request.Context(), db, "")
-				// We have a key_id, not plaintext — look up directly by UUID.
-				_ = apiKey
-				_ = err
 				// Resolve claims.APIKeyID directly via DB lookup by primary key.
 				type keyRow struct {
 					ID   string `db:"id"`

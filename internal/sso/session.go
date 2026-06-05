@@ -40,7 +40,12 @@ func NewSessionManager(secret []byte, maxAgeHours int, secure bool) *SessionMana
 	}
 }
 
-// Set writes an encrypted session cookie to the response.
+// Secure returns whether the Secure flag is set on cookies (reflects TLS state).
+func (m *SessionManager) Secure() bool { return m.secure }
+
+// Set writes a signed JWT session cookie to the response.
+// SameSite=Lax prevents the cookie from being sent on cross-site subresource
+// requests while still allowing it on top-level navigations (e.g. OIDC redirects).
 func (m *SessionManager) Set(c *gin.Context, claims Claims) error {
 	now := time.Now()
 	tok, err := jwt.NewBuilder().
@@ -59,15 +64,15 @@ func (m *SessionManager) Set(c *gin.Context, claims Claims) error {
 		return err
 	}
 
-	c.SetCookie(
-		cookieName,
-		string(signed),
-		int(m.maxAge.Seconds()),
-		"/",
-		"",        // domain: empty = current host
-		m.secure,  // Secure flag
-		true,      // HttpOnly
-	)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     cookieName,
+		Value:    string(signed),
+		MaxAge:   int(m.maxAge.Seconds()),
+		Path:     "/",
+		Secure:   m.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	return nil
 }
 
@@ -109,7 +114,15 @@ func (m *SessionManager) Get(c *gin.Context) (*Claims, error) {
 
 // Clear deletes the session cookie.
 func (m *SessionManager) Clear(c *gin.Context) {
-	c.SetCookie(cookieName, "", -1, "/", "", m.secure, true)
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		Secure:   m.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func asString(v any) string {

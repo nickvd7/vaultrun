@@ -84,30 +84,40 @@ func (p *SAMLProvider) MetadataXML() ([]byte, error) {
 	return xml.MarshalIndent(meta, "", "  ")
 }
 
-// LoginURL returns the URL to redirect the browser to for SAML login.
-func (p *SAMLProvider) LoginURL() (string, error) {
+// LoginURL returns the redirect URL and the AuthnRequest ID.
+// The caller MUST store requestID in a short-lived HttpOnly cookie and pass it
+// back to ParseResponse; this allows InResponseTo validation to prevent replays.
+func (p *SAMLProvider) LoginURL() (redirectURL string, requestID string, err error) {
 	authReq, err := p.sp.MakeAuthenticationRequest(
 		p.sp.GetSSOBindingLocation(saml.HTTPRedirectBinding),
 		saml.HTTPRedirectBinding,
 		saml.HTTPPostBinding,
 	)
 	if err != nil {
-		return "", fmt.Errorf("saml: make auth request: %w", err)
+		return "", "", fmt.Errorf("saml: make auth request: %w", err)
 	}
 	redirect, err := authReq.Redirect("", &p.sp)
 	if err != nil {
-		return "", fmt.Errorf("saml: build redirect: %w", err)
+		return "", "", fmt.Errorf("saml: build redirect: %w", err)
 	}
-	return redirect.String(), nil
+	return redirect.String(), authReq.ID, nil
 }
 
 // ParseResponse validates the HTTP-POST binding SAMLResponse and extracts claims.
-func (p *SAMLProvider) ParseResponse(r *http.Request) (*SAMLClaims, error) {
+// requestID must be the AuthnRequest ID stored by LoginURL; passing it enables
+// InResponseTo validation which prevents SAML response replay attacks.
+// Pass an empty string only for IdP-initiated flows (AllowIDPInitiated = true).
+func (p *SAMLProvider) ParseResponse(r *http.Request, requestID string) (*SAMLClaims, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("saml: parse form: %w", err)
 	}
 
-	assertion, err := p.sp.ParseResponse(r, nil)
+	var possibleIDs []string
+	if requestID != "" {
+		possibleIDs = []string{requestID}
+	}
+
+	assertion, err := p.sp.ParseResponse(r, possibleIDs)
 	if err != nil {
 		return nil, fmt.Errorf("saml: parse response: %w", err)
 	}

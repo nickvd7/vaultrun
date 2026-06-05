@@ -280,6 +280,11 @@ func main() {
 			slog.Error("SSO is enabled but SSO_SESSION_SECRET is not set — refusing to start")
 			os.Exit(1)
 		}
+		if len(cfg.SSO.SessionSecret) < 32 {
+			slog.Error("SSO_SESSION_SECRET must be at least 32 bytes for HS256 security",
+				"length", len(cfg.SSO.SessionSecret))
+			os.Exit(1)
+		}
 		sessionMgr := sso.NewSessionManager(
 			[]byte(cfg.SSO.SessionSecret),
 			cfg.SSO.SessionMaxAge,

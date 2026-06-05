@@ -185,7 +185,84 @@ with HTTP 422.
 
 ---
 
-## Observability
+## SSO — OIDC / OpenID Connect
+
+OIDC is enabled when `OIDC_ISSUER_URL` is set together with the client credentials.
+After a successful OIDC login the server maps the user's `sub` claim to a VaultRun API
+key and sets a signed session cookie (`vaultrun_session`). Existing API key auth is
+unaffected.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OIDC_ISSUER_URL` | | IdP issuer URL — discovery is performed at `{issuer}/.well-known/openid-configuration` |
+| `OIDC_CLIENT_ID` | | OAuth2 client ID registered with the IdP |
+| `OIDC_CLIENT_SECRET` | | OAuth2 client secret |
+| `OIDC_REDIRECT_URL` | | Callback URL registered with the IdP (e.g. `https://api.example.com/auth/oidc/callback`) |
+| `OIDC_SCOPES` | `openid,email,profile` | Comma-separated OIDC scopes |
+
+**Supported IdPs:** Okta · Azure AD · Google Workspace · Keycloak · Auth0 · any OIDC-compliant IdP
+
+**OIDC flow:**
+1. `GET /auth/oidc/login` → browser redirects to IdP (PKCE + state cookie)
+2. IdP calls back at `GET /auth/oidc/callback?code=…&state=…`
+3. Server exchanges code for ID token, upserts `sso_users` row, sets session cookie
+4. User is redirected to `/`
+
+---
+
+## SSO — SAML 2.0
+
+SAML is enabled when `SAML_IDP_METADATA_URL`, `SAML_CERT_FILE`, and `SAML_KEY_FILE` are all set.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SAML_IDP_METADATA_URL` | | URL of the IdP's SAML metadata XML |
+| `SAML_CERT_FILE` | | Path to PEM certificate for this Service Provider |
+| `SAML_KEY_FILE` | | Path to PEM private key for this Service Provider |
+| `SAML_ROOT_URL` | | Public base URL of the API server (e.g. `https://api.example.com`) |
+| `SAML_ENTITY_ID` | `SAML_ROOT_URL/auth/saml/metadata` | SP entity ID; must match what is registered in the IdP |
+
+**Generate a self-signed SP certificate:**
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout saml.key -out saml.crt -days 3650 -nodes \
+  -subj "/CN=vaultrun-sp"
+SAML_CERT_FILE=/path/to/saml.crt
+SAML_KEY_FILE=/path/to/saml.key
+```
+
+**SAML routes:**
+| Route | Description |
+|---|---|
+| `GET /auth/saml/metadata` | SP metadata XML — give this URL to your IdP during setup |
+| `GET /auth/saml/login` | Redirects browser to IdP SSO URL |
+| `POST /auth/saml/acs` | Assertion Consumer Service — receives the IdP's assertion after login |
+
+---
+
+## SSO — Session Cookie
+
+| Variable | Default | Description |
+|---|---|---|
+| `SSO_SESSION_SECRET` | **required when SSO is enabled** | HS256 signing key for session JWTs. **Required when OIDC or SAML is enabled.** Generate with `openssl rand -hex 32`. |
+| `SSO_SESSION_MAX_AGE_HOURS` | `24` | Session lifetime in hours |
+| `SSO_SESSION_SECURE` | `true` when TLS is active | Set `Secure` flag on the session cookie. Set `false` only in local dev without TLS. |
+
+**Additional SSO routes (require active session):**
+| Route | Description |
+|---|---|
+| `GET /auth/me` | Returns the authenticated SSO user's profile |
+| `POST /auth/logout` | Clears the session cookie |
+
+---
+
+## Multi-Region
+
+| Variable | Default | Description |
+|---|---|---|
+| `REGION` | | Region identifier included in `/health` responses (e.g. `us-east-1`). Optional but recommended in multi-region deployments. |
+| `DATABASE_READ_URL` | | DSN of a PostgreSQL read replica. When set, read-heavy queries (list/get) are routed here; write queries always go to the primary `DATABASE_URL`. Format matches `DATABASE_URL`. |
+
+See [`docs/multi-region.md`](multi-region.md) for full deployment guides.
 
 | Variable | Default | Description |
 |---|---|---|

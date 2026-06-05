@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -21,6 +23,7 @@ type AuthHandler struct {
 	oidc    *sso.OIDCProvider  // nil when OIDC is not configured
 	saml    *sso.SAMLProvider  // nil when SAML is not configured
 	session *sso.SessionManager
+	secure  bool // mirrors session.Secure() — used for pre-auth cookies
 	audit   *audit.Logger
 }
 
@@ -31,11 +34,13 @@ func NewAuthHandler(
 	sessionMgr *sso.SessionManager,
 	auditLog *audit.Logger,
 ) *AuthHandler {
+	secure := sessionMgr != nil && sessionMgr.Secure()
 	return &AuthHandler{
 		db:      db,
 		oidc:    oidcProv,
 		saml:    samlProv,
 		session: sessionMgr,
+		secure:  secure,
 		audit:   auditLog,
 	}
 }
@@ -60,9 +65,27 @@ func (h *AuthHandler) OIDCLogin(c *gin.Context) {
 		return
 	}
 
-	// Store state + verifier in short-lived cookies (HttpOnly; cleared after callback)
-	c.SetCookie("oidc_state", state, 600, "/auth/oidc", "", h.session != nil, true)
-	c.SetCookie("oidc_verifier", verifier, 600, "/auth/oidc", "", h.session != nil, true)
+	// SameSite=Strict for pre-auth cookies: these are consumed only on the
+	// callback redirect from the IdP which is a top-level navigation — no
+	// cross-site subresource requests need them.
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		MaxAge:   600,
+		Path:     "/auth/oidc",
+		Secure:   h.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_verifier",
+		Value:    verifier,
+		MaxAge:   600,
+		Path:     "/auth/oidc",
+		Secure:   h.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 
 	c.Redirect(http.StatusFound, h.oidc.AuthCodeURL(state, verifier))
 }
@@ -81,16 +104,15 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 	verifier, _ := c.Cookie("oidc_verifier")
-	c.SetCookie("oidc_state", "", -1, "/auth/oidc", "", false, true)
-	c.SetCookie("oidc_verifier", "", -1, "/auth/oidc", "", false, true)
+
+	// Clear the one-time pre-auth cookies using the same flags they were set with.
+	http.SetCookie(c.Writer, &http.Cookie{Name: "oidc_state", Value: "", MaxAge: -1, Path: "/auth/oidc", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(c.Writer, &http.Cookie{Name: "oidc_verifier", Value: "", MaxAge: -1, Path: "/auth/oidc", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 
 	code := c.Query("code")
 	if code == "" {
-		if errMsg := c.Query("error"); errMsg != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "IdP error: " + errMsg})
-			return
-		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing code"})
+		// Do not reflect raw IdP error strings — they are attacker-controlled.
+		c.JSON(http.StatusBadRequest, gin.H{"error": "authentication failed"})
 		return
 	}
 
@@ -136,16 +158,30 @@ func (h *AuthHandler) SAMLMetadata(c *gin.Context) {
 }
 
 // SAMLLogin redirects the browser to the IdP's SSO endpoint.
+// The AuthnRequest ID is stored in a short-lived HttpOnly cookie so that
+// SAMLACS can validate InResponseTo and reject replayed assertions.
 func (h *AuthHandler) SAMLLogin(c *gin.Context) {
 	if h.saml == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "SAML is not configured"})
 		return
 	}
-	loginURL, err := h.saml.LoginURL()
+	loginURL, requestID, err := h.saml.LoginURL()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build SAML request"})
 		return
 	}
+
+	// Store the AuthnRequest ID so ACS can validate InResponseTo.
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "saml_request_id",
+		Value:    requestID,
+		MaxAge:   600,
+		Path:     "/auth/saml",
+		Secure:   h.secure,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
 	c.Redirect(http.StatusFound, loginURL)
 }
 
@@ -156,7 +192,11 @@ func (h *AuthHandler) SAMLACS(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.saml.ParseResponse(c.Request)
+	// Retrieve and immediately clear the stored AuthnRequest ID.
+	requestID, _ := c.Cookie("saml_request_id")
+	http.SetCookie(c.Writer, &http.Cookie{Name: "saml_request_id", Value: "", MaxAge: -1, Path: "/auth/saml", Secure: h.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+
+	claims, err := h.saml.ParseResponse(c.Request, requestID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid SAML response"})
 		return
@@ -212,71 +252,92 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
-// upsertSSOUser finds or creates an sso_users row and returns its api_key_id
-// (as a string). A new API key is created when the user has none.
+// upsertSSOUser finds or creates an sso_users row atomically and returns its
+// api_key_id as a string. A new API key is created when the user has none.
 func (h *AuthHandler) upsertSSOUser(c *gin.Context, provider, externalID, email, name string) (string, error) {
 	ctx := c.Request.Context()
 
+	tx, err := h.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	var user models.SSOUser
-	err := h.db.GetContext(ctx, &user,
+	err = tx.GetContext(ctx, &user,
 		`SELECT id, email, name, provider, external_id, api_key_id, created_at, last_login_at
-		   FROM sso_users WHERE provider = $1 AND external_id = $2`,
+		   FROM sso_users WHERE provider = $1 AND external_id = $2 FOR UPDATE`,
 		provider, externalID,
 	)
 
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		// New user — create an API key and insert the row
 		keyName := fmt.Sprintf("sso:%s:%s", provider, email)
 		_, newKey, err := auth.GenerateKey(keyName, nil)
 		if err != nil {
 			return "", fmt.Errorf("generate API key: %w", err)
 		}
-		if _, err := h.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO api_keys (id, name, key_hash, prefix, active, created_at)
 			 VALUES ($1, $2, $3, $4, true, now())`,
 			newKey.ID, newKey.Name, newKey.KeyHash, newKey.Prefix,
 		); err != nil {
 			return "", fmt.Errorf("insert api_key: %w", err)
 		}
-		keyID := newKey.ID
-		if _, err := h.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sso_users (email, name, provider, external_id, api_key_id)
 			 VALUES ($1, $2, $3, $4, $5)`,
-			email, name, provider, externalID, keyID,
+			email, name, provider, externalID, newKey.ID,
 		); err != nil {
 			return "", fmt.Errorf("insert sso_user: %w", err)
 		}
-		return keyID.String(), nil
+		if err := tx.Commit(); err != nil {
+			return "", fmt.Errorf("commit tx: %w", err)
+		}
+		return newKey.ID.String(), nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup sso user: %w", err)
 	}
 
-	// Existing user — bump last_login_at
-	_, _ = h.db.ExecContext(ctx,
-		`UPDATE sso_users SET last_login_at = $1, name = $2 WHERE provider = $3 AND external_id = $4`,
-		time.Now(), name, provider, externalID,
-	)
+	// Existing user — update last_login_at, name, and email (email may change at IdP)
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE sso_users SET last_login_at = $1, name = $2, email = $3
+		   WHERE provider = $4 AND external_id = $5`,
+		time.Now(), name, email, provider, externalID,
+	); err != nil {
+		return "", fmt.Errorf("update sso_user: %w", err)
+	}
 
 	// Re-issue API key if the old one was revoked/deleted
 	if user.APIKeyID == nil {
 		keyName := fmt.Sprintf("sso:%s:%s", provider, email)
 		_, reissuedKey, err := auth.GenerateKey(keyName, nil)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("generate replacement API key: %w", err)
 		}
-		if _, err := h.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO api_keys (id, name, key_hash, prefix, active, created_at)
 			 VALUES ($1, $2, $3, $4, true, now())`,
 			reissuedKey.ID, reissuedKey.Name, reissuedKey.KeyHash, reissuedKey.Prefix,
 		); err != nil {
-			return "", err
+			return "", fmt.Errorf("insert reissued api_key: %w", err)
 		}
-		newID := reissuedKey.ID
-		_, _ = h.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE sso_users SET api_key_id = $1 WHERE provider = $2 AND external_id = $3`,
-			newID, provider, externalID,
-		)
-		return newID.String(), nil
+			reissuedKey.ID, provider, externalID,
+		); err != nil {
+			return "", fmt.Errorf("link reissued api_key: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return "", fmt.Errorf("commit tx: %w", err)
+		}
+		return reissuedKey.ID.String(), nil
 	}
 
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit tx: %w", err)
+	}
 	return user.APIKeyID.String(), nil
 }
 

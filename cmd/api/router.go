@@ -144,15 +144,18 @@ func newRouter(
 
 	// ── SSO / auth routes (no API key required) ─────────────────────────────
 	if authH != nil {
+		// Rate-limit SSO login/callback endpoints: 30 req/min per IP prevents
+		// state-cookie flooding and brute-force attempts on the callback path.
+		ssoLimit := middleware.RateLimit(30)
 		ssoGroup := r.Group("/auth")
 		if cfg.SSO.OIDCEnabled {
-			ssoGroup.GET("/oidc/login", authH.OIDCLogin)
-			ssoGroup.GET("/oidc/callback", authH.OIDCCallback)
+			ssoGroup.GET("/oidc/login", ssoLimit, authH.OIDCLogin)
+			ssoGroup.GET("/oidc/callback", ssoLimit, authH.OIDCCallback)
 		}
 		if cfg.SSO.SAMLEnabled {
 			ssoGroup.GET("/saml/metadata", authH.SAMLMetadata)
-			ssoGroup.GET("/saml/login", authH.SAMLLogin)
-			ssoGroup.POST("/saml/acs", authH.SAMLACS)
+			ssoGroup.GET("/saml/login", ssoLimit, authH.SAMLLogin)
+			ssoGroup.POST("/saml/acs", ssoLimit, authH.SAMLACS)
 		}
 		// Authenticated endpoints — require any valid session
 		ssoGroup.GET("/me", middleware.APIKeyAuth(db, cfg.Auth.MasterKey, authH.Session()), authH.Me)

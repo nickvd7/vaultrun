@@ -270,35 +270,61 @@ run, _ := client.Run(ctx, session.ID, vaultrun.RunOptions{Command: "python", Arg
 fmt.Println(*run.Stdout)
 ```
 
+## SSO / Authentication
+
+VaultRun supports three authentication methods:
+
+| Method | How | Use case |
+|---|---|---|
+| **API key** | `X-API-Key: vr_…` header | Agents, SDKs, CI |
+| **OIDC** | Browser redirect to IdP → session cookie | Dashboard users via Okta/Azure AD/Google |
+| **SAML 2.0** | Browser redirect to IdP → session cookie | Enterprise IdPs (Okta, AD FS, OneLogin) |
+
+SSO logins auto-provision a VaultRun API key and issue a signed session cookie. OIDC and SAML do not grant master-key privileges.
+
+See [docs/configuration.md](docs/configuration.md#sso--oidc--openid-connect) for the full setup guide.
+
 ## Security
 
 See [docs/security.md](docs/security.md) for the full security model.
 
 - No shell execution — commands go through Docker exec API
 - Non-root containers with all capabilities dropped
-- Network disabled by default
+- Network disabled by default; per-session iptables allowlist when enabled
 - Path traversal prevention at the workspace layer
 - API keys stored as SHA-256 hashes, never in plaintext
 - HMAC-signed audit trail for every action
 - Rate limiting + security headers on the MCP HTTP transport
 - `MCP_AWS_ENABLED=true` explicit opt-in prevents ambient IAM credential activation
+- OIDC: PKCE + state validation; SAML: XMLDSig signature verification
+- Session cookies: `HttpOnly`, `Secure`, HS256 signed
 
 ## Configuration
 
-All configuration is via environment variables. See [.env.example](.env.example).
+All configuration is via environment variables. See [.env.example](.env.example) and [docs/configuration.md](docs/configuration.md).
 
-**API server:**
+**API server (required):**
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8080` | API server port |
 | `DATABASE_URL` | — | Postgres DSN (required) |
-| `REDIS_ADDR` | `localhost:6379` | Redis address |
-| `WORKSPACE_BASE_DIR` | `/data/workspaces` | Session workspace root |
 | `MASTER_API_KEY` | — | Bootstrap key (use once, then disable) |
-| `MAX_FILE_MB` | `100` | Max file upload size |
-| `MAX_OUTPUT_MB` | `10` | Max command output size |
-| `DOCKER_IDLE_TIMEOUT_MINS` | `30` | Container idle cleanup |
+
+**SSO (optional):**
+
+| Variable | Description |
+|---|---|
+| `OIDC_ISSUER_URL` | Enable OIDC — e.g. `https://accounts.google.com` |
+| `SAML_IDP_METADATA_URL` | Enable SAML — URL of the IdP's metadata XML |
+| `SSO_SESSION_SECRET` | Required when SSO is enabled — `openssl rand -hex 32` |
+
+**Multi-region (optional):**
+
+| Variable | Description |
+|---|---|
+| `REGION` | Region tag included in `/health` responses |
+| `DATABASE_READ_URL` | Read-replica DSN for list/get queries |
 
 **MCP server** (`MCP_TRANSPORT=http` extras):
 
@@ -307,15 +333,9 @@ All configuration is via environment variables. See [.env.example](.env.example)
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_AUTH_TOKEN` | — | Bearer token (required for HTTP) |
 | `MCP_PORT` | `:8090` | Listen address for HTTP transport |
-| `MCP_ALLOWED_ORIGINS` | `*` | CORS origins (comma-separated) |
-| `MCP_RATE_LIMIT` | `60` | Requests/min per IP |
-| `MCP_FS_ALLOWED_PATHS` | — | Allowed filesystem paths (comma-separated) |
-| `MCP_AWS_ENABLED` | `false` | Set `true` to enable all AWS tools |
-| `AWS_REGION` | `us-east-1` | AWS region |
 | `MCP_SQLITE_PATH` | — | Path to SQLite database file |
 | `MCP_PG_DSN` | — | PostgreSQL connection string |
 | `MCP_MONGO_URI` | — | MongoDB connection URI |
-| `MCP_MONGO_DB` | `test` | MongoDB database name |
 
 ## Development
 

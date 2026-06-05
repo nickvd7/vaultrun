@@ -5,6 +5,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added — SSO / Identity Federation
+
+- **OIDC** (`internal/sso/oidc.go`) — Authorization Code + PKCE flow with IdP discovery; supports Okta, Azure AD, Google Workspace, Keycloak, Auth0
+- **SAML 2.0** (`internal/sso/saml.go`) — Service Provider implementation via `crewjam/saml`; HTTP-POST ACS binding, email attribute mapping, `goxmldsig` XMLDSig validation
+- **JWT session cookies** (`internal/sso/session.go`) — HS256 cookies via `lestrrat-go/jwx/v3`; `HttpOnly`, `Secure`, configurable lifetime
+- **SSO routes** — `GET /auth/oidc/login`, `GET /auth/oidc/callback`, `GET /auth/saml/metadata`, `GET /auth/saml/login`, `POST /auth/saml/acs`, `GET /auth/me`, `POST /auth/logout`
+- **Migration 010** — `sso_users` table mapping external identity (OIDC `sub` / SAML `NameID`) to VaultRun API key; key auto-provisioned on first login
+- **Auth middleware** updated to accept session cookies alongside existing `X-API-Key` / `Bearer` header authentication
+- **Fail-safe startup** — server exits on startup if `SSO_SESSION_SECRET` is empty when SSO is configured
+
+### Added — Multi-Region
+
+- `REGION` env var — included in `/health` response for operational visibility
+- `DATABASE_READ_URL` — optional read-replica DSN; routes list/get queries to replica, writes go to primary
+- `docs/multi-region.md` — deployment guide covering active-passive, active-active (CockroachDB/Citus), session affinity, Redis failover, and Prometheus multi-region scrape config
+
+### Added — SDK additions
+
+- **Go SDK** (`sdk/go`): `Image`, `SessionStats`, `PullStatus` types; `GetSessionStats()`, `GetSessionLogs()`, `ListImages()`, `PullImage()` methods
+- **Python SDK** (`sdk/python`): same four methods + dataclasses; 4 new test cases (31 total)
+
+### Added — Dashboard security
+
+- **Server-side API proxy** (`apps/frontend/src/app/api/proxy/[...path]/route.ts`) — all dashboard API calls routed through a Next.js server-side proxy; `VAULTRUN_API_KEY` is never exposed in the browser bundle
+- Docker Compose: `VAULTRUN_API_URL` and `VAULTRUN_API_KEY` added to frontend service
+
+### Changed
+
+- `docs/configuration.md` — SSO, multi-region, and MCP server sections added
+- `docs/security.md` — SSO security model and updated production checklist
+- `docs/roadmap.md` — v0.7 (MCP/CI/DB/AWS) and v0.8 (dashboard) marked complete
+- `.env.example` — SSO, multi-region, MCP server, CI runner, and frontend proxy sections
+
+---
+
 ## [0.1.0] — 2026-06-05
 
 First tagged release. Establishes the core platform and the full MCP server feature set.

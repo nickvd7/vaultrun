@@ -675,3 +675,109 @@ def test_run_async_with_callback(client: Client) -> None:
     decoded = body.decode() if isinstance(body, bytes) else body
     assert "callback_url" in decoded
     assert "my.app" in decoded
+
+
+# ---------------------------------------------------------------------------
+# test_get_session_stats
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_get_session_stats(client: Client) -> None:
+    from sandbox_sdk.client import SessionStats
+
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/stats",
+        json={
+            "session_id": SESSION_ID,
+            "cpu_percent": 12.5,
+            "memory_usage_mb": 128.0,
+            "memory_limit_mb": 512,
+            "pids": 4,
+        },
+        status=200,
+    )
+
+    stats = client.get_session_stats(SESSION_ID)
+
+    assert isinstance(stats, SessionStats)
+    assert stats.session_id == SESSION_ID
+    assert stats.cpu_percent == 12.5
+    assert stats.memory_limit_mb == 512
+
+
+# ---------------------------------------------------------------------------
+# test_get_session_logs
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_get_session_logs(client: Client) -> None:
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/logs",
+        json={"logs": "line1\nline2\n"},
+        status=200,
+    )
+
+    logs = client.get_session_logs(SESSION_ID, tail=50)
+
+    assert "line1" in logs
+    assert "line2" in logs
+    assert "tail=50" in rsps.calls[0].request.url
+
+
+# ---------------------------------------------------------------------------
+# test_list_images
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_list_images(client: Client) -> None:
+    from sandbox_sdk.client import Image
+
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/images",
+        json={
+            "images": [
+                {
+                    "id": "sha256:abc123",
+                    "tags": ["python:3.12-slim"],
+                    "size_bytes": 123456789,
+                    "created_at": CREATED_AT,
+                }
+            ]
+        },
+        status=200,
+    )
+
+    images = client.list_images()
+
+    assert len(images) == 1
+    assert isinstance(images[0], Image)
+    assert images[0].tags == ["python:3.12-slim"]
+    assert images[0].size_bytes == 123456789
+
+
+# ---------------------------------------------------------------------------
+# test_pull_image
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_pull_image(client: Client) -> None:
+    from sandbox_sdk.client import PullStatus
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/images/pull",
+        json={"image": "python:3.12-slim", "status": "pulled", "message": "image ready"},
+        status=200,
+    )
+
+    result = client.pull_image("python:3.12-slim")
+
+    assert isinstance(result, PullStatus)
+    assert result.image == "python:3.12-slim"
+    assert result.status == "pulled"
+    body = rsps.calls[0].request.body
+    decoded = body.decode() if isinstance(body, bytes) else body
+    assert "python:3.12-slim" in decoded

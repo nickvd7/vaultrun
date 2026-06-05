@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -113,24 +114,58 @@ type mcpToolResult struct {
 type server struct {
 	client       *vaultRunClient
 	defaultImage string
-	githubToken  string // optional; falls back to GITHUB_TOKEN arg per tool call
+	githubToken  string
+	fsConfig     fsConfig
+	awsBundle    *awsBundle // nil when AWS is not configured
+	db           *dbBundle  // nil when no DB is configured
 	mu           sync.Mutex // guards stdout writes
 }
 
-func newServer(client *vaultRunClient, defaultImage, githubToken string) *server {
-	return &server{client: client, defaultImage: defaultImage, githubToken: githubToken}
+func newServer(client *vaultRunClient, defaultImage, githubToken string, fs fsConfig) *server {
+	return &server{client: client, defaultImage: defaultImage, githubToken: githubToken, fsConfig: fs}
 }
 
 func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024) // 4 MB max message
+	const maxMsg = 4 * 1024 * 1024
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	// Use ReadSlice('\n') rather than bufio.Scanner so we can drain and
+	// continue after an oversized message instead of terminating the session.
+	r := bufio.NewReaderSize(in, maxMsg+1)
+
+	for {
+		raw, err := r.ReadSlice('\n')
+
+		if err == bufio.ErrBufferFull {
+			// This line exceeds maxMsg — drain the remainder, send error, keep going.
+			slog.Warn("mcp: message too large, discarding line")
+			for err == bufio.ErrBufferFull {
+				_, err = r.ReadSlice('\n')
+			}
+			if err != nil && err != io.EOF {
+				return err
+			}
+			s.write(out, jsonRPCResponse{JSONRPC: "2.0", Error: &jsonRPCError{Code: errInvalidRequest, Message: "message too large (max 4 MB)"}})
+			if err == io.EOF {
+				return nil
+			}
+			continue
+		}
+		if err == io.EOF {
+			if len(raw) == 0 {
+				return nil
+			}
+			// Fall through to process a final line that has no trailing newline.
+		} else if err != nil {
+			return err
+		}
+
+		line := bytes.TrimRight(raw, "\r\n")
 		if len(line) == 0 {
 			continue
 		}
 
+		// raw is backed by r's internal buffer and valid until the next read.
+		// json.Unmarshal is synchronous so no copy is needed here.
 		var req jsonRPCRequest
 		if err := json.Unmarshal(line, &req); err != nil {
 			slog.Warn("mcp: parse error", "err", err)
@@ -140,18 +175,11 @@ func (s *server) serve(ctx context.Context, in io.Reader, out io.Writer) error {
 
 		slog.Debug("mcp: received", "method", req.Method, "id", req.ID)
 		s.handle(ctx, out, &req)
+
+		if err == io.EOF {
+			return nil
+		}
 	}
-	if err := scanner.Err(); err == bufio.ErrTooLong {
-		// A single message exceeded the 4 MB buffer. Return a proper JSON-RPC
-		// error instead of terminating the session — the host can retry with a
-		// smaller payload (e.g. use chunked file upload instead of inline content).
-		slog.Warn("mcp: message too large, sending error response")
-		s.write(out, jsonRPCResponse{JSONRPC: "2.0", Error: &jsonRPCError{Code: errInvalidRequest, Message: "message too large (max 4 MB)"}})
-		return nil
-	} else if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *server) handle(ctx context.Context, out io.Writer, req *jsonRPCRequest) {

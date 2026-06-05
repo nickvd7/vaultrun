@@ -216,12 +216,13 @@ func (r *ipRateLimiter) sweepLocked() {
 // heavyTools create containers, execute code, or create durable storage.
 // They get the strictest per-IP limit on top of the global limit.
 var heavyTools = map[string]bool{
-	"run_command":      true,
-	"create_session":   true,
-	"create_snapshot":  true,
-	"create_artifact":  true,
-	"run_github_repo":  true, // creates a session + runs commands
-	"pull_image":       true, // pulls from external registry
+	"run_command":     true,
+	"create_session":  true,
+	"create_snapshot": true,
+	"create_artifact": true,
+	"run_github_repo": true,
+	"pull_image":      true,
+	"lambda_invoke":   true, // executes arbitrary cloud workloads
 }
 
 // writeTools modify workspace state without spawning execution. They get a
@@ -230,7 +231,19 @@ var writeTools = map[string]bool{
 	"upload_file":          true,
 	"delete_file":          true,
 	"delete_session":       true,
-	"github_post_comment":  true, // posts to external service
+	"github_post_comment":  true,
+	"fs_write_file":        true,
+	"fs_delete_file":       true,
+	"s3_put_object":        true,
+	"s3_delete_object":     true,
+	"ssm_put_parameter":    true,
+	"ssm_delete_parameter": true,
+	"sm_get_secret":        true, // reading secrets is a sensitive write-tier op
+	"sqlite_execute":       true,
+	"pg_execute":           true,
+	"mongo_insert_one":     true,
+	"mongo_update":         true,
+	"mongo_delete":         true,
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +274,11 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 
 	// CORS — must run before auth so that preflight requests from browsers get
 	// a proper response without triggering the auth check.
+	// Wildcard origins ("*") are safe here because the MCP server uses Bearer
+	// token authentication (not cookies), so cross-origin requests cannot be
+	// silently credentialed by an attacker's page. If the auth model ever
+	// changes to use session cookies, this wildcard MUST be replaced with an
+	// explicit origin allowlist (MCP_ALLOWED_ORIGINS).
 	corsConfig := cors.DefaultConfig()
 	if len(cfg.allowedOrigins) == 1 && cfg.allowedOrigins[0] == "*" {
 		corsConfig.AllowAllOrigins = true
@@ -538,6 +556,13 @@ func startHTTPServer(ctx context.Context, srv *server, cfg httpConfig) error {
 // Audit logging
 // ---------------------------------------------------------------------------
 
+// sensitiveTools are tools whose result content may contain cleartext secrets.
+// Their result text is scrubbed from audit logs.
+var sensitiveTools = map[string]bool{
+	"sm_get_secret":     true,
+	"ssm_get_parameter": true,
+}
+
 // logHTTPToolCall logs a tools/call request with sensitive parameters redacted.
 func logHTTPToolCall(c *gin.Context, req *jsonRPCRequest, resp *jsonRPCResponse, dur time.Duration) {
 	var params mcpToolCallParams
@@ -549,7 +574,7 @@ func logHTTPToolCall(c *gin.Context, req *jsonRPCRequest, resp *jsonRPCResponse,
 	if len(params.Arguments) > 0 {
 		_ = json.Unmarshal(params.Arguments, &args)
 	}
-	// Redact fields that may contain secrets or large content.
+	// Redact request fields that may carry secrets or large content.
 	for _, key := range []string{"env", "content", "secret_env"} {
 		if _, ok := args[key]; ok {
 			args[key] = "[REDACTED]"
@@ -557,11 +582,17 @@ func logHTTPToolCall(c *gin.Context, req *jsonRPCRequest, resp *jsonRPCResponse,
 	}
 
 	isError := false
+	var resultSummary any
 	if resp != nil && resp.Result != nil {
 		if b, err := json.Marshal(resp.Result); err == nil {
 			var tr mcpToolResult
 			if err := json.Unmarshal(b, &tr); err == nil {
 				isError = tr.IsError
+				if sensitiveTools[params.Name] {
+					resultSummary = "[REDACTED — sensitive tool result]"
+				} else {
+					resultSummary = tr
+				}
 			}
 		}
 	}
@@ -572,5 +603,6 @@ func logHTTPToolCall(c *gin.Context, req *jsonRPCRequest, resp *jsonRPCResponse,
 		"duration_ms", dur.Milliseconds(),
 		"is_error", isError,
 		"args", args,
+		"result", resultSummary,
 	)
 }

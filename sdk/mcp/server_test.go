@@ -35,7 +35,7 @@ func runMCPRequest(t *testing.T, srv *server, reqJSON string) jsonRPCResponse {
 }
 
 func newTestServer() *server {
-	return newServer(nil, "python:3.12-slim", "")
+	return newServer(nil, "python:3.12-slim", "", fsConfig{})
 }
 
 func TestProtocolInitialize(t *testing.T) {
@@ -100,6 +100,18 @@ func TestProtocolToolsList(t *testing.T) {
 		"create_snapshot", "list_snapshots",
 		"create_artifact", "list_artifacts",
 		"list_audit_logs",
+		"list_images", "pull_image", "get_session_stats", "get_session_logs",
+		"run_github_repo", "github_post_comment",
+		"fs_read_file", "fs_write_file", "fs_list_dir", "fs_delete_file",
+		"s3_list_buckets", "s3_list_objects", "s3_get_object",
+		"s3_put_object", "s3_delete_object", "s3_head_object",
+		"ssm_get_parameter", "ssm_put_parameter", "ssm_delete_parameter", "ssm_list_parameters",
+		"sm_get_secret", "sm_list_secrets",
+		"lambda_list_functions", "lambda_invoke",
+		"sqlite_query", "sqlite_execute", "sqlite_schema",
+		"pg_query", "pg_execute", "pg_schema",
+		"mongo_find", "mongo_insert_one", "mongo_update", "mongo_delete",
+		"mongo_aggregate", "mongo_collections", "mongo_generate_mongoose",
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range listResult.Tools {

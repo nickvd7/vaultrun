@@ -1,5 +1,4 @@
-// GitHub API helper — used by the run_github_repo and github_post_comment tools.
-// Only the subset of the GitHub REST API needed for these tools is implemented.
+// GitHub API client for the MCP server.
 package main
 
 import (
@@ -22,10 +21,7 @@ type githubClient struct {
 }
 
 func newGithubClient(token string) *githubClient {
-	return &githubClient{
-		token:      token,
-		httpClient: &http.Client{},
-	}
+	return &githubClient{token: token, httpClient: &http.Client{}}
 }
 
 func (g *githubClient) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
@@ -33,25 +29,29 @@ func (g *githubClient) do(ctx context.Context, method, path string, body any) (*
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("marshal github request: %w", err)
+			return nil, fmt.Errorf("marshal request: %w", err)
 		}
 		bodyReader = bytes.NewReader(b)
 	}
 
-	url := githubAPIBase + path
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, githubAPIBase+path, bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
-	return g.httpClient.Do(req)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 func (g *githubClient) doJSON(ctx context.Context, method, path string, body, out any) error {
@@ -60,89 +60,93 @@ func (g *githubClient) doJSON(ctx context.Context, method, path string, body, ou
 		return err
 	}
 	defer resp.Body.Close()
+
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
+		// Try to extract "message" field from GitHub error JSON.
 		var errBody struct {
 			Message string `json:"message"`
 		}
 		if e := json.Unmarshal(raw, &errBody); e == nil && errBody.Message != "" {
-			return fmt.Errorf("GitHub API %d: %s", resp.StatusCode, errBody.Message)
+			return fmt.Errorf("GitHub API error %d: %s", resp.StatusCode, errBody.Message)
 		}
-		return fmt.Errorf("GitHub API %d", resp.StatusCode)
+		return fmt.Errorf("GitHub API error %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
+
 	if out != nil && len(raw) > 0 {
 		return json.Unmarshal(raw, out)
 	}
 	return nil
 }
 
-// reValidGitHubName allows only the characters GitHub itself permits in owner
-// and repository names: alphanumeric, hyphens, underscores, and dots.
+// reValidGitHubName validates owner and repo name components.
 var reValidGitHubName = regexp.MustCompile(`^[A-Za-z0-9_.\-]{1,100}$`)
 
-// reValidGitRef matches legal git ref components: alphanumeric, hyphens,
-// underscores, dots, and slashes (for branch namespaces like refs/heads/…).
-// Rejects anything that could be interpreted by a shell.
-var reValidGitRef = regexp.MustCompile(`^[A-Za-z0-9_.\/\-]{1,255}$`)
+// reValidGitRef validates a git ref (branch, tag, etc.).
+var reValidGitRef = regexp.MustCompile(`^[A-Za-z0-9_./\-]{1,255}$`)
 
-// validateGitRef returns an error if s is not a safe git ref name.
+// validateGitRef validates a git ref against the whitelist regex and rejects "..".
 func validateGitRef(s string) error {
-	if !reValidGitRef.MatchString(s) {
-		return fmt.Errorf("branch/tag %q contains invalid characters (allowed: A-Z a-z 0-9 _ . / -)", s)
+	if s == "" {
+		return fmt.Errorf("git ref must not be empty")
 	}
-	// Reject git's special ".." notation which traverses ref history.
 	if strings.Contains(s, "..") {
-		return fmt.Errorf("branch/tag %q: '..' not allowed", s)
+		return fmt.Errorf("git ref %q: contains '..' which is not allowed", s)
+	}
+	if !reValidGitRef.MatchString(s) {
+		return fmt.Errorf("git ref %q: contains invalid characters (allowed: A-Za-z0-9_./- up to 255 chars)", s)
 	}
 	return nil
 }
 
-// parseOwnerRepo splits "owner/repo" into owner and repo and validates both
-// components against GitHub's naming rules.
+// parseOwnerRepo splits "owner/repo" and validates both parts against reValidGitHubName.
 func parseOwnerRepo(s string) (owner, repo string, err error) {
-	parts := strings.SplitN(s, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("repo must be in owner/repo format, got %q", s)
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("repo %q: must be in owner/repo format (exactly one slash)", s)
 	}
-	if !reValidGitHubName.MatchString(parts[0]) {
-		return "", "", fmt.Errorf("owner %q contains invalid characters", parts[0])
+	owner, repo = parts[0], parts[1]
+	if !reValidGitHubName.MatchString(owner) {
+		return "", "", fmt.Errorf("repo %q: invalid owner name (allowed: A-Za-z0-9_.- up to 100 chars)", s)
 	}
-	if !reValidGitHubName.MatchString(parts[1]) {
-		return "", "", fmt.Errorf("repo name %q contains invalid characters", parts[1])
+	if !reValidGitHubName.MatchString(repo) {
+		return "", "", fmt.Errorf("repo %q: invalid repo name (allowed: A-Za-z0-9_.- up to 100 chars)", s)
 	}
-	return parts[0], parts[1], nil
+	return owner, repo, nil
 }
 
-// defaultBranch returns the default branch for owner/repo.
+// defaultBranch fetches the default branch for a GitHub repository.
 func (g *githubClient) defaultBranch(ctx context.Context, owner, repo string) (string, error) {
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 	var result struct {
 		DefaultBranch string `json:"default_branch"`
 	}
-	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 	if err := g.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return "", err
 	}
 	if result.DefaultBranch == "" {
-		return "main", nil
+		return "", fmt.Errorf("no default_branch returned for %s/%s", owner, repo)
 	}
 	return result.DefaultBranch, nil
 }
 
-// postComment posts a comment on an issue or PR (they share the same API endpoint).
+// postComment posts a comment on a GitHub issue or pull request.
+// Returns the URL of the created comment.
 func (g *githubClient) postComment(ctx context.Context, owner, repo string, number int, body string) (string, error) {
+	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments",
+		url.PathEscape(owner), url.PathEscape(repo), number)
+
 	var result struct {
 		HTMLURL string `json:"html_url"`
 	}
-	path := fmt.Sprintf("/repos/%s/%s/issues/%d/comments",
-		url.PathEscape(owner), url.PathEscape(repo), number)
 	if err := g.doJSON(ctx, http.MethodPost, path, map[string]string{"body": body}, &result); err != nil {
 		return "", err
 	}
 	return result.HTMLURL, nil
 }
 
-// scrubToken replaces all occurrences of token in s with [REDACTED].
-// A no-op when token is empty.
+// scrubToken replaces all occurrences of token in s with "[REDACTED]".
+// If token is empty, s is returned unchanged.
 func scrubToken(s, token string) string {
 	if token == "" {
 		return s

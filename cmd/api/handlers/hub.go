@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
@@ -25,16 +26,17 @@ import (
 
 // Hub holds shared dependencies that all handlers need.
 type Hub struct {
-	db       *sqlx.DB
-	docker   *dockerpkg.Client
-	ws       *workspace.Manager
-	runner   *runner.Runner
-	audit    *audit.Logger
-	cfg      *config.Config
-	policy   policy.Hook
-	queue    jobqueue.Queue // interface — nil when async not configured
-	secrets  secrets.Provider
-	warmPool *warmpool.Pool // nil when pool disabled
+	db            *sqlx.DB
+	docker        *dockerpkg.Client
+	ws            *workspace.Manager
+	runner        *runner.Runner
+	audit         *audit.Logger
+	cfg           *config.Config
+	policy        policy.Hook
+	queue         jobqueue.Queue    // interface — nil when async not configured
+	secrets       secrets.Provider
+	warmPool      *warmpool.Pool    // nil when pool disabled
+	artifactStore artifacts.Store
 }
 
 func NewHub(
@@ -48,11 +50,19 @@ func NewHub(
 	queue jobqueue.Queue,
 	sec secrets.Provider,
 	pool *warmpool.Pool,
+	artStore artifacts.Store,
 ) *Hub {
 	if pol == nil {
 		pol = policy.AllowAll{}
 	}
-	return &Hub{db: db, docker: docker, ws: ws, runner: runner, audit: audit, cfg: cfg, policy: pol, queue: queue, secrets: sec, warmPool: pool}
+	if artStore == nil {
+		artStore = artifacts.NewLocalStore(cfg.Workspace.BaseDir + "/artifacts")
+	}
+	return &Hub{
+		db: db, docker: docker, ws: ws, runner: runner, audit: audit,
+		cfg: cfg, policy: pol, queue: queue, secrets: sec, warmPool: pool,
+		artifactStore: artStore,
+	}
 }
 
 // Policy exposes the active policy hook (for the policy handler).

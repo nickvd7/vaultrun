@@ -155,6 +155,33 @@ class SharedArtifact:
     session_id: Optional[str] = None
 
 
+@dataclass
+class Image:
+    """A Docker image available on the VaultRun host."""
+    id: str
+    tags: list[str]
+    size_bytes: int
+    created_at: str
+
+
+@dataclass
+class SessionStats:
+    """Live resource usage for a running session."""
+    session_id: str
+    cpu_percent: float
+    memory_usage_mb: float
+    memory_limit_mb: int
+    pids: int
+
+
+@dataclass
+class PullStatus:
+    """Result of a Docker image pull operation."""
+    image: str
+    status: str
+    message: str
+
+
 class Client:
     """VaultRun API client.
 
@@ -317,6 +344,60 @@ class Client:
         """List all runs for a session."""
         data = self._get(f"/api/v1/sessions/{session_id}/runs")
         return [self._parse_run(r) for r in data.get("runs", [])]
+
+    # --- Session stats and logs ---
+
+    def get_session_stats(self, session_id: str) -> SessionStats:
+        """Return live CPU and memory usage for a running session."""
+        data = self._get(f"/api/v1/sessions/{session_id}/stats")
+        return SessionStats(
+            session_id=session_id,
+            cpu_percent=float(data.get("cpu_percent", 0)),
+            memory_usage_mb=float(data.get("memory_usage_mb", 0)),
+            memory_limit_mb=int(data.get("memory_limit_mb", 0)),
+            pids=int(data.get("pids", 0)),
+        )
+
+    def get_session_logs(self, session_id: str, *, tail: int = 100) -> str:
+        """Return the container stdout+stderr stream as a single string.
+
+        Args:
+            session_id: target session.
+            tail: number of lines to return from the end of the log (default 100).
+        """
+        data = self._get(f"/api/v1/sessions/{session_id}/logs?tail={tail}")
+        return data.get("logs", "")
+
+    # --- Docker image management ---
+
+    def list_images(self) -> list[Image]:
+        """List Docker images available on the VaultRun host."""
+        data = self._get("/api/v1/images")
+        return [
+            Image(
+                id=img["id"],
+                tags=img.get("tags", []),
+                size_bytes=img.get("size_bytes", 0),
+                created_at=img.get("created_at", ""),
+            )
+            for img in data.get("images", [])
+        ]
+
+    def pull_image(self, image: str) -> PullStatus:
+        """Pull a Docker image on the VaultRun host.
+
+        This is an async operation on the server side; the response reflects
+        whether the pull was accepted, not that it has completed.
+
+        Args:
+            image: Docker image reference, e.g. ``"python:3.12-slim"``.
+        """
+        data = self._post("/api/v1/images/pull", {"image": image})
+        return PullStatus(
+            image=data.get("image", image),
+            status=data.get("status", ""),
+            message=data.get("message", ""),
+        )
 
     # --- Files ---
 

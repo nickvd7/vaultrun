@@ -21,7 +21,22 @@
 //	VAULTRUN_DEFAULT_IMAGE   Default Docker image for sessions (default: python:3.12-slim)
 //	VAULTRUN_LOG_FILE        Write server logs to this file instead of stderr
 //	MCP_TRANSPORT            Transport to use: "stdio" (default) or "http"
-//	GITHUB_TOKEN             GitHub personal access token for run_github_repo / github_post_comment
+//	GITHUB_TOKEN             GitHub personal access token (optional). Required for
+//	                         run_github_repo to clone private repos and for
+//	                         github_post_comment to post to repos.
+//	MCP_FS_ALLOWED_PATHS     Comma-separated list of absolute paths the filesystem
+//	                         tools (fs_read_file, fs_write_file, fs_list_dir,
+//	                         fs_delete_file) are allowed to access. When unset,
+//	                         all filesystem tools return an error.
+//	MCP_AWS_ENABLED          Set to "true" to enable all AWS tools (S3, SSM,
+//	                         Secrets Manager, Lambda). Explicit opt-in prevents
+//	                         accidental activation in environments with ambient
+//	                         IAM credentials (EC2/ECS instance roles).
+//	AWS_REGION               AWS region (default: us-east-1).
+//	AWS_ACCESS_KEY_ID        Static access key (optional — falls back to IAM role).
+//	AWS_SECRET_ACCESS_KEY    Static secret key (required when access key ID is set).
+//	AWS_ENDPOINT_URL         Custom endpoint for MinIO, LocalStack, etc.
+//	MCP_S3_FORCE_PATH_STYLE  Set to "true" for path-style S3 addressing (MinIO).
 //
 // Additional environment variables for MCP_TRANSPORT=http (see http.go):
 //
@@ -29,6 +44,13 @@
 //	MCP_TRUSTED_PROXIES                  (CIDRs/IPs of trusted reverse proxies)
 //	MCP_ACME_DOMAIN, MCP_ACME_CACHE_DIR, MCP_ACME_EMAIL  (Let's Encrypt auto-TLS)
 //	MCP_TLS_CERT, MCP_TLS_KEY            (static cert, alternative to ACME)
+//
+// Database environment variables (optional — any combination can be enabled):
+//
+//	MCP_SQLITE_PATH  Absolute path to a SQLite database file.
+//	MCP_PG_DSN       PostgreSQL connection string (e.g. "postgres://user:pass@host/db").
+//	MCP_MONGO_URI    MongoDB connection URI (e.g. "mongodb://localhost:27017").
+//	MCP_MONGO_DB     MongoDB database name (default: test). Required with MCP_MONGO_URI.
 package main
 
 import (
@@ -60,6 +82,7 @@ func main() {
 	apiKey := os.Getenv("VAULTRUN_API_KEY")
 	defaultImage := getEnvOrDefault("VAULTRUN_DEFAULT_IMAGE", "python:3.12-slim")
 	githubToken := os.Getenv("GITHUB_TOKEN")
+	fs := loadFSConfig()
 
 	if baseURL == "" || apiKey == "" {
 		slog.Error("VAULTRUN_BASE_URL and VAULTRUN_API_KEY must be set")
@@ -73,7 +96,23 @@ func main() {
 	defer stop()
 
 	client := newVaultRunClient(baseURL, apiKey)
-	srv := newServer(client, defaultImage, githubToken)
+	srv := newServer(client, defaultImage, githubToken, fs)
+
+	if err := initAWSClients(ctx, srv); err != nil {
+		slog.Error("vaultrun-mcp: AWS client init failed", "err", err)
+		os.Exit(1)
+	}
+	if srv.awsBundle != nil {
+		slog.Info("vaultrun-mcp: AWS tools enabled", "region", getEnvOrDefault("AWS_REGION", "us-east-1"))
+	}
+
+	if err := initDBClients(ctx, srv); err != nil {
+		slog.Error("vaultrun-mcp: DB client init failed", "err", err)
+		os.Exit(1)
+	}
+	if srv.db != nil {
+		slog.Info("vaultrun-mcp: database tools enabled")
+	}
 
 	switch os.Getenv("MCP_TRANSPORT") {
 	case "http":

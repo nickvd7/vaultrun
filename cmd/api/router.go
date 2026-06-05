@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/handlers"
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
@@ -38,6 +39,8 @@ func newRouter(
 	queue jobqueue.Queue,
 	sec secrets.Provider,
 	pool *warmpool.Pool,
+	artStore artifacts.Store,
+	authH *handlers.AuthHandler, // nil when SSO is not configured
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -80,7 +83,7 @@ func newRouter(
 		c.Next()
 	})
 
-	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool)
+	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool, artStore)
 
 	health := handlers.NewHealthHandler(hub)
 	// Health endpoint is unauthenticated (needed by load-balancer probes) but
@@ -139,8 +142,28 @@ func newRouter(
 	r.GET("/docs/*filepath", docsHandler)
 	r.HEAD("/docs/*filepath", docsHandler)
 
+	// ── SSO / auth routes (no API key required) ─────────────────────────────
+	if authH != nil {
+		// Rate-limit SSO login/callback endpoints: 30 req/min per IP prevents
+		// state-cookie flooding and brute-force attempts on the callback path.
+		ssoLimit := middleware.RateLimit(30)
+		ssoGroup := r.Group("/auth")
+		if cfg.SSO.OIDCEnabled {
+			ssoGroup.GET("/oidc/login", ssoLimit, authH.OIDCLogin)
+			ssoGroup.GET("/oidc/callback", ssoLimit, authH.OIDCCallback)
+		}
+		if cfg.SSO.SAMLEnabled {
+			ssoGroup.GET("/saml/metadata", authH.SAMLMetadata)
+			ssoGroup.GET("/saml/login", ssoLimit, authH.SAMLLogin)
+			ssoGroup.POST("/saml/acs", ssoLimit, authH.SAMLACS)
+		}
+		// Authenticated endpoints — require any valid session
+		ssoGroup.GET("/me", middleware.APIKeyAuth(db, cfg.Auth.MasterKey, authH.Session()), authH.Me)
+		ssoGroup.POST("/logout", middleware.APIKeyAuth(db, cfg.Auth.MasterKey, authH.Session()), authH.Logout)
+	}
+
 	api := r.Group("/api/v1")
-	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey)
+	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey, nil)
 
 	// Per-actor rate limit (after auth, so we know the actor identity).
 	actorLimit := cfg.ActorRateLimitPerMin()

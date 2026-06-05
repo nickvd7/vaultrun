@@ -15,7 +15,7 @@ func newAuthRouter(masterKey string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery()) // catch nil-db panic in non-master-key path
 	// Pass nil for db — master-key path never touches the DB.
-	r.GET("/", APIKeyAuth(nil, masterKey), func(c *gin.Context) {
+	r.GET("/", APIKeyAuth(nil, masterKey, nil), func(c *gin.Context) {
 		c.String(http.StatusOK, Actor(c))
 	})
 	return r

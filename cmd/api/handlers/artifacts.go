@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,11 +26,6 @@ type ArtifactHandler struct {
 }
 
 func NewArtifactHandler(h *Hub) *ArtifactHandler { return &ArtifactHandler{h: h} }
-
-// artifactDir returns the host directory where shared artifacts are stored.
-func (ah *ArtifactHandler) artifactDir() string {
-	return filepath.Join(ah.h.cfg.Workspace.BaseDir, "artifacts")
-}
 
 // POST /api/v1/sessions/:id/artifacts
 // Promotes a file from the session workspace to the shared artifact registry.
@@ -100,44 +96,36 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "open source file failed"})
 		return
 	}
+	defer ff.Close()
 	sniff := make([]byte, 512)
 	n, _ := ff.Read(sniff)
 	ct := http.DetectContentType(sniff[:n])
-	_, _ = ff.Seek(0, io.SeekStart)
+	if _, err := ff.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "seek source file failed"})
+		return
+	}
 
-	// Copy into the artifact store.
+	// Store artifact — the key is the UUID string, handled by the configured store.
 	artifactID := uuid.New()
-	if err := os.MkdirAll(ah.artifactDir(), 0o700); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "artifact dir unavailable"})
-		return
-	}
-	destPath := filepath.Join(ah.artifactDir(), artifactID.String())
-	dest, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create artifact file failed"})
-		return
-	}
-	sizeBytes, copyErr := io.Copy(dest, ff)
-	_ = dest.Close()
-	_ = ff.Close()
-	if copyErr != nil {
-		_ = os.Remove(destPath)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "copy artifact failed"})
+	if err := ah.h.artifactStore.Put(c.Request.Context(), artifactID.String(), ff, info.Size(), ct); err != nil {
+		slog.Error("artifact: store put failed", "session_id", sessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "store artifact failed"})
 		return
 	}
 
 	art := &models.SharedArtifact{
 		ID:           artifactID,
 		Name:         name,
-		ArtifactPath: destPath,
-		SizeBytes:    sizeBytes,
+		ArtifactPath: artifactID.String(), // storage key (UUID)
+		SizeBytes:    info.Size(),
 		ContentType:  ct,
 		CreatedBy:    actor,
 		SessionID:    &sessionID,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err := dbpkg.CreateArtifact(c.Request.Context(), ah.h.db, art); err != nil {
-		_ = os.Remove(destPath)
+		// Best-effort: remove the stored blob if DB insert fails.
+		_ = ah.h.artifactStore.Delete(c.Request.Context(), artifactID.String())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist artifact failed"})
 		return
 	}
@@ -149,7 +137,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		Metadata: models.JSONB{
 			"artifact_id": artifactID.String(),
 			"name":        name,
-			"size_bytes":  sizeBytes,
+			"size_bytes":  info.Size(),
 			"source_path": req.Path,
 		},
 	})
@@ -200,17 +188,21 @@ func (ah *ArtifactHandler) Download(c *gin.Context) {
 		return
 	}
 
-	// Defence-in-depth: ensure the artifact path is within the configured
-	// artifacts directory. A DB corruption or injection attack should not
-	// be able to serve arbitrary host files.
-	artifactsBase := ah.artifactDir()
-	if !strings.HasPrefix(filepath.Clean(art.ArtifactPath), artifactsBase+string(os.PathSeparator)) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "artifact path invalid"})
+	rc, err := ah.h.artifactStore.Get(c.Request.Context(), art.ArtifactPath)
+	if err != nil {
+		slog.Error("artifact: store get failed", "artifact_id", artID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read artifact"})
 		return
 	}
+	defer rc.Close()
 
 	c.Header("Content-Disposition", `attachment; filename="`+sanitizeFilename(art.Name)+`"`)
-	c.File(art.ArtifactPath)
+	c.Header("Content-Type", art.ContentType)
+	c.Header("Content-Length", strconv.FormatInt(art.SizeBytes, 10))
+	c.Status(http.StatusOK)
+	if _, err := io.Copy(c.Writer, rc); err != nil {
+		slog.Warn("artifact: stream interrupted", "artifact_id", artID, "err", err)
+	}
 }
 
 // DELETE /api/v1/artifacts/:id
@@ -235,7 +227,7 @@ func (ah *ArtifactHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	artifactPath, err := dbpkg.DeleteArtifact(c.Request.Context(), ah.h.db, artID)
+	artifactKey, err := dbpkg.DeleteArtifact(c.Request.Context(), ah.h.db, artID)
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "artifact not found"})
 		return
@@ -244,7 +236,9 @@ func (ah *ArtifactHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete artifact"})
 		return
 	}
-	_ = os.Remove(artifactPath)
+	if err := ah.h.artifactStore.Delete(c.Request.Context(), artifactKey); err != nil {
+		slog.Warn("artifact: store delete failed", "artifact_id", artID, "err", err)
+	}
 
 	ah.h.audit.Log(c.Request.Context(), audit.Event{
 		Actor:  actor,

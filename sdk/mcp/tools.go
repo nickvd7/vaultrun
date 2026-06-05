@@ -243,107 +243,462 @@ func toolDefinitions() []mcpTool {
 				},
 			},
 		},
-
-		// ── Docker management ────────────────────────────────────────────────
+		// ── Docker tools ──────────────────────────────────────────────────────────
 		{
 			Name:        "list_images",
-			Description: "List all Docker images available locally on the VaultRun host. Requires master API key.",
+			Description: "List Docker images available on the VaultRun host. Requires master API key.",
 			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
 		},
 		{
 			Name:        "pull_image",
-			Description: "Pull a Docker image from a registry onto the VaultRun host. Blocks until complete. Requires master API key.",
+			Description: "Pull a Docker image from a registry. Requires master API key.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
-					"image": {Type: "string", Description: "Full image reference, e.g. 'python:3.12-slim' or 'ghcr.io/org/app:v1.2'."},
+					"image": {Type: "string", Description: "Docker image reference (e.g. 'python:3.12-slim')."},
 				},
 				Required: []string{"image"},
 			},
 		},
 		{
 			Name:        "get_session_stats",
-			Description: "Get a real-time CPU, memory, and network snapshot for a running session's container.",
+			Description: "Get live CPU/memory/network stats for the session's container.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
-					"session_id": {Type: "string", Description: "The session ID to inspect."},
+					"session_id": {Type: "string", Description: "The session ID."},
 				},
 				Required: []string{"session_id"},
 			},
 		},
 		{
 			Name:        "get_session_logs",
-			Description: "Retrieve raw Docker container logs (stdout + stderr) for a session. Useful for debugging crashed containers.",
+			Description: "Retrieve recent stdout+stderr from the session's container.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
-					"session_id": {Type: "string", Description: "The session ID to fetch logs for."},
-					"tail":       {Type: "string", Description: "Number of recent lines to return (default 100, max 10000)."},
+					"session_id": {Type: "string", Description: "The session ID."},
+					"tail": {
+						Type:        "string",
+						Description: "Number of log lines to return (1–10000, default 100).",
+					},
 				},
 				Required: []string{"session_id"},
 			},
 		},
-
-		// ── GitHub integration ────────────────────────────────────────────────
+		// ── GitHub tools ──────────────────────────────────────────────────────────
 		{
 			Name: "run_github_repo",
-			Description: "Clone a GitHub repository into a new sandbox session and optionally run commands in it. " +
-				"Returns the session ID, clone result, and command outputs. " +
-				"Ideal for testing PRs, running CI checks, or exploring a repository in isolation. " +
-				"Always call delete_session when done.",
+			Description: "Clone a GitHub repository into a new sandbox session and run commands sequentially.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
 					"repo": {
 						Type:        "string",
-						Description: "GitHub repository in owner/repo format, e.g. 'nickvd7/vaultrun'.",
-					},
-					"branch": {
-						Type:        "string",
-						Description: "Branch, tag, or commit SHA to check out. Defaults to the repository's default branch.",
+						Description: "GitHub repository in owner/repo format (e.g. 'python/cpython').",
 					},
 					"commands": {
 						Type:        "string",
-						Description: "JSON array of commands to run after cloning, e.g. '[\"pip install -r requirements.txt\", \"pytest\"]'. Each entry is run with /bin/sh -c.",
+						Description: "JSON array of command arrays to run after cloning, e.g. '[[\"python\",\"main.py\"]]'.",
+					},
+					"branch": {
+						Type:        "string",
+						Description: "Branch or tag to clone. Defaults to the repository's default branch.",
 					},
 					"image": {
 						Type:        "string",
-						Description: "Docker image for the session. Defaults to python:3.12-slim.",
+						Description: "Docker image to use. Defaults to the server's default image.",
 					},
-					"github_token": {
+					"working_dir": {
 						Type:        "string",
-						Description: "GitHub token for cloning private repos. Falls back to GITHUB_TOKEN env var.",
+						Description: "Working directory for running commands. Defaults to /workspace/repo.",
+					},
+					"keep_session": {
+						Type:        "string",
+						Enum:        []string{"true", "false"},
+						Description: "Whether to keep the session after all commands finish. Default false.",
 					},
 				},
-				Required: []string{"repo"},
+				Required: []string{"repo", "commands"},
 			},
 		},
 		{
-			Name: "github_post_comment",
-			Description: "Post a comment on a GitHub pull request or issue. " +
-				"Use this to report run results, test failures, or analysis back to the PR.",
+			Name:        "github_post_comment",
+			Description: "Post a comment on a GitHub issue or pull request.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
 					"repo": {
 						Type:        "string",
-						Description: "GitHub repository in owner/repo format, e.g. 'nickvd7/vaultrun'.",
+						Description: "GitHub repository in owner/repo format.",
 					},
 					"number": {
 						Type:        "string",
-						Description: "PR or issue number.",
+						Description: "Issue or pull request number.",
 					},
 					"body": {
 						Type:        "string",
-						Description: "Comment body (Markdown supported).",
-					},
-					"github_token": {
-						Type:        "string",
-						Description: "GitHub token. Falls back to GITHUB_TOKEN env var.",
+						Description: "Markdown body of the comment (max 65536 chars).",
 					},
 				},
 				Required: []string{"repo", "number", "body"},
+			},
+		},
+		// ── Filesystem tools ──────────────────────────────────────────────────────
+		{
+			Name:        "fs_read_file",
+			Description: "Read a file from the local filesystem (MCP_FS_ALLOWED_PATHS must be set).",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the file to read."},
+				},
+				Required: []string{"path"},
+			},
+		},
+		{
+			Name:        "fs_write_file",
+			Description: "Write content to a file on the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path":    {Type: "string", Description: "Absolute path to the file to write."},
+					"content": {Type: "string", Description: "Content to write to the file."},
+				},
+				Required: []string{"path", "content"},
+			},
+		},
+		{
+			Name:        "fs_list_dir",
+			Description: "List directory contents on the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the directory to list."},
+				},
+				Required: []string{"path"},
+			},
+		},
+		{
+			Name:        "fs_delete_file",
+			Description: "Delete a file from the local filesystem.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path": {Type: "string", Description: "Absolute path to the file to delete."},
+				},
+				Required: []string{"path"},
+			},
+		},
+		// ── AWS S3 tools ──────────────────────────────────────────────────────
+		{
+			Name:        "s3_list_buckets",
+			Description: "List all accessible S3 buckets. Requires AWS_REGION and valid credentials.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "s3_list_objects",
+			Description: "List objects in an S3 bucket with optional prefix filter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket":   {Type: "string", Description: "S3 bucket name."},
+					"prefix":   {Type: "string", Description: "Key prefix to filter by (optional)."},
+					"max_keys": {Type: "string", Description: "Maximum number of objects to return (1–1000, default 100)."},
+				},
+				Required: []string{"bucket"},
+			},
+		},
+		{
+			Name:        "s3_get_object",
+			Description: "Download the content of an S3 object (maximum 10 MB).",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
+		{
+			Name:        "s3_put_object",
+			Description: "Upload text content to an S3 object, creating or overwriting it.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket":       {Type: "string", Description: "S3 bucket name."},
+					"key":          {Type: "string", Description: "Object key."},
+					"content":      {Type: "string", Description: "Text content to upload."},
+					"content_type": {Type: "string", Description: "MIME type (default: text/plain; charset=utf-8)."},
+				},
+				Required: []string{"bucket", "key", "content"},
+			},
+		},
+		{
+			Name:        "s3_delete_object",
+			Description: "Delete an object from an S3 bucket.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key to delete."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
+		{
+			Name:        "s3_head_object",
+			Description: "Get metadata for an S3 object (size, content-type, ETag, last-modified) without downloading it.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"bucket": {Type: "string", Description: "S3 bucket name."},
+					"key":    {Type: "string", Description: "Object key."},
+				},
+				Required: []string{"bucket", "key"},
+			},
+		},
+		// ── AWS SSM Parameter Store tools ─────────────────────────────────────
+		{
+			Name:        "ssm_get_parameter",
+			Description: "Retrieve an SSM Parameter Store value by name.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name":            {Type: "string", Description: "Parameter name or full path (e.g. '/myapp/db/password')."},
+					"with_decryption": {Type: "string", Enum: []string{"true", "false"}, Description: "Decrypt SecureString values (default false)."},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name:        "ssm_put_parameter",
+			Description: "Create or update an SSM Parameter Store value.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name":      {Type: "string", Description: "Parameter name or full path."},
+					"value":     {Type: "string", Description: "Parameter value."},
+					"type":      {Type: "string", Enum: []string{"String", "StringList", "SecureString"}, Description: "Parameter type (default String)."},
+					"overwrite": {Type: "string", Enum: []string{"true", "false"}, Description: "Overwrite existing value (default false)."},
+				},
+				Required: []string{"name", "value"},
+			},
+		},
+		{
+			Name:        "ssm_delete_parameter",
+			Description: "Delete an SSM Parameter Store parameter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"name": {Type: "string", Description: "Parameter name or full path to delete."},
+				},
+				Required: []string{"name"},
+			},
+		},
+		{
+			Name:        "ssm_list_parameters",
+			Description: "List SSM Parameter Store parameters under a path hierarchy.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"path":        {Type: "string", Description: "Parameter path prefix (default '/'; returns all accessible parameters)."},
+					"max_results": {Type: "string", Description: "Maximum number of results (1–100, default 50)."},
+				},
+			},
+		},
+		// ── AWS Secrets Manager tools ──────────────────────────────────────────
+		{
+			Name:        "sm_get_secret",
+			Description: "Retrieve a secret value from AWS Secrets Manager.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"secret_id": {Type: "string", Description: "Secret name, ARN, or partial ARN."},
+				},
+				Required: []string{"secret_id"},
+			},
+		},
+		{
+			Name:        "sm_list_secrets",
+			Description: "List secrets in AWS Secrets Manager.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"max_results": {Type: "string", Description: "Maximum number of secrets to return (1–100, default 20)."},
+				},
+			},
+		},
+		// ── AWS Lambda tools ───────────────────────────────────────────────────
+		{
+			Name:        "lambda_list_functions",
+			Description: "List AWS Lambda functions in the configured region.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name:        "lambda_invoke",
+			Description: "Invoke an AWS Lambda function synchronously and return its response.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"function_name":   {Type: "string", Description: "Function name or ARN."},
+					"payload":         {Type: "string", Description: "JSON payload to pass to the function (optional)."},
+					"invocation_type": {Type: "string", Enum: []string{"RequestResponse", "Event", "DryRun"}, Description: "Invocation type (default RequestResponse)."},
+				},
+				Required: []string{"function_name"},
+			},
+		},
+
+		// ── SQLite ──────────────────────────────────────────────────────────
+		{
+			Name:        "sqlite_query",
+			Description: "Run a read-only SQL query against the configured SQLite database and return the result rows.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"query": {Type: "string", Description: "SQL SELECT (or PRAGMA) statement to execute."},
+				},
+				Required: []string{"query"},
+			},
+		},
+		{
+			Name:        "sqlite_execute",
+			Description: "Execute a write SQL statement (INSERT, UPDATE, DELETE, CREATE, DROP) against the configured SQLite database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"statement": {Type: "string", Description: "SQL statement to execute."},
+				},
+				Required: []string{"statement"},
+			},
+		},
+		{
+			Name:        "sqlite_schema",
+			Description: "Return the DDL (CREATE TABLE statements) for all tables or a specific table in the SQLite database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"table": {Type: "string", Description: "Optional table name. Omit to return all tables."},
+				},
+			},
+		},
+
+		// ── PostgreSQL ───────────────────────────────────────────────────────
+		{
+			Name:        "pg_query",
+			Description: "Run a read-only SQL query against the configured PostgreSQL database and return the result rows.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"query": {Type: "string", Description: "SQL SELECT statement to execute."},
+				},
+				Required: []string{"query"},
+			},
+		},
+		{
+			Name:        "pg_execute",
+			Description: "Execute a write SQL statement (INSERT, UPDATE, DELETE, CREATE, DROP) against the configured PostgreSQL database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"statement": {Type: "string", Description: "SQL statement to execute."},
+				},
+				Required: []string{"statement"},
+			},
+		},
+		{
+			Name:        "pg_schema",
+			Description: "Return column definitions for all tables or a specific table in the PostgreSQL database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"table":  {Type: "string", Description: "Optional table name. Omit to list all tables."},
+					"schema": {Type: "string", Description: "PostgreSQL schema name (default: public)."},
+				},
+			},
+		},
+
+		// ── MongoDB ──────────────────────────────────────────────────────────
+		{
+			Name:        "mongo_find",
+			Description: "Find documents in a MongoDB collection. Returns up to limit documents matching the filter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "MongoDB query filter as JSON (default: {} — all documents)."},
+					"limit":      {Type: "string", Description: "Maximum number of documents to return (1–1000, default 20)."},
+				},
+				Required: []string{"collection"},
+			},
+		},
+		{
+			Name:        "mongo_insert_one",
+			Description: "Insert a single document into a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"document":   {Type: "string", Description: "Document to insert as JSON."},
+				},
+				Required: []string{"collection", "document"},
+			},
+		},
+		{
+			Name:        "mongo_update",
+			Description: "Update one or many documents in a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "Filter to select documents (JSON)."},
+					"update":     {Type: "string", Description: "Update operator document, e.g. {\"$set\": {\"field\": \"value\"}} (JSON)."},
+					"many":       {Type: "string", Enum: []string{"true", "false"}, Description: "Update all matching documents when true (default false — update one)."},
+				},
+				Required: []string{"collection", "update"},
+			},
+		},
+		{
+			Name:        "mongo_delete",
+			Description: "Delete one or many documents from a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "Filter to select documents to delete (JSON). Omit to delete all."},
+					"many":       {Type: "string", Enum: []string{"true", "false"}, Description: "Delete all matching documents when true (default false — delete one)."},
+				},
+				Required: []string{"collection"},
+			},
+		},
+		{
+			Name:        "mongo_aggregate",
+			Description: "Run a MongoDB aggregation pipeline and return the results.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"pipeline":   {Type: "string", Description: "Aggregation pipeline as a JSON array of stages, e.g. [{\"$group\":{\"_id\":\"$status\",\"count\":{\"$sum\":1}}}]."},
+				},
+				Required: []string{"collection", "pipeline"},
+			},
+		},
+		{
+			Name:        "mongo_collections",
+			Description: "List all collection names in the configured MongoDB database.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name: "mongo_generate_mongoose",
+			Description: "Sample documents from a MongoDB collection and generate a Mongoose schema " +
+				"(JavaScript/Node.js) based on the observed field types.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name to sample."},
+				},
+				Required: []string{"collection"},
 			},
 		},
 	}
@@ -406,6 +761,68 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolRunGithubRepo(ctx, args)
 	case "github_post_comment":
 		return s.toolGithubPostComment(ctx, args)
+	case "fs_read_file":
+		return s.toolFsReadFile(ctx, args)
+	case "fs_write_file":
+		return s.toolFsWriteFile(ctx, args)
+	case "fs_list_dir":
+		return s.toolFsListDir(ctx, args)
+	case "fs_delete_file":
+		return s.toolFsDeleteFile(ctx, args)
+	case "s3_list_buckets":
+		return s.toolS3ListBuckets(ctx)
+	case "s3_list_objects":
+		return s.toolS3ListObjects(ctx, args)
+	case "s3_get_object":
+		return s.toolS3GetObject(ctx, args)
+	case "s3_put_object":
+		return s.toolS3PutObject(ctx, args)
+	case "s3_delete_object":
+		return s.toolS3DeleteObject(ctx, args)
+	case "s3_head_object":
+		return s.toolS3HeadObject(ctx, args)
+	case "ssm_get_parameter":
+		return s.toolSSMGetParameter(ctx, args)
+	case "ssm_put_parameter":
+		return s.toolSSMPutParameter(ctx, args)
+	case "ssm_delete_parameter":
+		return s.toolSSMDeleteParameter(ctx, args)
+	case "ssm_list_parameters":
+		return s.toolSSMListParameters(ctx, args)
+	case "sm_get_secret":
+		return s.toolSMGetSecret(ctx, args)
+	case "sm_list_secrets":
+		return s.toolSMListSecrets(ctx, args)
+	case "lambda_list_functions":
+		return s.toolLambdaListFunctions(ctx)
+	case "lambda_invoke":
+		return s.toolLambdaInvoke(ctx, args)
+	case "sqlite_query":
+		return s.toolSQLiteQuery(ctx, args)
+	case "sqlite_execute":
+		return s.toolSQLiteExecute(ctx, args)
+	case "sqlite_schema":
+		return s.toolSQLiteSchema(ctx, args)
+	case "pg_query":
+		return s.toolPGQuery(ctx, args)
+	case "pg_execute":
+		return s.toolPGExecute(ctx, args)
+	case "pg_schema":
+		return s.toolPGSchema(ctx, args)
+	case "mongo_find":
+		return s.toolMongoFind(ctx, args)
+	case "mongo_insert_one":
+		return s.toolMongoInsertOne(ctx, args)
+	case "mongo_update":
+		return s.toolMongoUpdate(ctx, args)
+	case "mongo_delete":
+		return s.toolMongoDelete(ctx, args)
+	case "mongo_aggregate":
+		return s.toolMongoAggregate(ctx, args)
+	case "mongo_collections":
+		return s.toolMongoCollections(ctx, args)
+	case "mongo_generate_mongoose":
+		return s.toolMongoGenerateMongoose(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}
@@ -426,17 +843,23 @@ func (s *server) toolCreateSession(ctx context.Context, args map[string]string) 
 	if v := args["cpu_limit"]; v != "" {
 		var f float64
 		fmt.Sscanf(v, "%f", &f)
-		req.CPULimit = f
+		if f > 0 {
+			req.CPULimit = f
+		}
 	}
 	if v := args["memory_limit_mb"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.MemoryLimitMB = n
+		if n > 0 {
+			req.MemoryLimitMB = n
+		}
 	}
 	if v := args["timeout_seconds"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.TimeoutSeconds = n
+		if n > 0 {
+			req.TimeoutSeconds = n
+		}
 	}
 
 	session, err := s.client.CreateSession(ctx, req)
@@ -533,7 +956,9 @@ func (s *server) toolRunCommand(ctx context.Context, args map[string]string) (mc
 	if v := args["timeout_seconds"]; v != "" {
 		var n int
 		fmt.Sscanf(v, "%d", &n)
-		req.TimeoutSeconds = n
+		if n > 0 {
+			req.TimeoutSeconds = n
+		}
 	}
 
 	run, err := s.client.RunCommand(ctx, sessionID, req)
@@ -788,7 +1213,7 @@ func (s *server) toolListAuditLogs(ctx context.Context, args map[string]string) 
 }
 
 // ---------------------------------------------------------------------------
-// Docker tools
+// Docker tool implementations
 // ---------------------------------------------------------------------------
 
 func (s *server) toolListImages(ctx context.Context) (mcpToolResult, error) {
@@ -797,15 +1222,17 @@ func (s *server) toolListImages(ctx context.Context) (mcpToolResult, error) {
 		return mcpToolResult{}, err
 	}
 	if len(imgs) == 0 {
-		return textResult("No local Docker images found."), nil
+		return textResult("No images."), nil
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d image(s):\n", len(imgs))
 	for _, img := range imgs {
 		tags := strings.Join(img.Tags, ", ")
-		sizeMB := float64(img.SizeBytes) / 1024 / 1024
-		fmt.Fprintf(&sb, "  %-50s  %.1f MB  created=%s\n",
-			tags, sizeMB, img.CreatedAt.Format("2006-01-02"))
+		if tags == "" {
+			tags = "<none>"
+		}
+		sizeMB := float64(img.SizeBytes) / (1024 * 1024)
+		fmt.Fprintf(&sb, "  %s  tags=[%s]  size=%.1fMB\n", img.ID, tags, sizeMB)
 	}
 	return textResult(sb.String()), nil
 }
@@ -818,7 +1245,7 @@ func (s *server) toolPullImage(ctx context.Context, args map[string]string) (mcp
 	if err := s.client.PullImage(ctx, image); err != nil {
 		return mcpToolResult{}, err
 	}
-	return textResult(fmt.Sprintf("Image %q pulled successfully.", image)), nil
+	return textResult(fmt.Sprintf("Image pulled: %s", image)), nil
 }
 
 func (s *server) toolGetSessionStats(ctx context.Context, args map[string]string) (mcpToolResult, error) {
@@ -830,15 +1257,30 @@ func (s *server) toolGetSessionStats(ctx context.Context, args map[string]string
 	if err != nil {
 		return mcpToolResult{}, err
 	}
-	memMB := float64(stats.MemoryBytes) / 1024 / 1024
-	limitMB := float64(stats.MemoryLimitBytes) / 1024 / 1024
-	rxKB := float64(stats.NetworkRxBytes) / 1024
-	txKB := float64(stats.NetworkTxBytes) / 1024
 	text := fmt.Sprintf(
-		"Container stats for session %s:\n  CPU:     %.2f%%\n  Memory:  %.1f MB / %.1f MB\n  Network: RX %.1f KB  TX %.1f KB\n",
-		sessionID, stats.CPUPercent, memMB, limitMB, rxKB, txKB,
+		"cpu: %.2f%%\n"+
+			"memory: %.1f MB / %.1f MB\n"+
+			"network rx: %s  tx: %s",
+		stats.CPUPercent,
+		float64(stats.MemoryBytes)/1024/1024,
+		float64(stats.MemoryLimitBytes)/1024/1024,
+		fmtBytes(stats.NetworkRxBytes),
+		fmtBytes(stats.NetworkTxBytes),
 	)
 	return textResult(text), nil
+}
+
+func fmtBytes(b uint64) string {
+	switch {
+	case b >= 1024*1024*1024:
+		return fmt.Sprintf("%.1f GB", float64(b)/1024/1024/1024)
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/1024/1024)
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string) (mcpToolResult, error) {
@@ -850,7 +1292,7 @@ func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string)
 	if v := args["tail"]; v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 10000 {
-			return mcpToolResult{}, fmt.Errorf("tail must be between 1 and 10000, got %q", v)
+			return mcpToolResult{}, fmt.Errorf("tail must be between 1 and 10000")
 		}
 		tail = n
 	}
@@ -859,98 +1301,132 @@ func (s *server) toolGetSessionLogs(ctx context.Context, args map[string]string)
 		return mcpToolResult{}, err
 	}
 	if logs == "" {
-		return textResult("No log output available."), nil
+		return textResult("No logs."), nil
 	}
 	return textResult(logs), nil
 }
 
 // ---------------------------------------------------------------------------
-// GitHub tools
+// GitHub tool implementations
 // ---------------------------------------------------------------------------
 
 func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	repo := args["repo"]
-	if repo == "" {
+	repoArg := args["repo"]
+	commandsArg := args["commands"]
+	if repoArg == "" {
 		return mcpToolResult{}, fmt.Errorf("repo is required")
 	}
-	owner, repoName, err := parseOwnerRepo(repo)
+	if commandsArg == "" {
+		return mcpToolResult{}, fmt.Errorf("commands is required")
+	}
+
+	owner, repo, err := parseOwnerRepo(repoArg)
 	if err != nil {
 		return mcpToolResult{}, err
 	}
 
-	// Resolve GitHub token: tool arg overrides server-level token.
-	token := coalesce(args["github_token"], s.githubToken)
-	gh := newGithubClient(token)
-
-	// Resolve and validate branch.
-	branch := args["branch"]
-	if branch == "" {
-		var branchErr error
-		branch, branchErr = gh.defaultBranch(ctx, owner, repoName)
-		if branchErr != nil {
-			return mcpToolResult{}, fmt.Errorf("resolve default branch: %w", branchErr)
+	var commands [][]string
+	if err := json.Unmarshal([]byte(commandsArg), &commands); err != nil {
+		return mcpToolResult{}, fmt.Errorf("commands must be JSON array of arrays, e.g. '[[\"python\",\"main.py\"]]'")
+	}
+	if len(commands) > 50 {
+		return mcpToolResult{}, fmt.Errorf("max 50 commands")
+	}
+	for i, cmd := range commands {
+		if len(cmd) == 0 {
+			return mcpToolResult{}, fmt.Errorf("command %d is empty", i)
+		}
+		total := 0
+		for _, part := range cmd {
+			total += len(part) + 1
+		}
+		if total > 4096 {
+			return mcpToolResult{}, fmt.Errorf("command %d too long", i)
 		}
 	}
-	if err := validateGitRef(branch); err != nil {
-		return mcpToolResult{}, err
+
+	// Validate branch BEFORE creating a session (security critical).
+	branch := args["branch"]
+	token := s.githubToken
+
+	if branch != "" {
+		if err := validateGitRef(branch); err != nil {
+			return mcpToolResult{}, err
+		}
+	} else {
+		// Get default branch from GitHub API.
+		gc := newGithubClient(token)
+		b, err := gc.defaultBranch(ctx, owner, repo)
+		if err != nil {
+			branch = "main" // fallback
+		} else {
+			branch = b
+		}
 	}
 
-	// Build clone URL without embedding the token in the URL — the token is
-	// passed via GIT_ASKPASS so it never appears in process listings or logs.
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repoName)
-
-	// Create the sandbox session.
 	image := coalesce(args["image"], s.defaultImage)
+	workingDir := coalesce(args["working_dir"], "/workspace/repo")
+	keepSession := args["keep_session"] == "true"
+
 	sess, err := s.client.CreateSession(ctx, CreateSessionRequest{
 		Image:          image,
-		NetworkEnabled: true, // needed for git clone
-		TimeoutSeconds: 600,
+		NetworkEnabled: true,
 	})
 	if err != nil {
-		return mcpToolResult{}, fmt.Errorf("create session: %w", err)
+		return mcpToolResult{}, fmt.Errorf("create session: %s", err.Error())
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Session: %s\nRepo: %s  Branch: %s\n\n", sess.ID, repo, branch)
+	cleanup := func() {
+		if !keepSession {
+			_ = s.client.DeleteSession(ctx, sess.ID)
+		}
+	}
 
-	// Clone using exec form — no shell involved, so branch/URL are passed as
-	// literal arguments and cannot be used for command injection.
-	// The token is supplied via GIT_ASKPASS so it never appears in the command
-	// line, process list, or git output.
+	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
+
+	// Token-safe clone: inject as an HTTP extraheader so the token never appears
+	// in a git remote URL or in GIT_CONFIG_KEY_* (which would embed it in the
+	// API request body as a URL fragment and appear in any server-side logs).
 	cloneEnv := map[string]string{
-		"GIT_TERMINAL_PROMPT": "0", // never prompt; fail fast if auth is missing
+		"GIT_TERMINAL_PROMPT": "0",
 	}
 	if token != "" {
-		// askpass script echoes the token; git uses it for the password field.
-		cloneEnv["GIT_ASKPASS"] = "/bin/sh"
-		cloneEnv["GIT_ASKPASS_ARGS"] = fmt.Sprintf("-c 'echo %s'", token)
-		// Simpler and more portable: pass via GIT_CONFIG_PARAMETERS
 		cloneEnv["GIT_CONFIG_COUNT"] = "1"
-		cloneEnv["GIT_CONFIG_KEY_0"] = "url.https://x-access-token:" + token + "@github.com/.insteadOf"
-		cloneEnv["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+		cloneEnv["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader"
+		cloneEnv["GIT_CONFIG_VALUE_0"] = "Authorization: Bearer " + token
 	}
+
 	cloneRun, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
 		Command: "git",
 		Args:    []string{"clone", "--branch", branch, "--depth", "1", "--", cloneURL, "/workspace/repo"},
 		Env:     cloneEnv,
 	})
-	if err != nil {
-		_ = s.client.DeleteSession(ctx, sess.ID)
-		return mcpToolResult{}, fmt.Errorf("run git clone: %w", err)
-	}
-	// Scrub token from output before returning — git may echo the URL on error.
-	cloneOut := scrubToken(coalesce(ptrStr(cloneRun.Stdout), ptrStr(cloneRun.Stderr)), token)
-	fmt.Fprintf(&sb, "## git clone\nexit_code=%d\n%s\n", ptrInt(cloneRun.ExitCode), cloneOut)
 
-	if ptrInt(cloneRun.ExitCode) != 0 {
-		_ = s.client.DeleteSession(ctx, sess.ID)
-		result := textResult(sb.String())
-		result.IsError = true
-		return result, nil
+	cloneOut := ""
+	if err == nil {
+		stdout := ""
+		stderr := ""
+		if cloneRun.Stdout != nil {
+			stdout = *cloneRun.Stdout
+		}
+		if cloneRun.Stderr != nil {
+			stderr = *cloneRun.Stderr
+		}
+		cloneOut = scrubToken(stdout+stderr, token)
+
+		if cloneRun.ExitCode == nil || *cloneRun.ExitCode != 0 {
+			cleanup()
+			return mcpToolResult{
+				Content: []mcpContent{{Type: "text", Text: "Clone failed:\n" + cloneOut}},
+				IsError: true,
+			}, nil
+		}
+	} else {
+		cleanup()
+		return mcpToolResult{}, fmt.Errorf("run clone: %s", scrubToken(err.Error(), token))
 	}
 
-	// Remove any credential traces from .git/config so subsequent git commands
-	// in the same session cannot exfiltrate the token via the remote URL.
+	// Clean credentials from .git/config after successful clone.
 	if token != "" {
 		_, _ = s.client.RunCommand(ctx, sess.ID, RunRequest{
 			Command:    "git",
@@ -959,103 +1435,86 @@ func (s *server) toolRunGithubRepo(ctx context.Context, args map[string]string) 
 		})
 	}
 
-	// Run optional commands. Each runs with /bin/sh -c as the caller intends,
-	// but commands length is bounded and max 50 commands are accepted.
-	var commands []string
-	if raw := args["commands"]; raw != "" {
-		if err := jsonUnmarshalArray(raw, &commands); err != nil {
-			return mcpToolResult{}, fmt.Errorf("commands: %w", err)
-		}
-		if len(commands) > 50 {
-			return mcpToolResult{}, fmt.Errorf("commands: at most 50 commands allowed, got %d", len(commands))
-		}
-		for _, cmd := range commands {
-			if len(cmd) > 4096 {
-				return mcpToolResult{}, fmt.Errorf("command too long (max 4096 chars): %q", cmd[:40]+"...")
-			}
-		}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "session_id: %s\n", sess.ID)
+	if keepSession {
+		fmt.Fprintf(&sb, "(session kept)\n")
+	} else {
+		fmt.Fprintf(&sb, "(session will be deleted)\n")
 	}
-	for i, cmd := range commands {
-		run, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
-			Command:    "/bin/sh",
-			Args:       []string{"-c", cmd},
-			WorkingDir: "/workspace/repo",
-		})
-		if err != nil {
-			fmt.Fprintf(&sb, "## command %d: %s\nerror: %v\n", i+1, cmd, err)
-			continue
-		}
-		out := coalesce(ptrStr(run.Stdout), ptrStr(run.Stderr))
-		fmt.Fprintf(&sb, "## command %d: %s\nexit_code=%d\n%s\n", i+1, cmd, ptrInt(run.ExitCode), out)
+	fmt.Fprintf(&sb, "\nCloned %s/%s@%s\n", owner, repo, branch)
+	if cloneOut != "" {
+		fmt.Fprintf(&sb, "%s\n", cloneOut)
 	}
 
-	fmt.Fprintf(&sb, "\nCall delete_session with session_id=%s when done.\n", sess.ID)
-	return textResult(sb.String()), nil
+	isError := false
+	for i, cmd := range commands {
+		command := cmd[0]
+		cmdArgs := cmd[1:]
+		run, err := s.client.RunCommand(ctx, sess.ID, RunRequest{
+			Command:    command,
+			Args:       cmdArgs,
+			WorkingDir: workingDir,
+		})
+		fmt.Fprintf(&sb, "\n--- Command %d: %s ---\n", i+1, strings.Join(cmd, " "))
+		if err != nil {
+			fmt.Fprintf(&sb, "error: %v\n", err)
+			isError = true
+			break
+		}
+		if run.ExitCode != nil {
+			fmt.Fprintf(&sb, "exit_code: %d\n", *run.ExitCode)
+		}
+		if run.Stdout != nil && *run.Stdout != "" {
+			fmt.Fprintf(&sb, "%s", *run.Stdout)
+		}
+		if run.Stderr != nil && *run.Stderr != "" {
+			fmt.Fprintf(&sb, "%s", *run.Stderr)
+		}
+		if run.ExitCode != nil && *run.ExitCode != 0 {
+			isError = true
+			break
+		}
+	}
+
+	cleanup()
+	return mcpToolResult{Content: []mcpContent{{Type: "text", Text: sb.String()}}, IsError: isError}, nil
 }
 
 func (s *server) toolGithubPostComment(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	repo := args["repo"]
-	body := args["body"]
+	repoArg := args["repo"]
 	numberStr := args["number"]
-	if repo == "" {
+	body := args["body"]
+	if repoArg == "" {
 		return mcpToolResult{}, fmt.Errorf("repo is required")
-	}
-	if body == "" {
-		return mcpToolResult{}, fmt.Errorf("body is required")
-	}
-	if len(body) > 65536 {
-		return mcpToolResult{}, fmt.Errorf("body too long (max 65536 bytes)")
 	}
 	if numberStr == "" {
 		return mcpToolResult{}, fmt.Errorf("number is required")
 	}
-	number, err := strconv.Atoi(numberStr)
-	if err != nil || number <= 0 || number > 1_000_000 {
-		return mcpToolResult{}, fmt.Errorf("number must be a positive integer <= 1000000")
+	if body == "" {
+		return mcpToolResult{}, fmt.Errorf("body is required")
 	}
 
-	owner, repoName, err := parseOwnerRepo(repo)
+	if len(body) > 65536 {
+		return mcpToolResult{}, fmt.Errorf("body too long (max 65536 chars)")
+	}
+
+	owner, repo, err := parseOwnerRepo(repoArg)
 	if err != nil {
 		return mcpToolResult{}, err
 	}
 
-	token := coalesce(args["github_token"], s.githubToken)
-	gh := newGithubClient(token)
+	number, err := strconv.Atoi(numberStr)
+	if err != nil || number <= 0 || number > 100_000_000 {
+		return mcpToolResult{}, fmt.Errorf("number must be a positive integer (1–100000000)")
+	}
 
-	url, err := gh.postComment(ctx, owner, repoName, number, body)
+	gc := newGithubClient(s.githubToken)
+	commentURL, err := gc.postComment(ctx, owner, repo, number, body)
 	if err != nil {
-		return mcpToolResult{}, fmt.Errorf("post comment: %w", err)
+		return mcpToolResult{}, err
 	}
-	return textResult(fmt.Sprintf("Comment posted: %s", url)), nil
-}
-
-// ptrStr dereferences a *string safely.
-func ptrStr(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-// ptrInt dereferences a *int safely.
-func ptrInt(n *int) int {
-	if n == nil {
-		return 0
-	}
-	return *n
-}
-
-// jsonUnmarshalArray unmarshals a JSON array string into a []string slice,
-// also accepting a plain string (treated as a single-element array).
-func jsonUnmarshalArray(raw string, out *[]string) error {
-	raw = strings.TrimSpace(raw)
-	if len(raw) == 0 {
-		return nil
-	}
-	if raw[0] != '[' {
-		return fmt.Errorf("must be a JSON array, got %q", raw)
-	}
-	return json.Unmarshal([]byte(raw), out)
+	return textResult(fmt.Sprintf("Comment posted: %s", commentURL)), nil
 }
 
 // ---------------------------------------------------------------------------

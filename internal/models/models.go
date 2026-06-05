@@ -238,3 +238,15 @@ type SharedArtifact struct {
 	SessionID    *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
 	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
 }
+
+// SSOUser maps an external identity (OIDC sub / SAML NameID) to a VaultRun API key.
+type SSOUser struct {
+	ID          uuid.UUID  `db:"id"            json:"id"`
+	Email       string     `db:"email"         json:"email"`
+	Name        string     `db:"name"          json:"name"`
+	Provider    string     `db:"provider"      json:"provider"`
+	ExternalID  string     `db:"external_id"   json:"-"` // OIDC sub or SAML NameID
+	APIKeyID    *uuid.UUID `db:"api_key_id"    json:"-"`
+	CreatedAt   time.Time  `db:"created_at"    json:"created_at"`
+	LastLoginAt time.Time  `db:"last_login_at" json:"last_login_at"`
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/nickvd7/vaultrun/cmd/api/handlers"
 	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/cleanup"
@@ -28,6 +29,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
+	"github.com/nickvd7/vaultrun/internal/sso"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -271,7 +273,56 @@ func main() {
 		slog.Info("artifact storage: local filesystem", "dir", artDir)
 	}
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore)
+	// ── SSO: OIDC + SAML (optional) ─────────────────────────────────────────
+	var authH *handlers.AuthHandler
+	if cfg.SSO.OIDCEnabled || cfg.SSO.SAMLEnabled {
+		if cfg.SSO.SessionSecret == "" {
+			slog.Error("SSO is enabled but SSO_SESSION_SECRET is not set — refusing to start")
+			os.Exit(1)
+		}
+		sessionMgr := sso.NewSessionManager(
+			[]byte(cfg.SSO.SessionSecret),
+			cfg.SSO.SessionMaxAge,
+			cfg.SSO.SessionSecure,
+		)
+		var oidcProv *sso.OIDCProvider
+		if cfg.SSO.OIDCEnabled {
+			p, err := sso.NewOIDCProvider(
+				context.Background(),
+				cfg.SSO.OIDCIssuerURL,
+				cfg.SSO.OIDCClientID,
+				cfg.SSO.OIDCClientSecret,
+				cfg.SSO.OIDCRedirectURL,
+				cfg.SSO.OIDCScopes,
+			)
+			if err != nil {
+				slog.Error("OIDC discovery failed", "issuer", cfg.SSO.OIDCIssuerURL, "err", err)
+				os.Exit(1)
+			}
+			oidcProv = p
+			slog.Info("OIDC enabled", "issuer", cfg.SSO.OIDCIssuerURL)
+		}
+		var samlProv *sso.SAMLProvider
+		if cfg.SSO.SAMLEnabled {
+			p, err := sso.NewSAMLProvider(
+				context.Background(),
+				cfg.SSO.SAMLRootURL,
+				cfg.SSO.SAMLEntityID,
+				cfg.SSO.SAMLIDPMetadataURL,
+				cfg.SSO.SAMLCertFile,
+				cfg.SSO.SAMLKeyFile,
+			)
+			if err != nil {
+				slog.Error("SAML init failed", "err", err)
+				os.Exit(1)
+			}
+			samlProv = p
+			slog.Info("SAML enabled", "metadata", cfg.SSO.SAMLIDPMetadataURL)
+		}
+		authH = handlers.NewAuthHandler(db, oidcProv, samlProv, sessionMgr, al)
+	}
+
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, authH)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

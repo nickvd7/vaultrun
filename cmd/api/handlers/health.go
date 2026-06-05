@@ -74,5 +74,9 @@ func (hh *HealthHandler) Health(c *gin.Context) {
 		code = http.StatusServiceUnavailable
 	}
 
-	c.JSON(code, gin.H{"status": status, "checks": checks})
+	resp := gin.H{"status": status, "checks": checks}
+	if hh.h.cfg.MultiRegion.Region != "" {
+		resp["region"] = hh.h.cfg.MultiRegion.Region
+	}
+	c.JSON(code, resp)
 }

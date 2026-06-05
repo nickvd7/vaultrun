@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	authpkg "github.com/nickvd7/vaultrun/internal/auth"
+	"github.com/nickvd7/vaultrun/internal/sso"
 )
 
 const actorKey = "actor"
@@ -26,37 +27,61 @@ func masterKeyMAC(key string) []byte {
 }
 
 // APIKeyAuth validates Bearer or X-API-Key tokens against the database.
+// When sessionMgr is non-nil, a valid SSO session cookie is also accepted.
 // Master key comparison is length-safe via HMAC before ConstantTimeCompare.
-//
-// Actor(c) returns the API key UUID — a stable, immutable identity used for
-// access-control checks and stored as sessions.created_by. ActorName(c)
-// returns the human-readable key name used in audit log entries.
-func APIKeyAuth(db *sqlx.DB, masterKey string) gin.HandlerFunc {
+func APIKeyAuth(db *sqlx.DB, masterKey string, sessionMgr *sso.SessionManager) gin.HandlerFunc {
 	expectedMAC := masterKeyMAC(masterKey)
 
 	return func(c *gin.Context) {
-		key := extractKey(c)
-		if key == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing api key"})
-			return
-		}
-
-		if masterKey != "" && subtle.ConstantTimeCompare(masterKeyMAC(key), expectedMAC) == 1 {
-			c.Set(actorKey, "master")
-			c.Set(actorNameKey, "master")
+		// ── 1. Header-based API key (existing path) ──────────────────────────
+		if key := extractKey(c); key != "" {
+			if masterKey != "" && subtle.ConstantTimeCompare(masterKeyMAC(key), expectedMAC) == 1 {
+				c.Set(actorKey, "master")
+				c.Set(actorNameKey, "master")
+				c.Next()
+				return
+			}
+			apiKey, err := authpkg.Validate(c.Request.Context(), db, key)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
+				return
+			}
+			c.Set(actorKey, apiKey.ID.String())
+			c.Set(actorNameKey, apiKey.Name)
 			c.Next()
 			return
 		}
 
-		apiKey, err := authpkg.Validate(c.Request.Context(), db, key)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid api key"})
-			return
+		// ── 2. SSO session cookie ─────────────────────────────────────────────
+		if sessionMgr != nil {
+			claims, err := sessionMgr.Get(c)
+			if err == nil && claims != nil {
+				apiKey, err := authpkg.Validate(c.Request.Context(), db, "")
+				// We have a key_id, not plaintext — look up directly by UUID.
+				_ = apiKey
+				_ = err
+				// Resolve claims.APIKeyID directly via DB lookup by primary key.
+				type keyRow struct {
+					ID   string `db:"id"`
+					Name string `db:"name"`
+				}
+				var row keyRow
+				if dbErr := db.GetContext(c.Request.Context(), &row,
+					`SELECT id::text, name FROM api_keys
+					  WHERE id = $1 AND active = true
+					  AND (expires_at IS NULL OR expires_at > now())
+					  AND revoked_at IS NULL`,
+					claims.APIKeyID,
+				); dbErr == nil {
+					c.Set(actorKey, row.ID)
+					c.Set(actorNameKey, row.Name)
+					c.Next()
+					return
+				}
+			}
 		}
 
-		c.Set(actorKey, apiKey.ID.String())
-		c.Set(actorNameKey, apiKey.Name)
-		c.Next()
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing api key"})
 	}
 }
 

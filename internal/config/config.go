@@ -9,13 +9,15 @@ import (
 )
 
 type Config struct {
-	Server        ServerConfig
-	Database      DatabaseConfig
-	Redis         RedisConfig
-	Docker        DockerConfig
-	Workspace     WorkspaceConfig
-	Auth          AuthConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	Redis       RedisConfig
+	Docker      DockerConfig
+	Workspace   WorkspaceConfig
+	Auth        AuthConfig
 	Observability ObservabilityConfig
+	SSO         SSOConfig
+	MultiRegion MultiRegionConfig
 }
 
 type ServerConfig struct {
@@ -98,6 +100,37 @@ type WorkspaceConfig struct {
 type AuthConfig struct {
 	MasterKey     string
 	OPAPolicyFile string // optional path to a Rego policy file; empty = AllowAll
+}
+
+// SSOConfig holds configuration for OIDC and SAML SSO providers.
+// Both are optional; when neither is configured the /auth routes return 404.
+type SSOConfig struct {
+	// OIDC / OpenID Connect
+	OIDCEnabled      bool
+	OIDCIssuerURL    string // OIDC_ISSUER_URL — e.g. https://accounts.google.com
+	OIDCClientID     string // OIDC_CLIENT_ID
+	OIDCClientSecret string // OIDC_CLIENT_SECRET
+	OIDCRedirectURL  string // OIDC_REDIRECT_URL — must match the IdP's allowed redirect list
+	OIDCScopes       []string
+
+	// SAML 2.0 Service Provider
+	SAMLEnabled        bool
+	SAMLRootURL        string // SAML_ROOT_URL — public base URL of this server
+	SAMLEntityID       string // SAML_ENTITY_ID (default: SAML_ROOT_URL/auth/saml/metadata)
+	SAMLIDPMetadataURL string // SAML_IDP_METADATA_URL — URL of the IdP metadata XML
+	SAMLCertFile       string // SAML_CERT_FILE — PEM certificate for this SP
+	SAMLKeyFile        string // SAML_KEY_FILE  — PEM private key for this SP
+
+	// Session cookie
+	SessionSecret  string // SSO_SESSION_SECRET — ≥32 bytes; used to sign session JWTs
+	SessionMaxAge  int    // SSO_SESSION_MAX_AGE_HOURS (default: 24)
+	SessionSecure  bool   // SSO_SESSION_SECURE (default: true when TLS is active)
+}
+
+// MultiRegionConfig holds settings for multi-region deployments.
+type MultiRegionConfig struct {
+	Region          string // REGION — e.g. "us-east-1" or "eu-west-1"; included in health responses
+	DatabaseReadURL string // DATABASE_READ_URL — optional read-replica DSN for list/get queries
 }
 
 // ObservabilityConfig groups logging and metrics knobs.
@@ -208,6 +241,39 @@ func Load() (*Config, error) {
 		Auth: AuthConfig{
 			MasterKey:     getEnv("MASTER_API_KEY", ""),
 			OPAPolicyFile: getEnv("OPA_POLICY_FILE", ""),
+		},
+		SSO: func() SSOConfig {
+			oidcIssuer := getEnv("OIDC_ISSUER_URL", "")
+			samlMeta := getEnv("SAML_IDP_METADATA_URL", "")
+			samlCert := getEnv("SAML_CERT_FILE", "")
+			samlKey := getEnv("SAML_KEY_FILE", "")
+			tlsCert := getEnv("TLS_CERT_FILE", "")
+			acmeDomain := getEnv("ACME_DOMAIN", "")
+			tlsActive := tlsCert != "" || acmeDomain != ""
+			sessionSecure, _ := strconv.ParseBool(getEnv("SSO_SESSION_SECURE", fmt.Sprintf("%v", tlsActive)))
+			maxAge, _ := strconv.Atoi(getEnv("SSO_SESSION_MAX_AGE_HOURS", "24"))
+			scopes := splitAndTrim(getEnv("OIDC_SCOPES", "openid,email,profile"))
+			return SSOConfig{
+				OIDCEnabled:        oidcIssuer != "",
+				OIDCIssuerURL:      oidcIssuer,
+				OIDCClientID:       getEnv("OIDC_CLIENT_ID", ""),
+				OIDCClientSecret:   getEnv("OIDC_CLIENT_SECRET", ""),
+				OIDCRedirectURL:    getEnv("OIDC_REDIRECT_URL", ""),
+				OIDCScopes:         scopes,
+				SAMLEnabled:        samlMeta != "" && samlCert != "" && samlKey != "",
+				SAMLRootURL:        getEnv("SAML_ROOT_URL", ""),
+				SAMLEntityID:       getEnv("SAML_ENTITY_ID", ""),
+				SAMLIDPMetadataURL: samlMeta,
+				SAMLCertFile:       samlCert,
+				SAMLKeyFile:        samlKey,
+				SessionSecret:      getEnv("SSO_SESSION_SECRET", ""),
+				SessionMaxAge:      maxAge,
+				SessionSecure:      sessionSecure,
+			}
+		}(),
+		MultiRegion: MultiRegionConfig{
+			Region:          getEnv("REGION", ""),
+			DatabaseReadURL: getEnv("DATABASE_READ_URL", ""),
 		},
 		Observability: ObservabilityConfig{
 			LogLevel:                 getEnv("LOG_LEVEL", "info"),

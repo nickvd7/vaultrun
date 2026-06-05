@@ -117,6 +117,7 @@ type server struct {
 	githubToken  string
 	fsConfig     fsConfig
 	awsBundle    *awsBundle // nil when AWS is not configured
+	db           *dbBundle  // nil when no DB is configured
 	mu           sync.Mutex // guards stdout writes
 }
 

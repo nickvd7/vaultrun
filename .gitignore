@@ -27,5 +27,6 @@ sdk/python/__pycache__/
 sdk/python/**/__pycache__/
 sdk/python/**/*.pyc
 .claude/
-mcp
+/mcp
+sdk/mcp/mcp
 /ci-runner

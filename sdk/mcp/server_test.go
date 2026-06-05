@@ -108,6 +108,10 @@ func TestProtocolToolsList(t *testing.T) {
 		"ssm_get_parameter", "ssm_put_parameter", "ssm_delete_parameter", "ssm_list_parameters",
 		"sm_get_secret", "sm_list_secrets",
 		"lambda_list_functions", "lambda_invoke",
+		"sqlite_query", "sqlite_execute", "sqlite_schema",
+		"pg_query", "pg_execute", "pg_schema",
+		"mongo_find", "mongo_insert_one", "mongo_update", "mongo_delete",
+		"mongo_aggregate", "mongo_collections", "mongo_generate_mongoose",
 	}
 	toolNames := make(map[string]bool)
 	for _, tool := range listResult.Tools {

@@ -548,6 +548,158 @@ func toolDefinitions() []mcpTool {
 				Required: []string{"function_name"},
 			},
 		},
+
+		// ── SQLite ──────────────────────────────────────────────────────────
+		{
+			Name:        "sqlite_query",
+			Description: "Run a read-only SQL query against the configured SQLite database and return the result rows.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"query": {Type: "string", Description: "SQL SELECT (or PRAGMA) statement to execute."},
+				},
+				Required: []string{"query"},
+			},
+		},
+		{
+			Name:        "sqlite_execute",
+			Description: "Execute a write SQL statement (INSERT, UPDATE, DELETE, CREATE, DROP) against the configured SQLite database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"statement": {Type: "string", Description: "SQL statement to execute."},
+				},
+				Required: []string{"statement"},
+			},
+		},
+		{
+			Name:        "sqlite_schema",
+			Description: "Return the DDL (CREATE TABLE statements) for all tables or a specific table in the SQLite database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"table": {Type: "string", Description: "Optional table name. Omit to return all tables."},
+				},
+			},
+		},
+
+		// ── PostgreSQL ───────────────────────────────────────────────────────
+		{
+			Name:        "pg_query",
+			Description: "Run a read-only SQL query against the configured PostgreSQL database and return the result rows.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"query": {Type: "string", Description: "SQL SELECT statement to execute."},
+				},
+				Required: []string{"query"},
+			},
+		},
+		{
+			Name:        "pg_execute",
+			Description: "Execute a write SQL statement (INSERT, UPDATE, DELETE, CREATE, DROP) against the configured PostgreSQL database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"statement": {Type: "string", Description: "SQL statement to execute."},
+				},
+				Required: []string{"statement"},
+			},
+		},
+		{
+			Name:        "pg_schema",
+			Description: "Return column definitions for all tables or a specific table in the PostgreSQL database.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"table":  {Type: "string", Description: "Optional table name. Omit to list all tables."},
+					"schema": {Type: "string", Description: "PostgreSQL schema name (default: public)."},
+				},
+			},
+		},
+
+		// ── MongoDB ──────────────────────────────────────────────────────────
+		{
+			Name:        "mongo_find",
+			Description: "Find documents in a MongoDB collection. Returns up to limit documents matching the filter.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "MongoDB query filter as JSON (default: {} — all documents)."},
+					"limit":      {Type: "string", Description: "Maximum number of documents to return (1–1000, default 20)."},
+				},
+				Required: []string{"collection"},
+			},
+		},
+		{
+			Name:        "mongo_insert_one",
+			Description: "Insert a single document into a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"document":   {Type: "string", Description: "Document to insert as JSON."},
+				},
+				Required: []string{"collection", "document"},
+			},
+		},
+		{
+			Name:        "mongo_update",
+			Description: "Update one or many documents in a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "Filter to select documents (JSON)."},
+					"update":     {Type: "string", Description: "Update operator document, e.g. {\"$set\": {\"field\": \"value\"}} (JSON)."},
+					"many":       {Type: "string", Enum: []string{"true", "false"}, Description: "Update all matching documents when true (default false — update one)."},
+				},
+				Required: []string{"collection", "update"},
+			},
+		},
+		{
+			Name:        "mongo_delete",
+			Description: "Delete one or many documents from a MongoDB collection.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"filter":     {Type: "string", Description: "Filter to select documents to delete (JSON). Omit to delete all."},
+					"many":       {Type: "string", Enum: []string{"true", "false"}, Description: "Delete all matching documents when true (default false — delete one)."},
+				},
+				Required: []string{"collection"},
+			},
+		},
+		{
+			Name:        "mongo_aggregate",
+			Description: "Run a MongoDB aggregation pipeline and return the results.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name."},
+					"pipeline":   {Type: "string", Description: "Aggregation pipeline as a JSON array of stages, e.g. [{\"$group\":{\"_id\":\"$status\",\"count\":{\"$sum\":1}}}]."},
+				},
+				Required: []string{"collection", "pipeline"},
+			},
+		},
+		{
+			Name:        "mongo_collections",
+			Description: "List all collection names in the configured MongoDB database.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
+			Name: "mongo_generate_mongoose",
+			Description: "Sample documents from a MongoDB collection and generate a Mongoose schema " +
+				"(JavaScript/Node.js) based on the observed field types.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]schemaProp{
+					"collection": {Type: "string", Description: "Collection name to sample."},
+				},
+				Required: []string{"collection"},
+			},
+		},
 	}
 }
 
@@ -644,6 +796,32 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolLambdaListFunctions(ctx)
 	case "lambda_invoke":
 		return s.toolLambdaInvoke(ctx, args)
+	case "sqlite_query":
+		return s.toolSQLiteQuery(ctx, args)
+	case "sqlite_execute":
+		return s.toolSQLiteExecute(ctx, args)
+	case "sqlite_schema":
+		return s.toolSQLiteSchema(ctx, args)
+	case "pg_query":
+		return s.toolPGQuery(ctx, args)
+	case "pg_execute":
+		return s.toolPGExecute(ctx, args)
+	case "pg_schema":
+		return s.toolPGSchema(ctx, args)
+	case "mongo_find":
+		return s.toolMongoFind(ctx, args)
+	case "mongo_insert_one":
+		return s.toolMongoInsertOne(ctx, args)
+	case "mongo_update":
+		return s.toolMongoUpdate(ctx, args)
+	case "mongo_delete":
+		return s.toolMongoDelete(ctx, args)
+	case "mongo_aggregate":
+		return s.toolMongoAggregate(ctx, args)
+	case "mongo_collections":
+		return s.toolMongoCollections(ctx, args)
+	case "mongo_generate_mongoose":
+		return s.toolMongoGenerateMongoose(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}

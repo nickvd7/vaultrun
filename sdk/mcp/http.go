@@ -239,6 +239,11 @@ var writeTools = map[string]bool{
 	"ssm_put_parameter":    true,
 	"ssm_delete_parameter": true,
 	"sm_get_secret":        true, // reading secrets is a sensitive write-tier op
+	"sqlite_execute":       true,
+	"pg_execute":           true,
+	"mongo_insert_one":     true,
+	"mongo_update":         true,
+	"mongo_delete":         true,
 }
 
 // ---------------------------------------------------------------------------

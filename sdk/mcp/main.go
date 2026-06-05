@@ -44,6 +44,13 @@
 //	MCP_TRUSTED_PROXIES                  (CIDRs/IPs of trusted reverse proxies)
 //	MCP_ACME_DOMAIN, MCP_ACME_CACHE_DIR, MCP_ACME_EMAIL  (Let's Encrypt auto-TLS)
 //	MCP_TLS_CERT, MCP_TLS_KEY            (static cert, alternative to ACME)
+//
+// Database environment variables (optional — any combination can be enabled):
+//
+//	MCP_SQLITE_PATH  Absolute path to a SQLite database file.
+//	MCP_PG_DSN       PostgreSQL connection string (e.g. "postgres://user:pass@host/db").
+//	MCP_MONGO_URI    MongoDB connection URI (e.g. "mongodb://localhost:27017").
+//	MCP_MONGO_DB     MongoDB database name (default: test). Required with MCP_MONGO_URI.
 package main
 
 import (
@@ -97,6 +104,14 @@ func main() {
 	}
 	if srv.awsBundle != nil {
 		slog.Info("vaultrun-mcp: AWS tools enabled", "region", getEnvOrDefault("AWS_REGION", "us-east-1"))
+	}
+
+	if err := initDBClients(ctx, srv); err != nil {
+		slog.Error("vaultrun-mcp: DB client init failed", "err", err)
+		os.Exit(1)
+	}
+	if srv.db != nil {
+		slog.Info("vaultrun-mcp: database tools enabled")
 	}
 
 	switch os.Getenv("MCP_TRANSPORT") {

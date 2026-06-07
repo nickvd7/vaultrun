@@ -14,6 +14,8 @@ import {
   GitPullRequest,
   FolderOpen,
   ChevronRight,
+  KeyRound,
+  Users,
 } from "lucide-react";
 
 const features = [
@@ -31,6 +33,16 @@ const features = [
     icon: Globe,
     title: "MCP-Native (53 tools)",
     desc: "Built-in Model Context Protocol server exposes 53 tools over stdio or HTTP — works with Claude, OpenAI, OpenRouter, and any MCP client.",
+  },
+  {
+    icon: KeyRound,
+    title: "Enterprise SSO (OIDC & SAML)",
+    desc: "Federate with Okta, Azure AD, Google Workspace, or any OIDC/SAML 2.0 IdP — PKCE, signed assertions, server-side session revocation, and auto-provisioned API keys.",
+  },
+  {
+    icon: Users,
+    title: "Multi-Tenant Orgs & RBAC",
+    desc: "Group sessions under organizations with viewer/executor/admin roles — share sandboxes across a team without handing out the master key.",
   },
   {
     icon: Cloud,
@@ -117,6 +129,19 @@ VAULTRUN_API_KEY=vr_your_key \\
 
 # POST /mcp — JSON-RPC 2.0
 # Authorization: Bearer your-secret`;
+
+const ssoConfig = `# OIDC — Okta, Azure AD, Google Workspace, Keycloak, Auth0
+OIDC_ISSUER_URL=https://your-tenant.okta.com
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+SSO_SESSION_SECRET=$(openssl rand -hex 32)
+
+# SAML 2.0 — Okta, AD FS, OneLogin, …
+SAML_IDP_METADATA_URL=https://idp.example.com/metadata
+SAML_SP_CERT_FILE=./certs/sp.crt
+SAML_SP_KEY_FILE=./certs/sp.key
+
+# → /auth/oidc/login or /auth/saml/login`;
 
 const ciConfig = `# GitHub webhook → VaultRun sandbox → PR comment
 GITHUB_TOKEN=ghp_... \\
@@ -320,6 +345,63 @@ export default function LandingPage() {
                   {mcpHTTPConfig}
                 </pre>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Enterprise SSO */}
+      <section className="max-w-6xl mx-auto px-6 pb-20">
+        <div className="bg-[#0f0f1a] border border-slate-800 rounded-2xl p-8 md:p-12">
+          <div className="grid md:grid-cols-2 gap-10 items-start">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <KeyRound className="w-5 h-5 text-indigo-400" />
+                <span className="text-xs uppercase tracking-widest text-indigo-400 font-medium">Identity federation</span>
+              </div>
+              <h2 className="text-2xl font-semibold text-slate-100 mb-4">
+                Bring your own identity provider
+              </h2>
+              <p className="text-slate-400 text-sm leading-relaxed mb-4">
+                Let your team sign in to the dashboard with the IdP they already use.
+                VaultRun speaks both <strong className="text-slate-300">OpenID Connect</strong> (Authorization Code + PKCE)
+                and <strong className="text-slate-300">SAML 2.0</strong> — auto-provisioning a scoped
+                API key and a signed session on first login. No master-key sharing required.
+              </p>
+              <ul className="space-y-2 mb-6">
+                {[
+                  "Okta, Azure AD, Google Workspace, Keycloak, Auth0, AD FS, OneLogin",
+                  "PKCE + state/nonce validation, XML signature verification, replay protection",
+                  "HttpOnly + Secure session cookies with server-side revocation on logout",
+                  "Org-aware RBAC: map IdP groups to viewer / executor / admin roles",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-400">
+                    <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <a
+                href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+              >
+                Read the SSO setup guide <ArrowRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/60" />
+                </div>
+                <span className="text-xs text-slate-600 font-mono">.env — SSO configuration</span>
+              </div>
+              <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
+                {ssoConfig}
+              </pre>
             </div>
           </div>
         </div>

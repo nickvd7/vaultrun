@@ -187,6 +187,11 @@ with HTTP 422.
 
 ## SSO — OIDC / OpenID Connect
 
+> **For a step-by-step walkthrough** — registering an application with your
+> IdP, generating certificates, testing the login flow, and troubleshooting —
+> see [docs/sso-setup.md](sso-setup.md). The tables below are a quick
+> environment-variable reference.
+
 OIDC is enabled when `OIDC_ISSUER_URL` is set together with the client credentials.
 After a successful OIDC login the server maps the user's `sub` claim to a VaultRun API
 key and sets a signed session cookie (`vaultrun_session`). Existing API key auth is

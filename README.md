@@ -282,7 +282,7 @@ VaultRun supports three authentication methods:
 
 SSO logins auto-provision a VaultRun API key and issue a signed session cookie. OIDC and SAML do not grant master-key privileges.
 
-See [docs/configuration.md](docs/configuration.md#sso--oidc--openid-connect) for the full setup guide.
+See [docs/sso-setup.md](docs/sso-setup.md) for a step-by-step setup guide (IdP registration, certificates, testing, troubleshooting), or [docs/configuration.md](docs/configuration.md#sso--oidc--openid-connect) for the environment variable reference.
 
 ## Security
 

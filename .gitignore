@@ -1,0 +1,35 @@
+# Compiled binaries
+/api
+/cli
+/mcp
+/bin/
+
+# Environment
+.env
+.env.local
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Node
+node_modules/
+.next/
+apps/frontend/.next/
+*.tsbuildinfo
+
+# OS
+.DS_Store
+*.swp
+# Python build artifacts
+sdk/python/dist/
+sdk/python/build/
+sdk/python/*.egg-info/
+sdk/python/__pycache__/
+sdk/python/**/__pycache__/
+sdk/python/**/*.pyc
+.claude/
+/mcp
+sdk/mcp/mcp
+/ci-runner

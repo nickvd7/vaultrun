@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  go:
+    name: Go build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build -ldflags="-s -w" ./cmd/api ./cmd/cli ./cmd/ci-runner ./sdk/mcp/
+
+      - name: Unit tests
+        run: go test ./internal/... ./cmd/api/middleware/... ./cmd/ci-runner/... ./sdk/go/... ./sdk/mcp/... -race -timeout 120s
+
+  integration:
+    name: Handler integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vaultrun_test
+          POSTGRES_USER: vaultrun
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Integration tests
+        run: go test -tags integration ./cmd/api/handlers/ -race -timeout 120s
+        env:
+          INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_test?sslmode=disable
+
+  e2e:
+    name: E2E smoke test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vaultrun_e2e
+          POSTGRES_USER: vaultrun
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Cache python:3.12-slim as a tarball so Docker Hub is only hit on the
+      # first run (or after manual cache busting). Docker Hub enforces a
+      # 100-pull/6 h rate limit for unauthenticated runners, which is the
+      # primary cause of intermittent e2e failures when the cache is cold.
+      - name: Restore Docker image cache
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.docker-cache
+          key: docker-python-3.12-slim
+
+      - name: Load cached sandbox image
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/.docker-cache/python-3.12-slim.tar
+
+      - name: Pull sandbox image (cache miss)
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          # Retry up to 3 times with exponential backoff to handle transient
+          # Docker Hub errors or rate-limit responses.
+          for attempt in 1 2 3; do
+            docker pull python:3.12-slim && break
+            if [ "$attempt" -eq 3 ]; then
+              echo "All pull attempts failed"
+              exit 1
+            fi
+            echo "Pull attempt $attempt failed; retrying in $((attempt * 10))s…"
+            sleep $((attempt * 10))
+          done
+
+      - name: Save sandbox image to cache
+        if: steps.docker-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/.docker-cache
+          docker save python:3.12-slim -o /tmp/.docker-cache/python-3.12-slim.tar
+
+      - name: E2E smoke test
+        run: go test -tags e2e ./cmd/api/ -v -timeout 300s
+        env:
+          INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_e2e?sslmode=disable
+
+  python-sdk:
+    name: Python SDK tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -e ".[dev]"
+
+      - name: pytest
+        run: pytest tests/ -v
+
+  frontend:
+    name: Frontend type-check & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080

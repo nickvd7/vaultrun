@@ -1,0 +1,153 @@
+package secrets
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+	"time"
+)
+
+// canonicalURI returns the AWS SigV4 canonical URI for the given raw URL path.
+//
+// Rules per AWS SigV4 spec (and RFC 3986):
+//   - Slashes that separate path segments are preserved as-is.
+//   - Each path segment is URI-encoded independently.
+//   - Unreserved characters (A-Z a-z 0-9 - _ . ~) are never encoded.
+//   - All other bytes are percent-encoded with uppercase hex (%XX).
+//   - An empty path (or "/") is normalised to "/".
+//   - Double (or multiple) slashes in the original path are preserved — they
+//     are NOT collapsed, because AWS uses the raw path for signature matching.
+func canonicalURI(rawPath string) string {
+	if rawPath == "" {
+		return "/"
+	}
+
+	segments := strings.Split(rawPath, "/")
+	for i, seg := range segments {
+		segments[i] = uriEncodeSegment(seg)
+	}
+	result := strings.Join(segments, "/")
+	if result == "" {
+		return "/"
+	}
+	return result
+}
+
+// uriEncodeSegment percent-encodes a single path segment according to
+// RFC 3986 / AWS SigV4 rules: unreserved characters are left as-is,
+// everything else is encoded as %XX with uppercase hex digits.
+//
+// Unreserved characters (RFC 3986 §2.3):  A-Z a-z 0-9 - _ . ~
+func uriEncodeSegment(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isUnreserved(c) {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// isUnreserved reports whether c is an RFC 3986 unreserved character.
+// These characters must NOT be percent-encoded: A-Z a-z 0-9 - _ . ~
+func isUnreserved(c byte) bool {
+	return (c >= 'A' && c <= 'Z') ||
+		(c >= 'a' && c <= 'z') ||
+		(c >= '0' && c <= '9') ||
+		c == '-' || c == '_' || c == '.' || c == '~'
+}
+
+// signAWS signs an HTTP request using AWS Signature Version 4.
+// Credentials are read from standard AWS env vars:
+//
+//	AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+func signAWS(req *http.Request, region, service string, body []byte) error {
+	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	sessionToken := os.Getenv("AWS_SESSION_TOKEN")
+
+	if accessKey == "" || secretKey == "" {
+		return fmt.Errorf("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set")
+	}
+
+	now := time.Now().UTC()
+	dateStamp := now.Format("20060102")
+	amzDate := now.Format("20060102T150405Z")
+
+	req.Header.Set("X-Amz-Date", amzDate)
+	if sessionToken != "" {
+		req.Header.Set("X-Amz-Security-Token", sessionToken)
+	}
+	req.Header.Set("Host", req.URL.Host)
+
+	// Canonical headers (sorted)
+	headers := []string{"content-type", "host", "x-amz-date", "x-amz-target"}
+	if sessionToken != "" {
+		headers = append(headers, "x-amz-security-token")
+	}
+	sort.Strings(headers)
+
+	var canonicalHeaders strings.Builder
+	var signedHeaders strings.Builder
+	for i, h := range headers {
+		canonicalHeaders.WriteString(h + ":" + strings.TrimSpace(req.Header.Get(http.CanonicalHeaderKey(h))) + "\n")
+		if i > 0 {
+			signedHeaders.WriteByte(';')
+		}
+		signedHeaders.WriteString(h)
+	}
+
+	bodyHash := sha256Hex(body)
+	canonicalRequest := strings.Join([]string{
+		req.Method,
+		canonicalURI(req.URL.Path),
+		req.URL.RawQuery,
+		canonicalHeaders.String(),
+		signedHeaders.String(),
+		bodyHash,
+	}, "\n")
+
+	credentialScope := strings.Join([]string{dateStamp, region, service, "aws4_request"}, "/")
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credentialScope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+
+	signingKey := hmacSHA256(
+		hmacSHA256(
+			hmacSHA256(
+				hmacSHA256([]byte("AWS4"+secretKey), []byte(dateStamp)),
+				[]byte(region)),
+			[]byte(service)),
+		[]byte("aws4_request"))
+
+	signature := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
+
+	req.Header.Set("Authorization", fmt.Sprintf(
+		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		accessKey, credentialScope, signedHeaders.String(), signature,
+	))
+	return nil
+}
+
+func sha256Hex(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+func hmacSHA256(key, data []byte) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write(data)
+	return h.Sum(nil)
+}

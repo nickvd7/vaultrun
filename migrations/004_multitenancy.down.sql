@@ -1,0 +1,4 @@
+ALTER TABLE sessions DROP COLUMN IF EXISTS org_id;
+ALTER TABLE api_keys DROP COLUMN IF EXISTS org_id;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS organizations;

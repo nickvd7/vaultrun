@@ -1,0 +1,371 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	"github.com/nickvd7/vaultrun/internal/httputil"
+	"github.com/nickvd7/vaultrun/internal/jobqueue"
+	"github.com/nickvd7/vaultrun/internal/models"
+	"github.com/nickvd7/vaultrun/internal/runner"
+)
+
+type RunHandler struct {
+	h *Hub
+}
+
+func NewRunHandler(h *Hub) *RunHandler { return &RunHandler{h: h} }
+
+type createRunRequest struct {
+	Command        string            `json:"command" binding:"required"`
+	Args           []string          `json:"args"`
+	Env            map[string]string `json:"env"`
+	WorkingDir     string            `json:"working_dir"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	// Secrets is a list of secret names to resolve and inject as environment variables.
+	Secrets []string `json:"secrets"`
+}
+
+// POST /api/v1/sessions/:id/run
+func (rh *RunHandler) Execute(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
+	if !ok {
+		return
+	}
+	if session.StoppedAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "session is stopped"})
+		return
+	}
+	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
+		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+
+	var req createRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Resolve requested secrets into a separate map that is passed to the container
+	// at runtime but never written to the database.
+	var secretEnv map[string]string
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		secretEnv = make(map[string]string, len(req.Secrets))
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			secretEnv[name] = val
+		}
+	}
+
+	limits := rh.h.cfg.SessionLimits()
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must be non-negative"})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
+		return
+	}
+
+	run, err := rh.h.runner.Execute(c.Request.Context(), runner.RunRequest{
+		SessionID:      sessionID,
+		ContainerID:    *session.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		SecretEnv:      secretEnv,
+		WorkingDir:     req.WorkingDir,
+		TimeoutSeconds: req.TimeoutSeconds,
+		Actor:          middleware.Actor(c),
+		WorkspacePath:  session.WorkspacePath,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, run)
+}
+
+// POST /api/v1/sessions/:id/run/stream
+// Same request body as Execute, but responds with text/event-stream (SSE).
+// Events:
+//
+//	data: {"type":"stdout","data":"..."}\n\n
+//	data: {"type":"stderr","data":"..."}\n\n
+//	data: {"type":"done","run_id":"...","exit_code":0,"status":"completed","duration_ms":123}\n\n
+func (rh *RunHandler) Stream(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
+	if !ok {
+		return
+	}
+	if session.StoppedAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "session is stopped"})
+		return
+	}
+	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
+		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+
+	var req createRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var secretEnvStream map[string]string
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		secretEnvStream = make(map[string]string, len(req.Secrets))
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			secretEnvStream[name] = val
+		}
+	}
+
+	limits := rh.h.cfg.SessionLimits()
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must be non-negative"})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
+		return
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "streaming not supported"})
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no") // disable nginx buffering
+
+	stdoutW := &sseWriter{w: c.Writer, flusher: flusher, kind: "stdout"}
+	stderrW := &sseWriter{w: c.Writer, flusher: flusher, kind: "stderr"}
+
+	run, runErr := rh.h.runner.Stream(c.Request.Context(), runner.RunRequest{
+		SessionID:      sessionID,
+		ContainerID:    *session.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		SecretEnv:      secretEnvStream,
+		WorkingDir:     req.WorkingDir,
+		TimeoutSeconds: req.TimeoutSeconds,
+		Actor:          middleware.Actor(c),
+		WorkspacePath:  session.WorkspacePath,
+	}, stdoutW, stderrW)
+
+	// Send final done event regardless of error
+	doneEvent := map[string]any{"type": "done"}
+	if runErr != nil {
+		doneEvent["error"] = runErr.Error()
+	} else if run != nil {
+		doneEvent["run_id"] = run.ID
+		doneEvent["status"] = run.Status
+		doneEvent["duration_ms"] = run.DurationMS
+		if run.ExitCode != nil {
+			doneEvent["exit_code"] = *run.ExitCode
+		}
+		if run.OutputTruncated {
+			doneEvent["output_truncated"] = true
+		}
+	}
+	writeSSEEvent(c.Writer, flusher, doneEvent)
+}
+
+// GET /api/v1/sessions/:id/runs
+func (rh *RunHandler) ListBySession(c *gin.Context) {
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+	if _, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+
+	pg := pagination(c)
+	runs, err := dbpkg.ListRuns(c.Request.Context(), rh.h.db, sessionID, pg.limit, pg.offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list runs"})
+		return
+	}
+	total, _ := dbpkg.CountRuns(c.Request.Context(), rh.h.db, sessionID)
+	c.JSON(http.StatusOK, gin.H{"runs": runs, "pagination": pg.response(total)})
+}
+
+// GET /api/v1/runs/:id
+func (rh *RunHandler) Get(c *gin.Context) {
+	id, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	run, err := dbpkg.GetRun(c.Request.Context(), rh.h.db, id)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get run"})
+		return
+	}
+
+	if _, ok := rh.h.checkSessionAccess(c, run.SessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+
+	c.JSON(http.StatusOK, run)
+}
+
+// POST /api/v1/sessions/:id/run/async
+// Non-blocking variant: creates the run record immediately (status=pending),
+// returns 202 with the run_id, and executes the command in a background worker.
+// Optional "callback_url" field in the request body receives an HTTP POST with
+// the completed Run when finished.
+func (rh *RunHandler) Async(c *gin.Context) {
+	if rh.h.queue == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "async runs not configured"})
+		return
+	}
+
+	sessionID, ok := parseUUID(c, "id")
+	if !ok {
+		return
+	}
+
+	session, ok := rh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
+	if !ok {
+		return
+	}
+	if session.StoppedAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "session is stopped"})
+		return
+	}
+	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
+		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+
+	var req struct {
+		createRunRequest
+		CallbackURL string `json:"callback_url"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate callback URL to prevent SSRF.
+	if req.CallbackURL != "" {
+		if err := httputil.ValidatePublicURL(req.CallbackURL, false); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid callback_url: " + err.Error()})
+			return
+		}
+	}
+
+	var secretEnvAsync map[string]string
+	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		secretEnvAsync = make(map[string]string, len(req.Secrets))
+		for _, name := range req.Secrets {
+			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				return
+			}
+			secretEnvAsync[name] = val
+		}
+	}
+
+	limits := rh.h.cfg.SessionLimits()
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must be non-negative"})
+		return
+	}
+	if req.TimeoutSeconds > limits.MaxTimeoutSec {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("timeout_seconds exceeds maximum of %d", limits.MaxTimeoutSec)})
+		return
+	}
+
+	actor := middleware.Actor(c)
+	runReq := runner.RunRequest{
+		SessionID:      sessionID,
+		ContainerID:    *session.ContainerID,
+		Command:        req.Command,
+		Args:           req.Args,
+		Env:            req.Env,
+		SecretEnv:      secretEnvAsync,
+		WorkingDir:     req.WorkingDir,
+		TimeoutSeconds: req.TimeoutSeconds,
+		Actor:          actor,
+		CallbackURL:    req.CallbackURL,
+		WorkspacePath:  session.WorkspacePath,
+	}
+
+	// Create the pending run record now so we can return its ID.
+	run, err := rh.h.runner.PrepareAsync(c.Request.Context(), runReq)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !rh.h.queue.Submit(jobqueue.Job{Req: runReq, Run: run, CallbackURL: req.CallbackURL}) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "job queue full — try again later"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"run_id": run.ID,
+		"status": run.Status,
+		"message": "run enqueued",
+	})
+}
+
+// sseWriter wraps an http.ResponseWriter and formats each Write call as an SSE data event.
+type sseWriter struct {
+	w       io.Writer
+	flusher http.Flusher
+	kind    string // "stdout" or "stderr"
+}
+
+func (s *sseWriter) Write(p []byte) (int, error) {
+	event := map[string]any{"type": s.kind, "data": string(p)}
+	writeSSEEvent(s.w, s.flusher, event)
+	return len(p), nil
+}
+
+func writeSSEEvent(w io.Writer, flusher http.Flusher, event map[string]any) {
+	b, _ := json.Marshal(event)
+	fmt.Fprintf(w, "data: %s\n\n", b)
+	flusher.Flush()
+}

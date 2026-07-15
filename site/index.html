@@ -518,13 +518,16 @@ fmt.Println(*run.Stdout)</pre></div>
       <div class="path">
         <span class="tag">03 / talk</span>
         <h3>Talk / schedule a call</h3>
-        <p>Procurement, support, or a walkthrough. Prefer email scheduling for now — we’ll reply with times.</p>
-        <a class="btn ghost" href="#contact" data-intent="sales">start a conversation →</a>
-        <a class="btn ghost" href="mailto:mail@030.dev?subject=VaultRun%20Enterprise%20%E2%80%94%20schedule%20a%20call" style="font-size:12.5px">schedule via email ↗</a>
+        <p>Pick up to three preferred times — we confirm by email. No calendar SaaS required.</p>
+        <a class="btn ghost" href="#contact" data-intent="schedule">propose times →</a>
+        <a class="btn ghost" href="#contact" data-intent="sales" style="font-size:12.5px">general sales question →</a>
       </div>
     </div>
-    <p class="sub" style="margin-top:20px">Procurement one-pager (print-friendly):
-    <a href="/enterprise.html">vaultrun.dev/enterprise.html</a></p>
+    <p class="sub" style="margin-top:20px">
+      Procurement one-pager: <a href="/enterprise.html">enterprise.html</a> ·
+      Use cases: <a href="/use-cases.html">use-cases.html</a> ·
+      Demo script: <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/demo-video-script.md">demo-video-script.md</a>
+    </p>
   </div>
 </section>
 
@@ -555,6 +558,7 @@ fmt.Println(*run.Stdout)</pre></div>
             <option value="evaluation">enterprise — evaluation access</option>
             <option value="license">enterprise — production license</option>
             <option value="sales">enterprise — sales / support</option>
+            <option value="schedule">enterprise — schedule a call</option>
             <option value="security">security report</option>
           </select>
         </label>
@@ -583,6 +587,25 @@ fmt.Println(*run.Stdout)</pre></div>
             <span class="p">timeline:</span><br>
             <input type="text" name="timeline" placeholder="e.g. evaluating Q3, prod by October" class="field">
           </label>
+        </div>
+        <div id="schedule-fields" style="display:none; gap:14px">
+          <label class="label" style="display:block">
+            <span class="p">timezone:</span><br>
+            <input type="text" name="timezone" id="timezone" placeholder="Europe/Amsterdam" class="field">
+          </label>
+          <label class="label" style="display:block">
+            <span class="p">preferred slot 1:</span><br>
+            <input type="datetime-local" name="slot_1" class="field">
+          </label>
+          <label class="label" style="display:block">
+            <span class="p">preferred slot 2:</span><br>
+            <input type="datetime-local" name="slot_2" class="field">
+          </label>
+          <label class="label" style="display:block">
+            <span class="p">preferred slot 3 (optional):</span><br>
+            <input type="datetime-local" name="slot_3" class="field">
+          </label>
+          <p class="sub" style="margin:0;font-size:12.5px">We’ll confirm one of these over email (no Calendly required). 30-minute call.</p>
         </div>
         <label class="label" style="display:block">
           <span class="p">body:</span><br>
@@ -617,6 +640,7 @@ fmt.Println(*run.Stdout)</pre></div>
     evaluation: "VaultRun Enterprise — evaluation",
     license: "VaultRun Enterprise — license",
     sales: "VaultRun Enterprise — sales",
+    schedule: "VaultRun Enterprise — schedule a call",
     security: "[SECURITY] vaultrun",
     other: "[vaultrun.dev] contact request"
   };
@@ -624,6 +648,7 @@ fmt.Println(*run.Stdout)</pre></div>
     evaluation: "What are you evaluating (OIDC/SAML, IdP)? Any deadline?",
     license: "Anything else for the commercial quote?",
     sales: "What should we talk through — procurement, support, custom terms?",
+    schedule: "Anything we should prepare for the call (IdP, team size, use case)?",
     security: "Describe the issue (no sensitive exploit details in email if possible).",
     other: "what's on your mind?"
   };
@@ -631,14 +656,22 @@ fmt.Println(*run.Stdout)</pre></div>
   var intentEl = document.getElementById("intent");
   var subjectEl = document.getElementById("form-subject");
   var licenseFields = document.getElementById("license-fields");
+  var scheduleFields = document.getElementById("schedule-fields");
   var messageEl = document.getElementById("message");
   var emailEl = document.getElementById("email");
   var replytoEl = document.getElementById("form-replyto");
+  var tzEl = document.getElementById("timezone");
+
+  try {
+    tzEl.placeholder = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Amsterdam";
+    if (!tzEl.value) tzEl.value = tzEl.placeholder;
+  } catch (e) {}
 
   function syncIntent(value) {
     subjectEl.value = SUBJECTS[value] || SUBJECTS.other;
     messageEl.placeholder = PLACEHOLDERS[value] || PLACEHOLDERS.other;
     licenseFields.style.display = value === "license" ? "grid" : "none";
+    scheduleFields.style.display = value === "schedule" ? "grid" : "none";
   }
 
   intentEl.addEventListener("change", function () { syncIntent(intentEl.value); });
@@ -658,9 +691,11 @@ fmt.Println(*run.Stdout)</pre></div>
     document.getElementById("sent-msg").style.display = "block";
     document.getElementById("contact-form").style.display = "none";
   }
+  var qIntent = params.get("intent");
   var hashIntent = (location.hash.match(/intent=([a-z]+)/) || [])[1];
-  if (hashIntent && SUBJECTS[hashIntent]) {
-    intentEl.value = hashIntent;
+  var pick = qIntent || hashIntent;
+  if (pick && SUBJECTS[pick]) {
+    intentEl.value = pick;
   }
   syncIntent(intentEl.value);
 })();

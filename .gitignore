@@ -33,3 +33,4 @@ sdk/python/**/*.pyc
 /mcp
 sdk/mcp/mcp
 /ci-runner
+vaultrun.code-workspace

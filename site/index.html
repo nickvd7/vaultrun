@@ -190,6 +190,23 @@
   ul.sec li::before { content: "[x] "; color: var(--fg); font-weight: 600; }
   @media (max-width: 700px) { ul.sec { columns: 1; } }
 
+  /* comparison table */
+  .cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 0 0 28px; }
+  .cmp th, .cmp td { border: 1px solid var(--line); padding: 10px 14px; text-align: left; }
+  .cmp th { color: var(--dim); font-weight: 600; background: var(--bg-alt); }
+  .cmp td { color: var(--dim); }
+  .cmp td:first-child { color: var(--fg); font-weight: 500; }
+  .cmp .yes { color: var(--fg); }
+  .cmp .no { color: var(--faint); }
+
+  /* CTA cards */
+  .paths { display: grid; grid-template-columns: repeat(3, 1fr); border-left: 1px solid var(--line); border-top: 1px solid var(--line); margin-bottom: 8px; }
+  .path { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .path .tag { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .path h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .path p { margin: 0; color: var(--dim); font-size: 13.5px; flex: 1; }
+  @media (max-width: 800px) { .paths { grid-template-columns: 1fr; } }
+
   /* contact form */
   .field {
     width: 100%; margin-top: 6px; padding: 10px 12px;
@@ -198,6 +215,7 @@
   }
   .field:focus { outline: none; border-color: var(--fg); }
   .field::placeholder { color: var(--faint); }
+  select.field { appearance: none; cursor: pointer; }
 
   footer { padding: 40px 0 56px; color: var(--faint); font-size: 13px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; }
@@ -215,6 +233,7 @@
       <a href="#mcp">mcp</a>
       <a href="#sdk">sdk</a>
       <a href="#security">security</a>
+      <a href="#enterprise">enterprise</a>
       <a href="#contact">contact</a>
       <a href="https://github.com/nickvd7/vaultrun">github ↗</a>
     </div>
@@ -244,6 +263,7 @@
     </div>
     <div class="cta">
       <a class="btn primary" href="https://github.com/nickvd7/vaultrun">$ git clone vaultrun</a>
+      <a class="btn ghost" href="#enterprise">get enterprise →</a>
       <a class="btn ghost" href="#quickstart">read the manual ↓</a>
     </div>
   </div>
@@ -420,12 +440,87 @@ fmt.Println(*run.Stdout)</pre></div>
     <p class="sub">The core — API server, sandbox runtime, CLI, MCP server (53 tools), CI runner,
     dashboard, and both SDKs — is Apache 2.0: run it commercially, modify it, or vendor the
     Go SDK straight into your agent. Enterprise SSO (OIDC + SAML) ships separately under a
-    commercial license — <a href="mailto:mail@030.dev?subject=VaultRun%20Enterprise">mail@030.dev</a>.
-    Issues and pull requests welcome.</p>
+    commercial license. Issues and pull requests welcome.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/nickvd7/vaultrun">github.com/nickvd7/vaultrun</a>
+      <a class="btn ghost" href="#enterprise">get enterprise →</a>
       <a class="btn ghost" href="https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md">changelog</a>
       <a class="btn ghost" href="https://github.com/nickvd7/vaultrun/blob/main/docs/roadmap.md">roadmap</a>
+    </div>
+  </div>
+</section>
+
+<section id="enterprise">
+  <div class="wrap">
+    <h2>enterprise</h2>
+    <p class="h2-big">SSO for teams that already have an IdP.</p>
+    <p class="sub">VaultRun Enterprise adds OIDC (Authorization Code + PKCE) and SAML 2.0 to the
+    self-hosted API — Okta, Azure AD, Google Workspace, Keycloak, AD FS, OneLogin — with
+    org-aware RBAC and signed dashboard sessions. Eval is free; production needs a license.
+    Requests land in <a href="mailto:mail@030.dev">mail@030.dev</a>.</p>
+
+    <table class="cmp" aria-label="Core vs Enterprise">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Core (Apache 2.0)</th>
+          <th>Enterprise</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API / sandboxes / MCP / SDKs / CI runner</td>
+          <td class="yes">included</td>
+          <td class="yes">included</td>
+        </tr>
+        <tr>
+          <td>API key auth</td>
+          <td class="yes">included</td>
+          <td class="yes">included</td>
+        </tr>
+        <tr>
+          <td>OIDC + SAML SSO</td>
+          <td class="no">—</td>
+          <td class="yes">included</td>
+        </tr>
+        <tr>
+          <td>Org-aware IdP group → RBAC mapping</td>
+          <td class="no">—</td>
+          <td class="yes">included</td>
+        </tr>
+        <tr>
+          <td>Dev / test / evaluation use</td>
+          <td class="yes">free</td>
+          <td class="yes">free</td>
+        </tr>
+        <tr>
+          <td>Production SSO</td>
+          <td class="no">—</td>
+          <td class="yes">commercial license</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="paths">
+      <div class="path">
+        <span class="tag">01 / evaluate</span>
+        <h3>Try it free</h3>
+        <p>Dev and test use is free under the Enterprise License. Ask for evaluation access and follow the SSO setup guide.</p>
+        <a class="btn ghost" href="#contact" data-intent="evaluation">request evaluation →</a>
+        <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md" style="font-size:12.5px;color:var(--dim)">read SSO setup ↗</a>
+      </div>
+      <div class="path">
+        <span class="tag">02 / license</span>
+        <h3>Get a production license</h3>
+        <p>Ready for prod SSO? Tell us org, IdP, instances, and timeline — we’ll send commercial terms.</p>
+        <a class="btn primary" href="#contact" data-intent="license">request a license →</a>
+      </div>
+      <div class="path">
+        <span class="tag">03 / talk</span>
+        <h3>Talk to us</h3>
+        <p>Procurement, support, custom terms, or a walkthrough. Same inbox — mail@030.dev.</p>
+        <a class="btn ghost" href="#contact" data-intent="sales">start a conversation →</a>
+      </div>
     </div>
   </div>
 </section>
@@ -433,9 +528,9 @@ fmt.Println(*run.Stdout)</pre></div>
 <section id="contact">
   <div class="wrap">
     <h2>contact</h2>
-    <p class="h2-big">Questions, enterprise use, security reports?</p>
-    <p class="sub">Drop a message — it lands straight in our inbox. Prefer mail?
-    <a href="mailto:mail@030.dev?subject=VaultRun">mail@030.dev</a>.
+    <p class="h2-big">Questions, enterprise, security reports?</p>
+    <p class="sub">Every submission is emailed to <a href="mailto:mail@030.dev">mail@030.dev</a>.
+    Prefer a plain mail client? Use the same address with a clear subject.
     Bugs and feature requests go to <a href="https://github.com/nickvd7/vaultrun/issues">GitHub issues</a>.</p>
 
     <div id="sent-msg" class="term" style="display:none; margin-bottom:20px">
@@ -443,26 +538,55 @@ fmt.Println(*run.Stdout)</pre></div>
 <span class="o">message queued — we'll get back to you soon. ✓</span></pre>
     </div>
 
-    <form class="term" action="https://formsubmit.co/mail@030.dev" method="POST">
+    <form id="contact-form" class="term" action="https://formsubmit.co/mail@030.dev" method="POST">
       <div class="term-bar"><i></i><i></i><i></i>&nbsp;new-message — vaultrun.dev</div>
       <div style="padding:18px; display:grid; gap:14px">
-        <input type="hidden" name="_subject" value="[vaultrun.dev] contact request">
+        <input type="hidden" id="form-subject" name="_subject" value="[vaultrun.dev] contact request">
         <input type="hidden" name="_next" value="https://vaultrun.dev/?sent=1#contact">
+        <input type="hidden" name="_replyto" id="form-replyto" value="">
         <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off">
+        <label class="label" style="display:block">
+          <span class="p">intent:</span><br>
+          <select id="intent" name="intent" class="field" required>
+            <option value="other">general / other</option>
+            <option value="evaluation">enterprise — evaluation access</option>
+            <option value="license">enterprise — production license</option>
+            <option value="sales">enterprise — sales / support</option>
+            <option value="security">security report</option>
+          </select>
+        </label>
         <label class="label" style="display:block">
           <span class="p">from:</span><br>
           <input required type="text" name="name" placeholder="your name" class="field">
         </label>
         <label class="label" style="display:block">
-          <span class="p">reply-to:</span><br>
-          <input required type="email" name="email" placeholder="you@example.com" class="field">
+          <span class="p">company:</span><br>
+          <input type="text" name="company" placeholder="acme corp (optional)" class="field">
         </label>
         <label class="label" style="display:block">
+          <span class="p">reply-to:</span><br>
+          <input required type="email" id="email" name="email" placeholder="you@example.com" class="field">
+        </label>
+        <div id="license-fields" style="display:none; gap:14px">
+          <label class="label" style="display:block">
+            <span class="p">idp:</span><br>
+            <input type="text" name="idp" placeholder="Okta / Azure AD / Google / other" class="field">
+          </label>
+          <label class="label" style="display:block">
+            <span class="p">instances / seats:</span><br>
+            <input type="text" name="scale" placeholder="e.g. 1 prod cluster, ~50 users" class="field">
+          </label>
+          <label class="label" style="display:block">
+            <span class="p">timeline:</span><br>
+            <input type="text" name="timeline" placeholder="e.g. evaluating Q3, prod by October" class="field">
+          </label>
+        </div>
+        <label class="label" style="display:block">
           <span class="p">body:</span><br>
-          <textarea required name="message" rows="5" placeholder="what's on your mind?" class="field"></textarea>
+          <textarea required name="message" id="message" rows="5" placeholder="what's on your mind?" class="field"></textarea>
         </label>
         <div>
-          <button type="submit" class="btn primary" style="cursor:pointer; font-family:inherit">:wq — send message</button>
+          <button type="submit" class="btn primary" style="cursor:pointer; font-family:inherit">:wq — send to mail@030.dev</button>
         </div>
       </div>
     </form>
@@ -471,23 +595,71 @@ fmt.Println(*run.Stdout)</pre></div>
 
 <footer>
   <div class="wrap">
-    <div>© 2026 VaultRun — Apache 2.0 core · enterprise: mail@030.dev</div>
+    <div>© 2026 VaultRun — Apache 2.0 core · <a href="#enterprise">enterprise</a>: mail@030.dev</div>
     <div>
       <a href="https://github.com/nickvd7/vaultrun">github</a> ·
       <a href="https://pypi.org/project/vaultrun-sdk/">pypi</a> ·
+      <a href="#enterprise">enterprise</a> ·
       <a href="/llms.txt">llms.txt</a> ·
       <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/architecture.md">architecture</a> ·
-      <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml">openapi</a> ·
-      <a href="mailto:mail@030.dev">mail@030.dev</a>
+      <a href="mailto:mail@030.dev?subject=VaultRun%20Enterprise">mail@030.dev</a>
     </div>
   </div>
 </footer>
 
 <script>
-  if (new URLSearchParams(location.search).has("sent")) {
-    document.getElementById("sent-msg").style.display = "block";
-    document.querySelector("#contact form").style.display = "none";
+(function () {
+  var SUBJECTS = {
+    evaluation: "VaultRun Enterprise — evaluation",
+    license: "VaultRun Enterprise — license",
+    sales: "VaultRun Enterprise — sales",
+    security: "[SECURITY] vaultrun",
+    other: "[vaultrun.dev] contact request"
+  };
+  var PLACEHOLDERS = {
+    evaluation: "What are you evaluating (OIDC/SAML, IdP)? Any deadline?",
+    license: "Anything else for the commercial quote?",
+    sales: "What should we talk through — procurement, support, custom terms?",
+    security: "Describe the issue (no sensitive exploit details in email if possible).",
+    other: "what's on your mind?"
+  };
+
+  var intentEl = document.getElementById("intent");
+  var subjectEl = document.getElementById("form-subject");
+  var licenseFields = document.getElementById("license-fields");
+  var messageEl = document.getElementById("message");
+  var emailEl = document.getElementById("email");
+  var replytoEl = document.getElementById("form-replyto");
+
+  function syncIntent(value) {
+    subjectEl.value = SUBJECTS[value] || SUBJECTS.other;
+    messageEl.placeholder = PLACEHOLDERS[value] || PLACEHOLDERS.other;
+    licenseFields.style.display = value === "license" ? "grid" : "none";
   }
+
+  intentEl.addEventListener("change", function () { syncIntent(intentEl.value); });
+  emailEl.addEventListener("input", function () { replytoEl.value = emailEl.value; });
+
+  document.querySelectorAll("[data-intent]").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var v = el.getAttribute("data-intent");
+      if (!v) return;
+      intentEl.value = v;
+      syncIntent(v);
+    });
+  });
+
+  var params = new URLSearchParams(location.search);
+  if (params.has("sent")) {
+    document.getElementById("sent-msg").style.display = "block";
+    document.getElementById("contact-form").style.display = "none";
+  }
+  var hashIntent = (location.hash.match(/intent=([a-z]+)/) || [])[1];
+  if (hashIntent && SUBJECTS[hashIntent]) {
+    intentEl.value = hashIntent;
+  }
+  syncIntent(intentEl.value);
+})();
 </script>
 
 </body>

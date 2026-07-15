@@ -7,6 +7,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 ## Start here
 
 - [Website](https://vaultrun.dev/): Product overview and quickstart
+- [Enterprise](https://vaultrun.dev/#enterprise): Evaluation, production license, or sales (emails mail@030.dev)
 - [GitHub repository](https://github.com/nickvd7/vaultrun): Source, issues, releases
 - [README](https://github.com/nickvd7/vaultrun/blob/main/README.md): Install, architecture, components
 - [Changelog](https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md): Release history (latest: v0.2.0)
@@ -38,6 +39,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - MCP: 53 tools over stdio (Claude Desktop/Code) or HTTP JSON-RPC (`POST /mcp`)
 - Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
 - Contact: mail@030.dev · https://github.com/nickvd7/vaultrun/issues
+- Enterprise: https://vaultrun.dev/#enterprise — evaluate (free for dev/test), production license, or sales; all requests email mail@030.dev
 
 ## Optional
 

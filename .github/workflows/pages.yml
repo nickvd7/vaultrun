@@ -13,19 +13,36 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+      # GitHub Pages occasionally returns HTTP 500 on create-deployment; one retry usually clears it.
       - id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
+
+      - name: Wait before Pages retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 45
+
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+
+      - name: Fail if Pages deploy did not succeed
+        if: steps.deployment.outcome == 'failure' && steps.deployment_retry.outcome != 'success'
+        run: |
+          echo "GitHub Pages deployment failed after retry."
+          exit 1

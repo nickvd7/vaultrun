@@ -11,6 +11,30 @@ _Nothing yet._
 
 ---
 
+## [0.2.1] — 2026-07-15
+
+Packaging, website, and Enterprise acquisition clarity — no API breaking changes.
+
+### Added
+
+- **Enterprise acquisition paths** on [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) — Evaluate / License / Talk to us, intake form → `mail@030.dev`
+- **Enterprise one-pager** at [vaultrun.dev/enterprise.html](https://vaultrun.dev/enterprise.html) for procurement
+- **Discoverability** — `llms.txt`, `robots.txt`, `sitemap.xml`, JSON-LD, `CITATION.cff`
+- **PyPI** — `vaultrun-sdk` 0.2.1 with richer keywords and description
+
+### Changed
+
+- README / SSO guide / roadmap updated for open-core + Enterprise licensing paths
+- Frontend landing and sidebar version badges set to v0.2.0+
+
+### Fixed
+
+- Duplicate Next.js `/dashboard` routes breaking CI frontend build
+- GitHub Pages workflow `enablement` permission failure
+- PyPI Trusted Publishing (OIDC) publisher / environment mismatch
+
+---
+
 ## [0.2.0] — 2026-06-11
 
 Open-core split. This repository is now the Apache 2.0 core; enterprise
@@ -189,6 +213,7 @@ and enterprise SSO.
 - OpenAPI spec at `docs/openapi.yaml`
 - Architecture, security, configuration, and secrets documentation in `docs/`
 
+[0.2.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.0
 [0.1.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.1.1
 [0.1.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.1.0

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultRun Enterprise — procurement one-pager</title>
+<meta name="description" content="VaultRun Enterprise: OIDC and SAML SSO for the self-hosted AI agent runtime. Evaluation free; production by commercial license. Contact mail@030.dev.">
+<link rel="canonical" href="https://vaultrun.dev/enterprise.html">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="VaultRun Enterprise">
+<meta property="og:description" content="SSO (OIDC + SAML) overlay for VaultRun. Evaluate free; production license on request.">
+<meta property="og:url" content="https://vaultrun.dev/enterprise.html">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><text x='2' y='12' font-family='monospace' font-size='11' fill='%23ffffff'>&gt;_</text></svg>">
+<style>
+  :root {
+    --bg: #0a0a0a; --bg-alt: #111; --fg: #e8e8e8; --dim: #8a8a8a;
+    --faint: #555; --line: #262626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14.5px; line-height: 1.55;
+  }
+  a { color: var(--fg); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--fg); }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 32px 24px 64px; }
+  nav { display: flex; gap: 16px; align-items: center; margin-bottom: 40px; font-size: 13px; }
+  nav .logo { font-weight: 700; text-decoration: none; letter-spacing: .04em; }
+  nav .logo span { color: var(--dim); }
+  nav a { color: var(--dim); text-decoration: none; }
+  nav a:hover { color: var(--fg); }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  .lede { color: var(--dim); margin: 0 0 28px; max-width: 56ch; }
+  h2 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin: 36px 0 12px; }
+  h2::before { content: "## "; color: var(--faint); }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 8px; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-alt); color: var(--dim); font-weight: 600; }
+  td:first-child { color: var(--fg); font-weight: 500; width: 38%; }
+  td { color: var(--dim); }
+  ul { margin: 0; padding-left: 1.2em; color: var(--dim); }
+  li { margin-bottom: 6px; }
+  .box { border: 1px solid var(--line); background: var(--bg-alt); padding: 18px; margin: 16px 0; }
+  .box p { margin: 0 0 10px; color: var(--dim); }
+  .box p:last-child { margin: 0; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .btn {
+    display: inline-block; padding: 10px 18px; font-size: 13px;
+    text-decoration: none; border: 1px solid var(--fg); font-family: inherit;
+  }
+  .btn.primary { background: var(--fg); color: var(--bg); font-weight: 600; }
+  .btn.ghost { color: var(--fg); border-color: var(--line); }
+  .btn.ghost:hover { border-color: var(--fg); }
+  .meta { color: var(--faint); font-size: 12px; margin-top: 40px; }
+  @media print {
+    body { background: #fff; color: #111; }
+    :root { --bg: #fff; --bg-alt: #f5f5f5; --fg: #111; --dim: #333; --faint: #666; --line: #ccc; }
+    .btn { border-color: #111; }
+    .btn.primary { background: #111; color: #fff; }
+    nav a:not(.logo) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="/">vaultrun<span>.dev</span></a>
+    <a href="/#enterprise">overview</a>
+    <a href="/#contact">contact</a>
+    <a href="https://github.com/nickvd7/vaultrun">github</a>
+  </nav>
+
+  <h1>VaultRun Enterprise</h1>
+  <p class="lede">Procurement one-pager. Self-hosted AI agent runtime with identity federation (OIDC + SAML). Core stays Apache 2.0; SSO ships as a commercial overlay.</p>
+
+  <h2>What you get</h2>
+  <table>
+    <tr><th>Item</th><th>Detail</th></tr>
+    <tr><td>SSO / OIDC</td><td>Authorization Code + PKCE; Okta, Azure AD, Google Workspace, Keycloak, Auth0</td></tr>
+    <tr><td>SSO / SAML 2.0</td><td>Signed assertions; AD FS, Okta, OneLogin and similar IdPs</td></tr>
+    <tr><td>Sessions</td><td>HttpOnly Secure cookies; server-side revocation; scoped API key auto-provisioned on login</td></tr>
+    <tr><td>RBAC</td><td>Org-aware roles (viewer / executor / admin); IdP group mapping</td></tr>
+    <tr><td>Delivery</td><td>Private overlay repo; build with <code>go build -tags enterprise</code> onto open-core VaultRun</td></tr>
+    <tr><td>Hosting</td><td>Runs on <em>your</em> infrastructure — no VaultRun SaaS dependency</td></tr>
+  </table>
+
+  <h2>Licensing</h2>
+  <table>
+    <tr><th>Use</th><th>Terms</th></tr>
+    <tr><td>Development / test / evaluation</td><td>Free under the VaultRun Enterprise License</td></tr>
+    <tr><td>Production SSO</td><td>Commercial subscription or written agreement required</td></tr>
+    <tr><td>Managed service / hosting for third parties</td><td>Not permitted without a written commercial agreement</td></tr>
+    <tr><td>Pricing</td><td>Custom quote — no public price list yet; contact for a proposal</td></tr>
+  </table>
+
+  <h2>How to buy / evaluate</h2>
+  <div class="box">
+    <p><strong style="color:var(--fg)">1. Evaluate</strong> — request repo access for a PoC (dev/test free).</p>
+    <p><strong style="color:var(--fg)">2. License</strong> — send org, IdP, instance count / seats, and timeline for a production quote.</p>
+    <p><strong style="color:var(--fg)">3. Talk / schedule</strong> — procurement, support, or a walkthrough. All paths email <strong style="color:var(--fg)">mail@030.dev</strong>.</p>
+  </div>
+  <div class="cta">
+    <a class="btn primary" href="/#contact">request via form →</a>
+    <a class="btn ghost" href="mailto:mail@030.dev?subject=VaultRun%20Enterprise%20%E2%80%94%20license">email license request</a>
+    <a class="btn ghost" href="mailto:mail@030.dev?subject=VaultRun%20Enterprise%20%E2%80%94%20schedule%20a%20call">schedule a call (email)</a>
+  </div>
+
+  <h2>Technical references</h2>
+  <ul>
+    <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md">SSO setup guide</a></li>
+    <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/security.md">Security model</a></li>
+    <li><a href="https://github.com/nickvd7/vaultrun">Open-core repository</a> (Apache 2.0)</li>
+    <li><a href="https://vaultrun.dev/">Product site</a> · <a href="https://vaultrun.dev/#enterprise">Enterprise CTA</a></li>
+  </ul>
+
+  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-07-15</p>
+</div>
+</body>
+</html>

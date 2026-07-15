@@ -160,7 +160,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-indigo-400" />
             <span className="font-semibold text-slate-100 tracking-tight">VaultRun</span>
-            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v0.2.0</span>
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v0.2.1</span>
           </div>
           <div className="flex items-center gap-3">
             <a
@@ -381,14 +381,32 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <a
-                href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
-              >
-                Read the SSO setup guide <ArrowRight className="w-3.5 h-3.5" />
-              </a>
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href="https://vaultrun.dev/#enterprise"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+                >
+                  Get Enterprise <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+                <a
+                  href="https://vaultrun.dev/enterprise.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 text-sm font-medium transition-colors"
+                >
+                  Procurement one-pager
+                </a>
+                <a
+                  href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 text-sm transition-colors"
+                >
+                  SSO setup guide
+                </a>
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -517,7 +535,7 @@ export default function LandingPage() {
             >
               Changelog
             </a>
-            <span className="font-mono">v0.2.0</span>
+            <span className="font-mono">v0.2.1</span>
           </div>
         </div>
       </footer>

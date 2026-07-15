@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultRun use cases — how teams run AI agents safely</title>
+<meta name="description" content="Reference use cases for VaultRun: platform sandboxes, regulated AI agents, and PR CI in isolated Docker sessions. Patterns, not customer logos.">
+<link rel="canonical" href="https://vaultrun.dev/use-cases.html">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="VaultRun use cases">
+<meta property="og:description" content="Platform sandboxes, regulated agent tooling, and self-hosted PR CI — without a SaaS dependency.">
+<meta property="og:url" content="https://vaultrun.dev/use-cases.html">
+<meta property="og:type" content="article">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><text x='2' y='12' font-family='monospace' font-size='11' fill='%23ffffff'>&gt;_</text></svg>">
+<style>
+  :root { --bg:#0a0a0a; --bg-alt:#111; --fg:#e8e8e8; --dim:#8a8a8a; --faint:#555; --line:#262626; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; }
+  a { color:var(--fg); text-underline-offset:3px; }
+  .wrap { max-width:820px; margin:0 auto; padding:32px 24px 72px; }
+  nav { display:flex; gap:16px; align-items:center; margin-bottom:40px; font-size:13px; flex-wrap:wrap; }
+  nav .logo { font-weight:700; text-decoration:none; letter-spacing:.04em; }
+  nav .logo span { color:var(--dim); }
+  nav a { color:var(--dim); text-decoration:none; }
+  nav a:hover { color:var(--fg); }
+  h1 { font-size:26px; margin:0 0 8px; }
+  .lede { color:var(--dim); margin:0 0 32px; max-width:62ch; }
+  .note { border:1px solid var(--line); background:var(--bg-alt); padding:12px 14px; color:var(--dim); font-size:13px; margin-bottom:36px; }
+  article { border-top:1px solid var(--line); padding:28px 0; }
+  article h2 { margin:0 0 8px; font-size:18px; }
+  article .tag { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin-bottom:8px; }
+  article p { color:var(--dim); margin:0 0 12px; }
+  article ul { margin:0 0 12px; padding-left:1.2em; color:var(--dim); }
+  article li { margin-bottom:6px; }
+  .cta { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; }
+  .btn { display:inline-block; padding:10px 18px; font-size:13px; text-decoration:none; border:1px solid var(--fg); font-family:inherit; }
+  .btn.primary { background:var(--fg); color:var(--bg); font-weight:600; }
+  .btn.ghost { border-color:var(--line); color:var(--fg); }
+  footer { margin-top:40px; color:var(--faint); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="/">vaultrun<span>.dev</span></a>
+    <a href="/#enterprise">enterprise</a>
+    <a href="/enterprise.html">one-pager</a>
+    <a href="/#contact">contact</a>
+    <a href="https://github.com/nickvd7/vaultrun">github</a>
+  </nav>
+
+  <h1>Use cases</h1>
+  <p class="lede">How teams typically deploy VaultRun. These are reference patterns — not named customer case studies — based on the product’s real capabilities (sandboxes, MCP, CI runner, Enterprise SSO).</p>
+  <div class="note">Want a walkthrough on your infra? <a href="/#contact">Propose call times</a> or see the <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/demo-video-script.md">2–3 min demo script</a>.</div>
+
+  <article>
+    <div class="tag">01 / platform engineering</div>
+    <h2>Shared sandbox platform for AI agents</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> Agents need to run untrusted code and touch files. Letting them loose on shared VMs or developer laptops creates blast-radius and audit gaps.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> One VaultRun API per environment. Agents create a session, upload tools/scripts via API or MCP, run commands in an isolated container, then tear down. Network stays off unless explicitly allowlisted.</p>
+    <ul>
+      <li>API keys for agents; Enterprise SSO for humans on the dashboard</li>
+      <li>HMAC-signed audit trail for every session/run/file action</li>
+      <li>OPA hooks for command and path policy</li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> A controlled execution plane that stays on your network — no SaaS telemetry, no third-party code runner.</p>
+  </article>
+
+  <article>
+    <div class="tag">02 / regulated / security-minded AI</div>
+    <h2>Agent access to data and cloud without ambient credentials</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> Giving an LLM toolchain raw AWS/DB credentials is risky; banning tools blocks useful workflows.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Use MCP tools with explicit opt-in (e.g. AWS tools only when enabled), scoped filesystem allowlists, and Secrets Manager / Vault injection per run — results redacted in audit where needed.</p>
+    <ul>
+      <li>53 MCP tools over stdio (Claude) or HTTP (OpenAI / OpenRouter / custom)</li>
+      <li>Postgres / SQLite / Mongo tools without putting the agent on the database host</li>
+      <li>Enterprise IdP login so dashboard users never share the master key</li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Capability with a paper trail — suitable as an internal control story for security review.</p>
+  </article>
+
+  <article>
+    <div class="tag">03 / engineering / CI</div>
+    <h2>PR tests inside an isolated VaultRun sandbox</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> CI runners that share state or host Docker sockets leak secrets and flake under load.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Point a GitHub webhook at <code>ci-runner</code>. Each PR clones into a VaultRun session, runs your test command list, posts a PR comment + commit status, optionally Slack/Teams.</p>
+    <ul>
+      <li>HMAC webhook validation</li>
+      <li>Token-safe clone via <code>http.extraheader</code></li>
+      <li>Same security model as interactive agent sandboxes</li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Homogeneous isolation for humans, agents, and bots.</p>
+  </article>
+
+  <div class="cta">
+    <a class="btn primary" href="/#enterprise">get enterprise →</a>
+    <a class="btn ghost" href="/?intent=schedule#contact">schedule a walkthrough →</a>
+    <a class="btn ghost" href="https://github.com/nickvd7/vaultrun">clone the core</a>
+  </div>
+
+  <footer>VaultRun · Apache 2.0 core · Enterprise SSO commercial · mail@030.dev</footer>
+</div>
+</body>
+</html>

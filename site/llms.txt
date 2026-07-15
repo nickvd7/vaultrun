@@ -1,0 +1,44 @@
+# VaultRun
+
+> Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 53-tool MCP server (stdio + HTTP), HMAC-signed audit trail. No SaaS, no telemetry.
+
+VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker containers on your own infrastructure. Apache 2.0 open core; Enterprise SSO (OIDC + SAML) is available separately.
+
+## Start here
+
+- [Website](https://vaultrun.dev/): Product overview and quickstart
+- [GitHub repository](https://github.com/nickvd7/vaultrun): Source, issues, releases
+- [README](https://github.com/nickvd7/vaultrun/blob/main/README.md): Install, architecture, components
+- [Changelog](https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md): Release history (latest: v0.2.0)
+- [Python SDK on PyPI](https://pypi.org/project/vaultrun-sdk/): `pip install vaultrun-sdk`
+
+## Docs
+
+- [Architecture](https://github.com/nickvd7/vaultrun/blob/main/docs/architecture.md): System design and components
+- [Security model](https://github.com/nickvd7/vaultrun/blob/main/docs/security.md): Isolation, auth, audit, hardening
+- [MCP server](https://github.com/nickvd7/vaultrun/blob/main/docs/mcp.md): 53 tools, stdio and HTTP transports
+- [Configuration](https://github.com/nickvd7/vaultrun/blob/main/docs/configuration.md): Environment variables and options
+- [SSO setup](https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md): OIDC and SAML (Enterprise)
+- [CI runner](https://github.com/nickvd7/vaultrun/blob/main/docs/ci-runner.md): GitHub webhook → sandboxed CI
+- [OpenAPI](https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml): REST API schema
+- [Roadmap](https://github.com/nickvd7/vaultrun/blob/main/docs/roadmap.md): Planned work
+
+## SDKs & clients
+
+- [Python SDK](https://github.com/nickvd7/vaultrun/tree/main/sdk/python): Typed client (`sandbox_sdk.Client`)
+- [Go SDK](https://github.com/nickvd7/vaultrun/tree/main/sdk/go): Typed Go client
+- [MCP server source](https://github.com/nickvd7/vaultrun/tree/main/sdk/mcp): Model Context Protocol implementation
+
+## Quick facts for agents
+
+- License: Apache-2.0 (core); Enterprise SSO commercial
+- Language: Go 1.25+ (API/CLI/MCP); Next.js dashboard; Python + Go SDKs
+- Sandbox: One Docker container per session; network off by default; non-root; capabilities dropped
+- Auth: API keys (`vr_…`); optional OIDC/SAML via VaultRun Enterprise
+- MCP: 53 tools over stdio (Claude Desktop/Code) or HTTP JSON-RPC (`POST /mcp`)
+- Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
+- Contact: mail@030.dev · https://github.com/nickvd7/vaultrun/issues
+
+## Optional
+
+- [Full llms.txt](https://vaultrun.dev/llms-full.txt): Longer product summary for grounding

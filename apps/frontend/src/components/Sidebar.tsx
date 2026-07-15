@@ -64,7 +64,7 @@ export function Sidebar() {
         </button>
         <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-700">
           <FileText className="w-3 h-3" />
-          <span>MVP v0.1.0</span>
+          <span>v0.2.0</span>
         </div>
       </div>
     </aside>

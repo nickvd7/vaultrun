@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vaultrun-sdk"
 version = "0.2.0"
-description = "Python SDK for the VaultRun secure AI agent sandbox runtime"
+description = "Python SDK for VaultRun — self-hosted secure AI agent sandbox runtime (Docker, MCP, audit trail)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -20,8 +20,21 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
 ]
-keywords = ["ai-agents", "sandbox", "mcp", "docker", "security", "self-hosted"]
+keywords = [
+    "ai-agents",
+    "llm",
+    "sandbox",
+    "mcp",
+    "model-context-protocol",
+    "docker",
+    "code-execution",
+    "security",
+    "self-hosted",
+    "vaultrun",
+]
 
 [project.urls]
 Homepage = "https://vaultrun.dev"

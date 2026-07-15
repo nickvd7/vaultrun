@@ -160,7 +160,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-indigo-400" />
             <span className="font-semibold text-slate-100 tracking-tight">VaultRun</span>
-            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v0.1.0</span>
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v0.2.0</span>
           </div>
           <div className="flex items-center gap-3">
             <a
@@ -517,7 +517,7 @@ export default function LandingPage() {
             >
               Changelog
             </a>
-            <span className="font-mono">v0.1.0</span>
+            <span className="font-mono">v0.2.0</span>
           </div>
         </div>
       </footer>

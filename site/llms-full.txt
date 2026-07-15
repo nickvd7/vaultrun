@@ -56,11 +56,20 @@ client = Client("http://localhost:8080", api_key="vr_...")
 
 ## Enterprise
 
-OIDC (Authorization Code + PKCE) and SAML 2.0, org-aware RBAC, IdP group mapping. Setup guide: https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md — commercial contact mail@030.dev.
+OIDC (Authorization Code + PKCE) and SAML 2.0, org-aware RBAC, IdP group mapping. Setup guide: https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md
+
+How companies get Enterprise (https://vaultrun.dev/#enterprise):
+
+1. **Evaluate** — free for development and testing; request evaluation access
+2. **License** — production SSO; provide org, IdP, instances/seats, timeline
+3. **Talk to us** — procurement, support, custom terms
+
+Every request is emailed to mail@030.dev (FormSubmit on the website or mailto). No public pricing; commercial agreement required for production use.
 
 ## Canonical links
 
 - Website: https://vaultrun.dev/
+- Enterprise CTA: https://vaultrun.dev/#enterprise
 - Source: https://github.com/nickvd7/vaultrun
 - PyPI: https://pypi.org/project/vaultrun-sdk/
 - Compact index: https://vaultrun.dev/llms.txt

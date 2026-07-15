@@ -3,8 +3,12 @@
 > **Enterprise feature** — SSO ships in the separate VaultRun Enterprise
 > repository and is compiled into the API server as an overlay
 > (`go build -tags enterprise`). A core build refuses to start when
-> `OIDC_*`/`SAML_*` env vars are set. For access and licensing,
-> contact **mail@030.dev**.
+> `OIDC_*`/`SAML_*` env vars are set.
+>
+> **How to get Enterprise** — request evaluation, a production license, or a
+> sales conversation at [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise).
+> Every request is emailed to **mail@030.dev**. Dev/test evaluation is free;
+> production use requires a commercial license.
 
 This guide walks through configuring **OIDC** or **SAML 2.0** single sign-on
 for the VaultRun dashboard, end to end — from registering an application with

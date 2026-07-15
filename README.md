@@ -291,7 +291,15 @@ VaultRun supports three authentication methods:
 
 SSO logins auto-provision a VaultRun API key and issue a signed session cookie. OIDC and SAML do not grant master-key privileges.
 
-SSO ships as **VaultRun Enterprise** in a separate repository and is compiled into the API server as an overlay (`go build -tags enterprise`). A core build refuses to start when `OIDC_*`/`SAML_*` env vars are set, so misconfigured deployments fail loudly. For enterprise access and licensing, contact **mail@030.dev**.
+SSO ships as **VaultRun Enterprise** in a separate repository and is compiled into the API server as an overlay (`go build -tags enterprise`). A core build refuses to start when `OIDC_*`/`SAML_*` env vars are set, so misconfigured deployments fail loudly.
+
+### How to get Enterprise
+
+Pick a path on [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) — every request is emailed to **mail@030.dev**:
+
+1. **Evaluate** — free for development and testing; request evaluation access
+2. **License** — production SSO; include org, IdP, instances/seats, and timeline
+3. **Talk to us** — procurement, support, or custom terms
 
 See [docs/sso-setup.md](docs/sso-setup.md) for a step-by-step setup guide (IdP registration, certificates, testing, troubleshooting), or [docs/configuration.md](docs/configuration.md#sso--oidc--openid-connect) for the environment variable reference.
 
@@ -377,4 +385,4 @@ VaultRun is open core:
 - Everything in this repository is licensed under **Apache 2.0** — see [LICENSE](LICENSE).
 - **VaultRun Enterprise** (SSO: OIDC + SAML 2.0) lives in a separate repository under the VaultRun Enterprise License.
 
-Enterprise licensing & support: **mail@030.dev**
+Enterprise licensing & support: **[vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise)** → emails **mail@030.dev**

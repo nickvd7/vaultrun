@@ -5,11 +5,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun — self-hosted secure runtime for AI agents</title>
 <meta name="description" content="VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes on your own infrastructure. No SaaS, no telemetry.">
-<meta property="og:title" content="VaultRun">
+<meta name="keywords" content="AI agents, MCP server, Docker sandbox, code execution, self-hosted, LLM tools, secure runtime, Claude, OpenAI, OpenRouter, audit trail">
+<meta name="author" content="VaultRun">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<link rel="canonical" href="https://vaultrun.dev/">
+<link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
+<meta property="og:title" content="VaultRun — self-hosted secure runtime for AI agents">
 <meta property="og:description" content="Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 53-tool MCP server, SSO, signed audit trail.">
-<meta property="og:url" content="https://vaultrun.dev">
+<meta property="og:url" content="https://vaultrun.dev/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="VaultRun">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="VaultRun — self-hosted secure runtime for AI agents">
+<meta name="twitter:description" content="Isolated Docker sandboxes and a 53-tool MCP server for AI agents. Self-hosted, no SaaS, no telemetry.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><text x='2' y='12' font-family='monospace' font-size='11' fill='%23ffffff'>&gt;_</text></svg>">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://vaultrun.dev/#website",
+      "url": "https://vaultrun.dev/",
+      "name": "VaultRun",
+      "description": "Self-hosted secure runtime for AI agents",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://vaultrun.dev/#software",
+      "name": "VaultRun",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Docker",
+      "softwareVersion": "0.2.0",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "url": "https://vaultrun.dev/",
+      "downloadUrl": "https://github.com/nickvd7/vaultrun",
+      "codeRepository": "https://github.com/nickvd7/vaultrun",
+      "description": "Self-hosted secure runtime for AI agents with isolated Docker sandboxes, a 53-tool MCP server, Python and Go SDKs, and an HMAC-signed audit trail.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "sameAs": [
+        "https://github.com/nickvd7/vaultrun",
+        "https://pypi.org/project/vaultrun-sdk/"
+      ],
+      "keywords": "AI agents, MCP, Docker sandbox, self-hosted, LLM, code execution, security"
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://vaultrun.dev/#org",
+      "name": "VaultRun",
+      "url": "https://vaultrun.dev/",
+      "email": "mail@030.dev",
+      "sameAs": ["https://github.com/nickvd7/vaultrun"]
+    }
+  ]
+}
+</script>
 <style>
   :root {
     --bg: #0a0a0a;
@@ -304,7 +360,7 @@
     <div class="cols">
       <div>
         <p class="label">python</p>
-        <div class="term"><pre><span class="c"># pip install ./sdk/python</span>
+        <div class="term"><pre><span class="c"># pip install vaultrun-sdk</span>
 from sandbox_sdk import Client
 
 client = Client("http://localhost:8080",
@@ -418,7 +474,8 @@ fmt.Println(*run.Stdout)</pre></div>
     <div>© 2026 VaultRun — Apache 2.0 core · enterprise: mail@030.dev</div>
     <div>
       <a href="https://github.com/nickvd7/vaultrun">github</a> ·
-      <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md">sso guide</a> ·
+      <a href="https://pypi.org/project/vaultrun-sdk/">pypi</a> ·
+      <a href="/llms.txt">llms.txt</a> ·
       <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/architecture.md">architecture</a> ·
       <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml">openapi</a> ·
       <a href="mailto:mail@030.dev">mail@030.dev</a>

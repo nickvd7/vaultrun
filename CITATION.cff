@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: VaultRun
+message: If you use VaultRun, please cite it as below.
+type: software
+authors:
+  - name: "030.dev / VaultRun"
+    email: mail@030.dev
+repository-code: "https://github.com/nickvd7/vaultrun"
+url: "https://vaultrun.dev"
+abstract: >-
+  VaultRun is a self-hosted secure runtime for AI agents. It provides isolated
+  Docker sandboxes, a 53-tool MCP server (stdio and HTTP), Python and Go SDKs,
+  and an HMAC-signed audit trail so agents can execute code and call tools
+  without a SaaS dependency.
+keywords:
+  - AI agents
+  - MCP
+  - Docker
+  - sandbox
+  - LLM
+  - self-hosted
+  - code execution
+license: Apache-2.0
+version: 0.2.0
+date-released: "2026-07-15"

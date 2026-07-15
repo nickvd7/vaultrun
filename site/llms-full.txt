@@ -1,0 +1,66 @@
+# VaultRun — full summary for AI systems
+
+VaultRun is a self-hosted secure runtime for AI agents. It runs agent workflows inside isolated Docker sandboxes on the operator’s infrastructure so code execution, file access, database queries, and cloud API calls stay inside a blast radius that the operator controls. There is no VaultRun SaaS dependency and no product telemetry.
+
+## Problem it solves
+
+LLM agents often need to run code, touch filesystems, or call external systems. Doing that on the host or via unmanaged shells is unsafe. VaultRun sits between the agent and the host: the agent talks to a REST API or MCP server; VaultRun starts a constrained container per session and records a HMAC-signed audit trail.
+
+## Core components (Apache 2.0)
+
+1. **API server** (`cmd/api`) — Gin REST API for sessions, runs, files, keys, audit, snapshots, artifacts
+2. **MCP server** (`sdk/mcp`) — 53 Model Context Protocol tools over stdio and HTTP
+3. **CLI** (`cmd/cli`) — `vaultrun` command-line tool
+4. **CI runner** (`cmd/ci-runner`) — GitHub webhook → sandbox tests → PR comment + Slack/Teams
+5. **Dashboard** (`apps/frontend`) — Next.js UI with server-side API proxy
+6. **SDKs** — Go (`sdk/go`) and Python (`pip install vaultrun-sdk`)
+
+## Security defaults
+
+- Commands via Docker exec API (no shell injection surface for the run path)
+- Non-root containers; Linux capabilities dropped; seccomp filtering
+- Network disabled by default; optional per-session allowlists
+- Workspace path-traversal prevention
+- API keys stored as hashes, never plaintext
+- HMAC-signed, queryable audit logs
+- AWS tools require explicit opt-in (no ambient credential use by default)
+
+## MCP usage
+
+**stdio (Claude Desktop / Claude Code):** configure `vaultrun-mcp` with `VAULTRUN_BASE_URL` and `VAULTRUN_API_KEY`.
+
+**HTTP (OpenAI, OpenRouter, custom agents):** `MCP_TRANSPORT=http`, `MCP_AUTH_TOKEN=…`, then `POST /mcp` with Bearer auth (JSON-RPC 2.0).
+
+Tool groups include sandbox session/file/run tools, SQLite/Postgres/MongoDB, AWS (S3, SSM, Secrets Manager, Lambda), scoped host filesystem tools, GitHub helpers, snapshots, artifacts, and audit listing.
+
+## Install (local)
+
+```
+git clone https://github.com/nickvd7/vaultrun
+cd vaultrun
+cp .env.example .env   # set MASTER_API_KEY
+make up
+make bootstrap-key
+curl http://localhost:8080/health
+```
+
+Dashboard: http://localhost:3000 · API: http://localhost:8080
+
+Python:
+
+```
+pip install vaultrun-sdk
+from sandbox_sdk import Client
+client = Client("http://localhost:8080", api_key="vr_...")
+```
+
+## Enterprise
+
+OIDC (Authorization Code + PKCE) and SAML 2.0, org-aware RBAC, IdP group mapping. Setup guide: https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md — commercial contact mail@030.dev.
+
+## Canonical links
+
+- Website: https://vaultrun.dev/
+- Source: https://github.com/nickvd7/vaultrun
+- PyPI: https://pypi.org/project/vaultrun-sdk/
+- Compact index: https://vaultrun.dev/llms.txt

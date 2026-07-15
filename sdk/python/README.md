@@ -43,8 +43,10 @@ client.delete_session(session.id)
 ## Links
 
 - Website: https://vaultrun.dev
+- AI index (`llms.txt`): https://vaultrun.dev/llms.txt
 - Source & docs: https://github.com/nickvd7/vaultrun
 - Issues: https://github.com/nickvd7/vaultrun/issues
+- PyPI: https://pypi.org/project/vaultrun-sdk/
 
 ## License
 

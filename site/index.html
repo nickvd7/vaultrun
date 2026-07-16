@@ -79,7 +79,7 @@
     --ok: #d4d4d4;
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; overflow-x: clip; }
   body {
     margin: 0;
     background: var(--bg);
@@ -88,23 +88,31 @@
     font-size: 15px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+    max-width: 100%;
   }
   ::selection { background: var(--fg); color: var(--bg); }
   a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
   a:hover { text-decoration-color: var(--fg); }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; width: 100%; }
+  img, svg, video, canvas, iframe { max-width: 100%; height: auto; }
+  pre, table, .term, .grid, .paths, .toolcats, .cmp-wrap, .diagram {
+    max-width: 100%;
+  }
 
   /* hero */
-  header { padding: 72px 0 56px; border-bottom: 1px solid var(--line); }
+  header { padding: 72px 0 56px; border-bottom: 1px solid var(--line); overflow-x: clip; }
   pre.ascii {
     margin: 0 0 28px;
     color: var(--fg);
-    font-size: clamp(6px, 1.6vw, 13px);
+    font-size: clamp(5px, 1.8vw, 13px);
     line-height: 1.25;
+    max-width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     user-select: none;
   }
-  .tagline { font-size: 19px; max-width: 640px; margin: 0 0 8px; }
+  .tagline { font-size: clamp(16px, 4.5vw, 19px); max-width: 640px; margin: 0 0 8px; }
   .sub { color: var(--dim); max-width: 640px; margin: 0 0 28px; }
   .badges { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 32px; font-size: 12.5px; color: var(--dim); }
   .badges span { border: 1px solid var(--line); padding: 3px 10px; }
@@ -130,7 +138,7 @@
   /* terminal */
   .term {
     border: 1px solid var(--line); background: var(--bg-alt);
-    margin: 0;
+    margin: 0; max-width: 100%; overflow: hidden;
   }
   .term-bar {
     display: flex; align-items: center; gap: 8px;
@@ -138,7 +146,10 @@
     color: var(--faint); font-size: 12px;
   }
   .term-bar i { width: 9px; height: 9px; border: 1px solid var(--faint); border-radius: 50%; font-style: normal; }
-  .term pre { margin: 0; padding: 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.75; }
+  .term pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    font-size: 13px; line-height: 1.75; max-width: 100%;
+  }
   .p { color: var(--faint); }          /* prompt $ */
   .c { color: var(--faint); }          /* comment */
   .o { color: var(--dim); }            /* output */
@@ -150,11 +161,24 @@
   .cell .idx { color: var(--faint); font-size: 12px; }
   .cell h3 { margin: 8px 0 8px; font-size: 15px; font-weight: 600; }
   .cell p { margin: 0; color: var(--dim); font-size: 13.5px; }
-  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } pre.ascii { font-size: 1.55vw; } }
-  @media (max-width: 400px) { pre.ascii { font-size: 1.35vw; } header { padding: 48px 0 40px; } }
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+    section { padding: 48px 0; }
+    .h2-big { font-size: clamp(18px, 5vw, 24px); }
+  }
+  @media (max-width: 480px) {
+    pre.ascii { font-size: clamp(3.5px, 2.4vw, 9px); }
+    header { padding: 40px 0 32px; }
+    .btn { padding: 10px 16px; font-size: 13px; }
+  }
 
   /* diagram */
-  pre.diagram { color: var(--dim); font-size: 12.5px; line-height: 1.45; overflow-x: auto; padding: 24px; border: 1px solid var(--line); background: var(--bg-alt); }
+  pre.diagram {
+    color: var(--dim); font-size: 12.5px; line-height: 1.45;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 16px; border: 1px solid var(--line); background: var(--bg-alt);
+    max-width: 100%;
+  }
   pre.diagram b { color: var(--fg); font-weight: 600; }
 
   /* two-col code */
@@ -207,18 +231,21 @@
 
   footer { padding: 40px 0 56px; color: var(--faint); font-size: 13px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; }
-  footer a { color: var(--dim); }
+  footer a { color: var(--dim); word-break: break-word; }
+  @media (max-width: 480px) {
+    footer .wrap { flex-direction: column; gap: 12px; }
+  }
 </style>
 </head>
 <body>
 
 <nav class="site-nav" id="site-nav">
-  <div class="wrap">
+  <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
+  <div class="bar">
     <a class="logo" href="/">vaultrun<span>.dev</span></a>
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
       <span class="nav-toggle-label">menu</span>
     </button>
-    <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
     <div class="links" id="nav-menu">
       <a href="#quickstart">quickstart</a>
       <a href="#features">features</a>

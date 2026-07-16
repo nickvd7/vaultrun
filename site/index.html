@@ -229,11 +229,21 @@
   .field::placeholder { color: var(--faint); }
   select.field { appearance: none; cursor: pointer; }
 
-  footer { padding: 40px 0 56px; color: var(--faint); font-size: 13px; }
-  footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; }
-  footer a { color: var(--dim); word-break: break-word; }
+  footer { padding: 40px 0 56px; color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); }
+  footer .wrap {
+    display: flex; flex-wrap: wrap; gap: 16px 32px;
+    justify-content: space-between; align-items: baseline;
+  }
+  footer .copy { color: var(--faint); max-width: 42ch; }
+  footer .copy a { color: var(--dim); }
+  footer nav {
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+    font-size: 13px;
+  }
+  footer nav a { color: var(--dim); text-decoration: none; }
+  footer nav a:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
   @media (max-width: 480px) {
-    footer .wrap { flex-direction: column; gap: 12px; }
+    footer .wrap { flex-direction: column; gap: 16px; }
   }
 </style>
 </head>
@@ -665,16 +675,15 @@ fmt.Println(*run.Stdout)</pre></div>
 
 <footer>
   <div class="wrap">
-    <div>© 2026 VaultRun — Apache 2.0 core · <a href="#enterprise">enterprise</a>: mail@030.dev</div>
-    <div>
-      <a href="https://github.com/nickvd7/vaultrun">github</a> ·
-      <a href="https://pypi.org/project/vaultrun-sdk/">pypi</a> ·
-      <a href="#enterprise">enterprise</a> ·
-      <a href="/enterprise.html">one-pager</a> ·
-      <a href="/flowd.html">flowd</a> ·
-      <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/architecture.md">architecture</a> ·
-      <a href="mailto:mail@030.dev?subject=VaultRun%20Enterprise">mail@030.dev</a>
-    </div>
+    <div class="copy">© 2026 VaultRun · Apache 2.0 core · <a href="mailto:mail@030.dev">mail@030.dev</a></div>
+    <nav aria-label="Footer">
+      <a href="https://github.com/nickvd7/vaultrun">GitHub</a>
+      <a href="https://pypi.org/project/vaultrun-sdk/">PyPI</a>
+      <a href="/use-cases.html">Use cases</a>
+      <a href="/flowd.html">Flowd</a>
+      <a href="#enterprise">Enterprise</a>
+      <a href="#contact">Contact</a>
+    </nav>
   </div>
 </footer>
 

@@ -36,6 +36,7 @@
 
     if (open && !wasOpen) {
       lockScroll();
+      if (menu) menu.scrollTop = 0;
     } else if (!open && wasOpen) {
       unlockScroll();
     }

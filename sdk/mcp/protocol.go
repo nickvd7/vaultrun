@@ -116,8 +116,9 @@ type server struct {
 	defaultImage string
 	githubToken  string
 	fsConfig     fsConfig
-	awsBundle    *awsBundle // nil when AWS is not configured
-	db           *dbBundle  // nil when no DB is configured
+	awsBundle    *awsBundle    // nil when AWS is not configured
+	db           *dbBundle     // nil when no DB is configured
+	flowd        *flowdConfig  // nil when Flowd is not enabled
 	mu           sync.Mutex // guards stdout writes
 }
 

@@ -51,6 +51,12 @@
 //	MCP_PG_DSN       PostgreSQL connection string (e.g. "postgres://user:pass@host/db").
 //	MCP_MONGO_URI    MongoDB connection URI (e.g. "mongodb://localhost:27017").
 //	MCP_MONGO_DB     MongoDB database name (default: test). Required with MCP_MONGO_URI.
+//
+// Flowd environment variables (optional — local workflow automation bridge):
+//
+//	MCP_FLOWD_ENABLED  Set to "true" to expose flowd_* tools via local flowctl
+//	FLOWCTL_PATH       Path to flowctl binary (default: flowctl)
+//	FLOWD_CONFIG       Optional config file for flowctl (--config)
 package main
 
 import (
@@ -112,6 +118,11 @@ func main() {
 	}
 	if srv.db != nil {
 		slog.Info("vaultrun-mcp: database tools enabled")
+	}
+
+	initFlowd(srv)
+	if srv.flowd != nil {
+		slog.Info("vaultrun-mcp: Flowd tools enabled", "flowctl", srv.flowd.flowctlPath)
 	}
 
 	switch os.Getenv("MCP_TRANSPORT") {

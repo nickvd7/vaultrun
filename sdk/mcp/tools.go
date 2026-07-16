@@ -12,7 +12,7 @@ import (
 
 // toolDefinitions returns the full list of MCP tools this server exposes.
 func toolDefinitions() []mcpTool {
-	return []mcpTool{
+	tools := []mcpTool{
 		{
 			Name: "create_session",
 			Description: "Create a new isolated sandbox session with a Docker container. " +
@@ -702,6 +702,10 @@ func toolDefinitions() []mcpTool {
 			},
 		},
 	}
+	if flowdEnabled() {
+		tools = append(tools, flowdToolDefinitions()...)
+	}
+	return tools
 }
 
 // ---------------------------------------------------------------------------
@@ -823,6 +827,18 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolMongoCollections(ctx, args)
 	case "mongo_generate_mongoose":
 		return s.toolMongoGenerateMongoose(ctx, args)
+	case "flowd_list_suggestions":
+		return s.toolFlowdListSuggestions(ctx)
+	case "flowd_explain_suggestion":
+		return s.toolFlowdExplainSuggestion(ctx, args)
+	case "flowd_approve_suggestion":
+		return s.toolFlowdApproveSuggestion(ctx, args)
+	case "flowd_list_patterns":
+		return s.toolFlowdListPatterns(ctx)
+	case "flowd_stats":
+		return s.toolFlowdStats(ctx)
+	case "flowd_undo_run":
+		return s.toolFlowdUndoRun(ctx, args)
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}

@@ -1,0 +1,17 @@
+{
+  "name": "vaultrun-plugins",
+  "description": "Official VaultRun plugins for Claude Code — agent skills for the self-hosted AI runtime.",
+  "owner": {
+    "name": "VaultRun",
+    "email": "mail@030.dev"
+  },
+  "plugins": [
+    {
+      "name": "vaultrun",
+      "description": "Develop and operate VaultRun: Docker sandboxes, MCP server, API, dashboard, Flowd bridge.",
+      "version": "1.0.0",
+      "source": "./",
+      "skills": ["./skills/vaultrun"]
+    }
+  ]
+}

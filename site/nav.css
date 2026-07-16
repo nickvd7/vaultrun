@@ -12,8 +12,6 @@
   border-bottom: 1px solid var(--nav-line);
   position: sticky;
   top: 0;
-  /* Solid bg only — backdrop-filter creates a containing block that
-     clips position:fixed children to the bar height (broken mobile menu). */
   background: var(--nav-bg);
   z-index: 100;
   font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -28,7 +26,7 @@
   gap: 16px;
   height: var(--nav-height);
   position: relative;
-  z-index: 102;
+  z-index: 2;
   background: var(--nav-bg);
 }
 
@@ -44,24 +42,6 @@
   color: var(--nav-dim);
 }
 
-.site-nav .links {
-  margin-left: auto;
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-  align-items: center;
-}
-
-.site-nav .links a {
-  color: var(--nav-dim);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.site-nav .links a:hover {
-  color: var(--nav-fg);
-}
-
 .site-nav .nav-toggle {
   display: none;
   margin-left: auto;
@@ -74,7 +54,6 @@
   cursor: pointer;
   letter-spacing: 0.04em;
   flex-shrink: 0;
-  z-index: 103;
 }
 
 .site-nav .nav-toggle:hover {
@@ -85,18 +64,80 @@
   display: none;
 }
 
+.site-nav .links {
+  display: none;
+}
+
+.site-nav .links a {
+  color: var(--nav-dim);
+  text-decoration: none;
+}
+
+.site-nav .links a:hover {
+  color: var(--nav-fg);
+}
+
 body.nav-open {
   overflow: hidden;
   touch-action: none;
 }
 
-/* Hamburger earlier so desktop links never overflow horizontally */
+/* Desktop: logo + links on one row via overlapping grid */
+@media (min-width: 961px) {
+  .site-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 980px);
+    justify-content: center;
+    padding: 0 16px;
+  }
+
+  .site-nav .bar,
+  .site-nav .links {
+    grid-row: 1;
+    grid-column: 1;
+    width: 100%;
+    max-width: 980px;
+    height: var(--nav-height);
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-nav .bar {
+    display: flex;
+    align-items: center;
+    z-index: 2;
+    pointer-events: none;
+    background: transparent;
+  }
+
+  .site-nav .bar .logo {
+    pointer-events: auto;
+  }
+
+  .site-nav .nav-toggle {
+    display: none !important;
+  }
+
+  .site-nav .links {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    font-size: 13px;
+    z-index: 1;
+  }
+
+  .site-nav .links a {
+    white-space: nowrap;
+  }
+}
+
+/* Mobile: full-width drawer under sticky bar */
 @media (max-width: 960px) {
   .site-nav .nav-toggle {
     display: block;
   }
 
-  /* Pin the whole nav shell when open so bar + close never scroll away */
   .site-nav.nav-open {
     position: fixed;
     top: 0;
@@ -104,60 +145,50 @@ body.nav-open {
     right: 0;
     bottom: 0;
     width: 100%;
+    max-width: 100vw;
     height: 100%;
     height: 100dvh;
     border-bottom: none;
     z-index: 1000;
     display: flex;
     flex-direction: column;
+    background: var(--nav-bg);
   }
 
   .site-nav.nav-open .bar {
     flex-shrink: 0;
     width: 100%;
     max-width: none;
+    margin: 0;
     border-bottom: 1px solid var(--nav-line);
   }
 
   .site-nav .links {
     display: none;
-    position: fixed;
-    top: var(--nav-height);
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    max-width: 100vw;
-    margin: 0;
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
     gap: 0;
+    width: 100%;
+    margin: 0;
     padding: 8px 20px calc(24px + env(safe-area-inset-bottom, 0px));
     background: var(--nav-bg);
-    border-top: 1px solid var(--nav-line);
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    z-index: 101;
   }
 
   .site-nav.nav-open .links {
     display: flex;
-    position: relative;
-    top: auto;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    flex: 1;
-    height: auto;
+    flex: 1 1 auto;
     min-height: 0;
-    border-top: none;
-    z-index: 101;
+    align-self: stretch;
   }
 
   .site-nav .links a {
+    display: block;
+    width: 100%;
     padding: 14px 0;
     border-bottom: 1px solid var(--nav-line);
     font-size: 15px;
@@ -170,20 +201,10 @@ body.nav-open {
 
   .site-nav .nav-backdrop {
     display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    z-index: 100;
-    border: none;
-    padding: 0;
-    margin: 0;
-    cursor: pointer;
   }
 
   .site-nav.nav-open .nav-backdrop {
-    display: block;
-    /* Behind the flex column content inside the fixed nav shell */
-    z-index: 0;
+    display: none; /* full-screen menu covers page; no need for separate dimmer */
   }
 }
 

@@ -212,7 +212,3 @@ func (s *server) toolFlowdUndoRun(ctx context.Context, args map[string]string) (
 	}
 	return textResult(out), nil
 }
-
-func textResult(out string) mcpToolResult {
-	return mcpToolResult{Content: []mcpContent{{Type: "text", Text: out}}}
-}

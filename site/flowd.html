@@ -16,9 +16,11 @@
 <style>
   :root { --bg:#0a0a0a; --bg-alt:#111; --fg:#e8e8e8; --dim:#8a8a8a; --faint:#555; --line:#262626; }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; }
+  html { overflow-x: clip; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; overflow-x:clip; max-width:100%; }
   a { color:var(--fg); text-underline-offset:3px; }
-  .wrap { max-width:820px; margin:0 auto; padding:32px 24px 72px; }
+  .wrap { max-width:820px; margin:0 auto; padding:32px 16px 72px; width:100%; }
+  pre.diagram, .term, .term pre { max-width:100%; }
   h1 { font-size:26px; margin:0 0 8px; }
   .lede { color:var(--dim); margin:0 0 32px; max-width:62ch; }
   h2 { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin:36px 0 12px; }
@@ -42,12 +44,12 @@
 <body>
 
 <nav class="site-nav" id="site-nav">
-  <div class="wrap">
+  <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
+  <div class="bar">
     <a class="logo" href="/">vaultrun<span>.dev</span></a>
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
       <span class="nav-toggle-label">menu</span>
     </button>
-    <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
     <div class="links" id="nav-menu">
       <a href="/#quickstart">quickstart</a>
       <a href="/#features">features</a>

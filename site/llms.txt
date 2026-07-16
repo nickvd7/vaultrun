@@ -23,6 +23,8 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - [Configuration](https://github.com/nickvd7/vaultrun/blob/main/docs/configuration.md): Environment variables and options
 - [SSO setup](https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md): OIDC and SAML (Enterprise)
 - [CI runner](https://github.com/nickvd7/vaultrun/blob/main/docs/ci-runner.md): GitHub webhook → sandboxed CI
+- [Flowd integration](https://github.com/nickvd7/vaultrun/blob/main/docs/flowd-integration.md): MCP bridge to local flowctl (opt-in)
+- [Agent plugin](https://github.com/nickvd7/vaultrun/blob/main/docs/plugin-publish.md): Cursor / Claude Code marketplace skill
 - [OpenAPI](https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml): REST API schema
 - [Roadmap](https://github.com/nickvd7/vaultrun/blob/main/docs/roadmap.md): Planned work
 
@@ -38,9 +40,10 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - Language: Go 1.25+ (API/CLI/MCP); Next.js dashboard; Python + Go SDKs
 - Sandbox: One Docker container per session; network off by default; non-root; capabilities dropped
 - Auth: API keys (`vr_…`); optional OIDC/SAML via VaultRun Enterprise
-- MCP: 53 tools over stdio (Claude Desktop/Code) or HTTP JSON-RPC (`POST /mcp`)
+- MCP: 53 core tools (+6 Flowd when MCP_FLOWD_ENABLED); stdio or HTTP JSON-RPC
 - Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
 - Contact: mail@030.dev · https://github.com/nickvd7/vaultrun/issues
+- Flowd companion: https://vaultrun.dev/flowd.html · https://flowd.net
 - Enterprise: https://vaultrun.dev/#enterprise — evaluate (free for dev/test), production license, or sales; all requests email mail@030.dev
 
 ## Optional

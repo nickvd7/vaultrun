@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultRun + Flowd — local workflows, sandboxed execution</title>
+<meta name="description" content="Combine Flowd local workflow automation with VaultRun isolated Docker sandboxes. Observe, approve locally, execute agents safely.">
+<link rel="canonical" href="https://vaultrun.dev/flowd.html">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="VaultRun + Flowd">
+<meta property="og:description" content="Flowd suggests local file automations. VaultRun runs agent code in audited sandboxes.">
+<meta property="og:url" content="https://vaultrun.dev/flowd.html">
+<meta property="og:type" content="article">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><text x='2' y='12' font-family='monospace' font-size='11' fill='%23ffffff'>&gt;_</text></svg>">
+<link rel="stylesheet" href="/nav.css">
+<style>
+  :root { --bg:#0a0a0a; --bg-alt:#111; --fg:#e8e8e8; --dim:#8a8a8a; --faint:#555; --line:#262626; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; }
+  a { color:var(--fg); text-underline-offset:3px; }
+  .wrap { max-width:820px; margin:0 auto; padding:32px 24px 72px; }
+  h1 { font-size:26px; margin:0 0 8px; }
+  .lede { color:var(--dim); margin:0 0 32px; max-width:62ch; }
+  h2 { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin:36px 0 12px; }
+  h2::before { content:"## "; color:var(--faint); }
+  pre.diagram { color:var(--dim); font-size:12.5px; line-height:1.45; overflow-x:auto; padding:24px; border:1px solid var(--line); background:var(--bg-alt); margin:0 0 20px; }
+  pre.diagram b { color:var(--fg); font-weight:600; }
+  .term { border:1px solid var(--line); background:var(--bg-alt); margin:0 0 16px; }
+  .term-bar { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); padding:9px 14px; color:var(--faint); font-size:12px; }
+  .term pre { margin:0; padding:18px; overflow-x:auto; font-size:13px; line-height:1.75; }
+  .p { color:var(--faint); }
+  .c { color:var(--faint); }
+  ul { margin:0; padding-left:1.2em; color:var(--dim); }
+  li { margin-bottom:8px; }
+  .cta { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; }
+  .btn { display:inline-block; padding:10px 18px; font-size:13px; text-decoration:none; border:1px solid var(--fg); font-family:inherit; }
+  .btn.primary { background:var(--fg); color:var(--bg); font-weight:600; }
+  .btn.ghost { border-color:var(--line); color:var(--fg); }
+  footer { margin-top:40px; color:var(--faint); font-size:12px; }
+</style>
+</head>
+<body>
+
+<nav class="site-nav" id="site-nav">
+  <div class="wrap">
+    <a class="logo" href="/">vaultrun<span>.dev</span></a>
+    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
+      <span class="nav-toggle-label">menu</span>
+    </button>
+    <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
+    <div class="links" id="nav-menu">
+      <a href="/#quickstart">quickstart</a>
+      <a href="/#features">features</a>
+      <a href="/#mcp">mcp</a>
+      <a href="/#sdk">sdk</a>
+      <a href="/flowd.html">flowd</a>
+      <a href="/#security">security</a>
+      <a href="/enterprise.html">enterprise</a>
+      <a href="/use-cases.html">use cases</a>
+      <a href="/#contact">contact</a>
+      <a href="https://github.com/nickvd7/vaultrun">github ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <h1>VaultRun + Flowd</h1>
+  <p class="lede">Two local-first tools for different layers of automation. Flowd learns your file workflows on your machine. VaultRun gives AI agents a secure place to run code. Use both when you want approval-driven local automations <em>and</em> audited sandbox execution.</p>
+
+  <h2>how they fit</h2>
+<pre class="diagram">
+  <b>flowd</b>                         <b>VaultRun</b>
+  observe filesystem              Docker sandbox per session
+  detect rename/move patterns     run_command · MCP · audit trail
+  suggest → you approve           agents · scripts · CI
+  flowctl undo                    network off by default
+</pre>
+
+  <h2>typical agent flow</h2>
+  <ol style="color:var(--dim); padding-left:1.2em; margin:0 0 20px;">
+    <li>Agent calls <code>flowd_list_suggestions</code> via VaultRun MCP (opt-in)</li>
+    <li>Agent calls <code>flowd_explain_suggestion</code> — you inspect the why</li>
+    <li>You approve → <code>flowd_approve_suggestion</code></li>
+    <li>For heavier work: <code>create_session</code> + <code>run_command</code> in VaultRun</li>
+  </ol>
+
+  <h2>enable in MCP</h2>
+  <div class="term">
+    <div class="term-bar">sh — vaultrun-mcp + flowd</div>
+<pre><span class="p">$</span> cargo install --path crates/flow-cli   <span class="c"># from github.com/nickvd7/flowd</span>
+<span class="p">$</span> flowctl setup --watch ~/Downloads
+<span class="p">$</span> flow-daemon &
+
+<span class="p">$</span> MCP_FLOWD_ENABLED=true \
+  FLOWCTL_PATH=flowctl \
+  VAULTRUN_BASE_URL=http://localhost:8080 \
+  VAULTRUN_API_KEY=vr_your_key \
+  ./vaultrun-mcp</pre>
+  </div>
+
+  <h2>what is not bridged (v1)</h2>
+  <ul>
+    <li>Flowd <code>run</code> / <code>dry-run</code> — still local via flowctl; no HTTP API in Flowd</li>
+    <li>VaultRun does not observe your desktop — that stays in flow-daemon</li>
+    <li>Both run on the same host as vaultrun-mcp when using flowd_* tools</li>
+  </ul>
+
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/nickvd7/vaultrun/blob/main/docs/flowd-integration.md">full integration docs ↗</a>
+    <a class="btn ghost" href="https://flowd.net">flowd.net ↗</a>
+    <a class="btn ghost" href="https://github.com/nickvd7/flowd">flowd source ↗</a>
+    <a class="btn ghost" href="/">vaultrun home</a>
+  </div>
+
+  <footer>VaultRun · Flowd companion · mail@030.dev</footer>
+</div>
+<script src="/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+/* Shared sticky nav — include on all vaultrun.dev pages */
+:root {
+  --nav-bg: rgba(10, 10, 10, 0.92);
+  --nav-line: #262626;
+  --nav-fg: #e8e8e8;
+  --nav-dim: #8a8a8a;
+  --nav-faint: #555555;
+}
+
+.site-nav {
+  border-bottom: 1px solid var(--nav-line);
+  position: sticky;
+  top: 0;
+  background: var(--nav-bg);
+  backdrop-filter: blur(6px);
+  z-index: 100;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+.site-nav .wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: 52px;
+}
+
+.site-nav .logo {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  color: var(--nav-fg);
+  flex-shrink: 0;
+}
+
+.site-nav .logo span {
+  color: var(--nav-dim);
+}
+
+.site-nav .links {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  align-items: center;
+}
+
+.site-nav .links a {
+  color: var(--nav-dim);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.site-nav .links a:hover {
+  color: var(--nav-fg);
+}
+
+.site-nav .nav-toggle {
+  display: none;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--nav-line);
+  color: var(--nav-fg);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.site-nav .nav-toggle:hover {
+  border-color: var(--nav-fg);
+}
+
+.site-nav .nav-backdrop {
+  display: none;
+}
+
+body.nav-open {
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .site-nav .nav-toggle {
+    display: block;
+  }
+
+  .site-nav .links {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 16px 24px 32px;
+    background: #0a0a0a;
+    border-top: 1px solid var(--nav-line);
+    overflow-y: auto;
+    z-index: 99;
+  }
+
+  .site-nav.nav-open .links {
+    display: flex;
+  }
+
+  .site-nav .links a {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--nav-line);
+    font-size: 15px;
+  }
+
+  .site-nav .links a:last-child {
+    border-bottom: none;
+  }
+
+  .site-nav.nav-open .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 52px 0 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 98;
+    border: none;
+    cursor: pointer;
+  }
+}
+
+@media print {
+  .site-nav .nav-toggle,
+  .site-nav .links,
+  .site-nav .nav-backdrop {
+    display: none !important;
+  }
+}

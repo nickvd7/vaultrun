@@ -1,0 +1,18 @@
+{
+  "name": "vaultrun",
+  "description": "Official VaultRun plugins — skills and agent context for the self-hosted AI agent runtime.",
+  "owner": {
+    "name": "VaultRun",
+    "email": "mail@030.dev",
+    "url": "https://vaultrun.dev"
+  },
+  "plugins": [
+    {
+      "name": "vaultrun",
+      "description": "Develop and operate VaultRun: Docker sandboxes, MCP server, API, dashboard, Flowd bridge.",
+      "version": "1.0.0",
+      "source": "./",
+      "skills": ["./skills/vaultrun"]
+    }
+  ]
+}

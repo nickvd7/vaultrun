@@ -12,6 +12,7 @@
 <meta property="og:url" content="https://vaultrun.dev/enterprise.html">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><text x='2' y='12' font-family='monospace' font-size='11' fill='%23ffffff'>&gt;_</text></svg>">
+<link rel="stylesheet" href="/nav.css">
 <style>
   :root {
     --bg: #0a0a0a; --bg-alt: #111; --fg: #e8e8e8; --dim: #8a8a8a;
@@ -26,11 +27,6 @@
   a { color: var(--fg); text-underline-offset: 3px; }
   a:hover { text-decoration-color: var(--fg); }
   .wrap { max-width: 780px; margin: 0 auto; padding: 32px 24px 64px; }
-  nav { display: flex; gap: 16px; align-items: center; margin-bottom: 40px; font-size: 13px; }
-  nav .logo { font-weight: 700; text-decoration: none; letter-spacing: .04em; }
-  nav .logo span { color: var(--dim); }
-  nav a { color: var(--dim); text-decoration: none; }
-  nav a:hover { color: var(--fg); }
   h1 { font-size: 26px; margin: 0 0 8px; }
   .lede { color: var(--dim); margin: 0 0 28px; max-width: 56ch; }
   h2 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin: 36px 0 12px; }
@@ -54,6 +50,11 @@
   .btn.ghost { color: var(--fg); border-color: var(--line); }
   .btn.ghost:hover { border-color: var(--fg); }
   .meta { color: var(--faint); font-size: 12px; margin-top: 40px; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 768px) {
+    .wrap { padding: 24px 16px 48px; }
+    h1 { font-size: 22px; }
+  }
   @media print {
     body { background: #fff; color: #111; }
     :root { --bg: #fff; --bg-alt: #f5f5f5; --fg: #111; --dim: #333; --faint: #666; --line: #ccc; }
@@ -64,18 +65,35 @@
 </style>
 </head>
 <body>
-<div class="wrap">
-  <nav>
-    <a class="logo" href="/">vaultrun<span>.dev</span></a>
-    <a href="/#enterprise">overview</a>
-    <a href="/#contact">contact</a>
-    <a href="https://github.com/nickvd7/vaultrun">github</a>
-  </nav>
 
+<nav class="site-nav" id="site-nav">
+  <div class="wrap">
+    <a class="logo" href="/">vaultrun<span>.dev</span></a>
+    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
+      <span class="nav-toggle-label">menu</span>
+    </button>
+    <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
+    <div class="links" id="nav-menu">
+      <a href="/#quickstart">quickstart</a>
+      <a href="/#features">features</a>
+      <a href="/#mcp">mcp</a>
+      <a href="/#sdk">sdk</a>
+      <a href="/flowd.html">flowd</a>
+      <a href="/#security">security</a>
+      <a href="/enterprise.html">enterprise</a>
+      <a href="/use-cases.html">use cases</a>
+      <a href="/#contact">contact</a>
+      <a href="https://github.com/nickvd7/vaultrun">github ↗</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
   <h1>VaultRun Enterprise</h1>
   <p class="lede">Procurement one-pager. Self-hosted AI agent runtime with identity federation (OIDC + SAML). Core stays Apache 2.0; SSO ships as a commercial overlay.</p>
 
   <h2>What you get</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>Item</th><th>Detail</th></tr>
     <tr><td>SSO / OIDC</td><td>Authorization Code + PKCE; Okta, Azure AD, Google Workspace, Keycloak, Auth0</td></tr>
@@ -85,8 +103,10 @@
     <tr><td>Delivery</td><td>Private overlay repo; build with <code>go build -tags enterprise</code> onto open-core VaultRun</td></tr>
     <tr><td>Hosting</td><td>Runs on <em>your</em> infrastructure — no VaultRun SaaS dependency</td></tr>
   </table>
+  </div>
 
   <h2>Licensing</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>Use</th><th>Terms</th></tr>
     <tr><td>Development / test / evaluation</td><td>Free under the VaultRun Enterprise License</td></tr>
@@ -94,6 +114,7 @@
     <tr><td>Managed service / hosting for third parties</td><td>Not permitted without a written commercial agreement</td></tr>
     <tr><td>Pricing</td><td>Custom quote — no public price list yet; contact for a proposal</td></tr>
   </table>
+  </div>
 
   <h2>How to buy / evaluate</h2>
   <div class="box">
@@ -115,7 +136,8 @@
     <li><a href="https://vaultrun.dev/">Product site</a> · <a href="https://vaultrun.dev/#enterprise">Enterprise CTA</a></li>
   </ul>
 
-  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-07-15</p>
+  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-07-16</p>
 </div>
+<script src="/nav.js"></script>
 </body>
 </html>

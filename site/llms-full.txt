@@ -9,7 +9,7 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 ## Core components (Apache 2.0)
 
 1. **API server** (`cmd/api`) — Gin REST API for sessions, runs, files, keys, audit, snapshots, artifacts
-2. **MCP server** (`sdk/mcp`) — 53 Model Context Protocol tools over stdio and HTTP
+2. **MCP server** (`sdk/mcp`) — 53+ Model Context Protocol tools over stdio and HTTP (optional Flowd bridge: +6 tools)
 3. **CLI** (`cmd/cli`) — `vaultrun` command-line tool
 4. **CI runner** (`cmd/ci-runner`) — GitHub webhook → sandbox tests → PR comment + Slack/Teams
 5. **Dashboard** (`apps/frontend`) — Next.js UI with server-side API proxy
@@ -31,7 +31,7 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 
 **HTTP (OpenAI, OpenRouter, custom agents):** `MCP_TRANSPORT=http`, `MCP_AUTH_TOKEN=…`, then `POST /mcp` with Bearer auth (JSON-RPC 2.0).
 
-Tool groups include sandbox session/file/run tools, SQLite/Postgres/MongoDB, AWS (S3, SSM, Secrets Manager, Lambda), scoped host filesystem tools, GitHub helpers, snapshots, artifacts, and audit listing.
+Tool groups include sandbox session/file/run tools, SQLite/Postgres/MongoDB, AWS (S3, SSM, Secrets Manager, Lambda), scoped host filesystem tools, GitHub helpers, snapshots, artifacts, audit listing, and optional Flowd workflow tools (`MCP_FLOWD_ENABLED=true`).
 
 ## Install (local)
 

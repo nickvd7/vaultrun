@@ -3,7 +3,7 @@
 Model Context Protocol server that exposes all VaultRun capabilities as tools.
 Works with Claude Desktop, Claude Code, OpenAI, OpenRouter, and any MCP-compatible platform.
 
-**53 tools · stdio + HTTP transports · AWS · databases · GitHub CI**
+**53+ tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
 
 ## Build
 
@@ -97,8 +97,13 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 | `MCP_ACME_DOMAIN` | — | Domain for automatic Let's Encrypt TLS |
 | `MCP_ACME_CACHE_DIR` | — | Directory for ACME challenge cache |
 | `MCP_ACME_EMAIL` | — | Contact email for ACME registration |
+| `MCP_FLOWD_ENABLED` | `false` | Set `true` to expose 6 `flowd_*` tools via local `flowctl` |
+| `FLOWCTL_PATH` | `flowctl` | Path to flowctl binary |
+| `FLOWD_CONFIG` | — | Optional config file for flowctl (`--config`) |
 
-## All 53 tools
+## All tools
+
+Core: **53 tools**. With `MCP_FLOWD_ENABLED=true`: **59 tools**.
 
 ### Sandbox (13 tools)
 
@@ -236,6 +241,19 @@ Requires `MCP_MONGO_URI` and `MCP_MONGO_DB`.
 | `mongo_collections` | — | List all collection names in the database. |
 | `mongo_generate_mongoose` | `collection` | Sample up to 50 documents and generate a Mongoose schema (JavaScript). |
 
+### Flowd — local workflows (6 tools)
+
+Requires `MCP_FLOWD_ENABLED=true` and `flowctl` on the same host as `vaultrun-mcp`. See [docs/flowd-integration.md](../../docs/flowd-integration.md).
+
+| Tool | Required params | Description |
+|---|---|---|
+| `flowd_list_suggestions` | — | List pending workflow suggestions from flowd. |
+| `flowd_explain_suggestion` | — | Explain suggestions. Optional: `suggestion_id`. |
+| `flowd_approve_suggestion` | `suggestion_id` | Approve a suggestion by ID. |
+| `flowd_list_patterns` | — | List detected workflow patterns. |
+| `flowd_stats` | — | Local Flowd usage statistics. |
+| `flowd_undo_run` | `run_id` | Undo a Flowd automation run. |
+
 ## Security model
 
 - **No shell** — all commands run through Docker exec API, never through a shell.
@@ -244,6 +262,7 @@ Requires `MCP_MONGO_URI` and `MCP_MONGO_DB`.
 - **Audit log** — every tool call is logged with tool name, parameters, client IP, and duration. Sensitive results (`sm_get_secret`, `ssm_get_parameter`) are redacted.
 - **Rate limiting** — read tools: 60 req/min, write tools: 30 req/min, heavy tools (container creation, Lambda, GitHub clone): 10 req/min.
 - **AWS opt-in** — `MCP_AWS_ENABLED=true` prevents accidental IAM credential activation.
+- **Flowd opt-in** — `MCP_FLOWD_ENABLED=true` runs local `flowctl`; no network API in Flowd itself.
 - **Filesystem allowlist** — filesystem tools return an error when `MCP_FS_ALLOWED_PATHS` is not set; paths are validated against the allowlist with symlink resolution.
 - **Token never in URL** — GitHub clones use `http.extraheader` (`Authorization: Bearer ...`) so the token never appears in git remote URLs or log output.
 
@@ -277,7 +296,7 @@ curl -s -X POST http://localhost:8090/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | jq '.result.tools | length'
-# → 53
+# → 53 (59 with MCP_FLOWD_ENABLED=true)
 
 # Without token → 401
 curl -s -X POST http://localhost:8090/mcp \

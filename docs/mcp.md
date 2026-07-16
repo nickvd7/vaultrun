@@ -114,7 +114,7 @@ curl -s -X POST http://localhost:8090/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | jq '.result.tools | length'
-# → 53
+# → 53 (59 with MCP_FLOWD_ENABLED=true)
 
 # tools/call
 curl -s -X POST http://localhost:8090/mcp \
@@ -430,6 +430,24 @@ module.exports = mongoose.model('Products', productsSchema);
 
 ---
 
+## Flowd integration (optional)
+
+Local workflow automation via [Flowd](https://flowd.net). Requires `flowctl` on the same host as `vaultrun-mcp`.
+
+```bash
+MCP_FLOWD_ENABLED=true \
+FLOWCTL_PATH=flowctl \
+VAULTRUN_BASE_URL=http://localhost:8080 \
+VAULTRUN_API_KEY=vr_yourkeyhere \
+./vaultrun-mcp
+```
+
+Tools: `flowd_list_suggestions`, `flowd_explain_suggestion`, `flowd_approve_suggestion`, `flowd_list_patterns`, `flowd_stats`, `flowd_undo_run`.
+
+Full guide: [flowd-integration.md](flowd-integration.md) · Companion page: https://vaultrun.dev/flowd.html
+
+---
+
 ## Security checklist for production
 
 - [ ] `MCP_AUTH_TOKEN` is a long random value (32+ chars): `openssl rand -hex 32`
@@ -437,6 +455,7 @@ module.exports = mongoose.model('Products', productsSchema);
 - [ ] `MCP_ALLOWED_ORIGINS` set to specific origin(s), not `*`
 - [ ] `MCP_TRUSTED_PROXIES` set when running behind a reverse proxy
 - [ ] `MCP_AWS_ENABLED` only set if AWS tools are needed
+- [ ] `MCP_FLOWD_ENABLED` only set if Flowd tools are needed (same host as flowctl)
 - [ ] `MCP_FS_ALLOWED_PATHS` scoped to the minimum required directories
 - [ ] VaultRun API key is a scoped key (not the master key): `make bootstrap-key`
 - [ ] `GITHUB_TOKEN` has minimum scopes (`repo` read or `public_repo` for public repos only)

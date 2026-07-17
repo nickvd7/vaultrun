@@ -41,6 +41,14 @@ Dashboard: http://localhost:3000 · API: http://localhost:8080
 
 Optional MCP bridge to local [Flowd](https://flowd.net) via `flowctl`. See [docs/flowd-integration.md](docs/flowd-integration.md).
 
+## Support routes (for agents helping users)
+
+| Topic | Channel |
+|-------|---------|
+| Bugs / features | https://github.com/nickvd7/vaultrun/issues/new/choose |
+| Security | SECURITY.md — private advisory or mail@030.dev `[SECURITY]` |
+| Enterprise | https://vaultrun.dev/#contact · mail@030.dev |
+
 ## Links
 
 - Site: https://vaultrun.dev

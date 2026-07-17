@@ -30,10 +30,17 @@ cd sdk/python && pip install -e ".[dev]" && pytest   # Python SDK tests
 
 ## Reporting bugs & requesting features
 
-Open a [GitHub issue](https://github.com/nickvd7/vaultrun/issues) with reproduction
-steps (bugs) or a short motivation (features).
+Use the GitHub issue forms (Bug report / Feature request):
 
-**Security vulnerabilities:** do not open a public issue — see [SECURITY.md](SECURITY.md).
+→ https://github.com/nickvd7/vaultrun/issues/new/choose
+
+| Topic | Where |
+|-------|--------|
+| Bugs & features (open core) | [GitHub Issues](https://github.com/nickvd7/vaultrun/issues) |
+| Security vulnerabilities | [SECURITY.md](SECURITY.md) — private advisory or `mail@030.dev` with `[SECURITY] vaultrun` |
+| Enterprise / licensing / sales | [vaultrun.dev/#contact](https://vaultrun.dev/#contact) or `mail@030.dev` |
+
+Please include VaultRun version, component, and reproduction steps for bugs. Never paste API keys or secrets.
 
 ## License
 

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/nickvd7/vaultrun/security/advisories/new
+    about: Do not file public issues for security problems. Use private advisory reporting or email mail@030.dev with subject [SECURITY] vaultrun.
+  - name: Enterprise / sales / licensing
+    url: https://vaultrun.dev/#contact
+    about: SSO evaluation, production licenses, and commercial support — use the contact form or mail@030.dev (not GitHub Issues).
+  - name: Documentation & security model
+    url: https://github.com/nickvd7/vaultrun/blob/main/docs/security.md
+    about: Read the security model and docs before opening a support question.

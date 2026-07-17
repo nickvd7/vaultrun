@@ -96,7 +96,7 @@
   a:hover { text-decoration-color: var(--fg); }
   .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; width: 100%; }
   img, svg, video, canvas, iframe { max-width: 100%; height: auto; }
-  pre, table, .term, .grid, .paths, .toolcats, .cmp-wrap, .diagram {
+  pre, table, .term, .grid, .paths, .toolcats, .cmp-wrap, .diagram, .demo-shell {
     max-width: 100%;
   }
 
@@ -128,6 +128,65 @@
   .btn.ghost:hover { border-color: var(--fg); }
   .cursor::after { content: "▌"; animation: blink 1.1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cursor::after { animation: none; }
+    .demo-line, .tab-panel { animation: none !important; }
+  }
+
+  /* interactive demo */
+  .demo-shell { border: 1px solid var(--line); background: var(--bg-alt); }
+  .demo-steps {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .demo-steps button {
+    flex: 1 1 140px; font-family: inherit; font-size: 12.5px;
+    background: transparent; color: var(--dim); border: none;
+    border-right: 1px solid var(--line); padding: 12px 14px;
+    cursor: pointer; text-align: left; letter-spacing: .02em;
+  }
+  .demo-steps button:last-child { border-right: none; }
+  .demo-steps button:hover { color: var(--fg); background: #141414; }
+  .demo-steps button[aria-selected="true"] {
+    color: var(--fg); background: var(--bg); box-shadow: inset 0 -2px 0 var(--fg);
+  }
+  .demo-steps button .n { color: var(--faint); margin-right: 8px; }
+  .demo-body { padding: 0; }
+  .demo-body pre {
+    margin: 0; padding: 18px 16px; min-height: 220px;
+    overflow-x: auto; font-size: 13px; line-height: 1.75;
+  }
+  .demo-line { animation: fadeIn .25s ease; }
+  .demo-hint { padding: 10px 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+  .demo-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+  /* tabs + copy */
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border: 1px solid var(--line); border-bottom: none;
+    background: var(--bg-alt);
+  }
+  .tabs button {
+    font-family: inherit; font-size: 12.5px; letter-spacing: .08em;
+    text-transform: uppercase; background: transparent; color: var(--dim);
+    border: none; border-right: 1px solid var(--line); padding: 10px 16px;
+    cursor: pointer;
+  }
+  .tabs button:last-child { border-right: none; }
+  .tabs button:hover { color: var(--fg); }
+  .tabs button[aria-selected="true"] { color: var(--fg); background: var(--bg); }
+  .tab-panels .term { border-top: none; }
+  .tab-panel { display: none; animation: fadeIn .2s ease; }
+  .tab-panel.active { display: block; }
+  .term-bar { justify-content: space-between; }
+  .term-bar .left { display: flex; align-items: center; gap: 8px; }
+  .copy-btn {
+    font-family: inherit; font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--dim); background: transparent;
+    border: 1px solid var(--line); padding: 3px 8px; cursor: pointer;
+  }
+  .copy-btn:hover, .copy-btn.copied { color: var(--fg); border-color: var(--fg); }
 
   /* sections */
   section { padding: 64px 0; border-bottom: 1px solid var(--line); }
@@ -258,6 +317,7 @@
     </button>
   </div>
   <div class="links" id="nav-menu">
+    <a href="#demo">demo</a>
     <a href="#quickstart">quickstart</a>
     <a href="#features">features</a>
     <a href="#mcp">mcp</a>
@@ -282,9 +342,9 @@
   ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
 </pre>
     <p class="tagline cursor">Self-hosted secure runtime for AI agents.</p>
-    <p class="sub">Let agents execute code, query databases, call cloud APIs, and manage files —
-    inside isolated Docker sandboxes on <em>your</em> infrastructure.
-    No external SaaS. No telemetry. No data leaving your network.</p>
+    <p class="sub">Your agent asks for a tool. VaultRun runs it in an isolated Docker sandbox on
+    <em>your</em> infra — with policy, limits, and a signed audit trail.
+    No SaaS. No telemetry. No data leaving your network.</p>
     <div class="badges">
       <span>license <b>apache-2.0 core</b></span>
       <span>lang <b>go 1.25</b></span>
@@ -293,20 +353,48 @@
       <span>mode <b>self-hosted</b></span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/nickvd7/vaultrun">$ git clone vaultrun</a>
-      <a class="btn ghost" href="#enterprise">get enterprise →</a>
-      <a class="btn ghost" href="#quickstart">read the manual ↓</a>
+      <a class="btn primary" href="#demo">see it work →</a>
+      <a class="btn ghost" href="#quickstart">$ install</a>
+      <a class="btn ghost" href="https://github.com/nickvd7/vaultrun">github ↗</a>
     </div>
   </div>
 </header>
+
+<section id="demo" aria-labelledby="demo-title">
+  <div class="wrap">
+    <h2 id="demo-title">live path</h2>
+    <p class="h2-big">Agent asks. Sandbox runs. Audit sticks.</p>
+    <p class="sub">Click a step — this is the kill chain when an agent calls VaultRun. Not a slide: the path your SOC can replay.</p>
+    <div class="demo-shell" data-demo>
+      <div class="demo-steps" role="tablist" aria-label="Demo steps">
+        <button type="button" role="tab" aria-selected="true" data-step="0"><span class="n">01</span>agent asks</button>
+        <button type="button" role="tab" aria-selected="false" data-step="1"><span class="n">02</span>policy check</button>
+        <button type="button" role="tab" aria-selected="false" data-step="2"><span class="n">03</span>sandbox run</button>
+        <button type="button" role="tab" aria-selected="false" data-step="3"><span class="n">04</span>audit trail</button>
+      </div>
+      <div class="demo-body">
+        <pre data-demo-out aria-live="polite"></pre>
+      </div>
+      <div class="demo-hint">tip: click steps · or use ← → · auto-plays once on first view</div>
+    </div>
+    <div class="demo-actions">
+      <a class="btn primary" href="#mcp">wire MCP →</a>
+      <a class="btn ghost" href="#sdk">use the SDK →</a>
+      <a class="btn ghost" href="#quickstart">install now →</a>
+    </div>
+  </div>
+</section>
 
 <section id="quickstart">
   <div class="wrap">
     <h2>quickstart</h2>
     <p class="h2-big">Up and running in five commands.</p>
     <div class="term">
-      <div class="term-bar"><i></i><i></i><i></i>&nbsp;sh — vaultrun</div>
-<pre><span class="p">$</span> git clone https://github.com/nickvd7/vaultrun &amp;&amp; cd vaultrun
+      <div class="term-bar">
+        <span class="left"><i></i><i></i><i></i>&nbsp;sh — vaultrun</span>
+        <button type="button" class="copy-btn" data-copy="quickstart">copy</button>
+      </div>
+<pre data-copy-src="quickstart"><span class="p">$</span> git clone https://github.com/nickvd7/vaultrun &amp;&amp; cd vaultrun
 <span class="p">$</span> cp .env.example .env        <span class="c"># set MASTER_API_KEY to something strong</span>
 <span class="p">$</span> make up                     <span class="c"># API + Postgres + Redis + dashboard</span>
 <span class="p">$</span> make bootstrap-key          <span class="c"># prints your first vr_... API key</span>
@@ -348,7 +436,7 @@
 <section id="features">
   <div class="wrap">
     <h2>what's in the box</h2>
-    <p class="h2-big">Seven components, one repo.</p>
+    <p class="h2-big">Nine components, one repo.</p>
     <div class="grid">
       <div class="cell"><span class="idx">01 / cmd/api</span><h3>API server</h3><p>Gin-based REST API — sessions, runs, files, audit logs, key management.</p></div>
       <div class="cell"><span class="idx">02 / sdk/mcp</span><h3>MCP server</h3><p>53 tools over stdio <em>and</em> HTTP. Claude, OpenAI, OpenRouter, custom agents.</p></div>
@@ -367,10 +455,19 @@
   <div class="wrap">
     <h2>mcp server</h2>
     <p class="h2-big">53 tools. Two transports. Any agent.</p>
-    <div class="cols" style="margin-bottom:24px">
-      <div>
-        <p class="label">stdio — claude desktop / claude code</p>
-        <div class="term"><pre>{
+    <p class="sub" style="margin-bottom:20px">Pick your transport, copy the snippet, paste into the agent. Same tools either way.</p>
+    <div class="tabs" role="tablist" aria-label="MCP transport" data-tabs="mcp">
+      <button type="button" role="tab" aria-selected="true" data-tab="stdio">stdio · claude</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="http">http · openai / custom</button>
+    </div>
+    <div class="tab-panels" data-panels="mcp">
+      <div class="tab-panel active" data-panel="stdio">
+        <div class="term">
+          <div class="term-bar">
+            <span class="left"><i></i><i></i><i></i>&nbsp;claude_desktop_config.json</span>
+            <button type="button" class="copy-btn" data-copy="mcp-stdio">copy</button>
+          </div>
+<pre data-copy-src="mcp-stdio">{
   <span class="k">"mcpServers"</span>: {
     <span class="k">"vaultrun"</span>: {
       "command": "/path/to/vaultrun-mcp",
@@ -380,20 +477,26 @@
       }
     }
   }
-}</pre></div>
+}</pre>
+        </div>
       </div>
-      <div>
-        <p class="label">http — openai / openrouter / custom</p>
-        <div class="term"><pre><span class="p">$</span> MCP_TRANSPORT=http \
+      <div class="tab-panel" data-panel="http">
+        <div class="term">
+          <div class="term-bar">
+            <span class="left"><i></i><i></i><i></i>&nbsp;sh — mcp http</span>
+            <button type="button" class="copy-btn" data-copy="mcp-http">copy</button>
+          </div>
+<pre data-copy-src="mcp-http"><span class="p">$</span> MCP_TRANSPORT=http \
   MCP_AUTH_TOKEN=your-secret-token \
   VAULTRUN_BASE_URL=http://localhost:8080 \
   VAULTRUN_API_KEY=vr_your_key \
   ./vaultrun-mcp
 <span class="c"># POST /mcp — JSON-RPC 2.0
-# Authorization: Bearer your-secret-token</span></pre></div>
+# Authorization: Bearer your-secret-token</span></pre>
+        </div>
       </div>
     </div>
-    <div class="toolcats">
+    <div class="toolcats" style="margin-top:24px">
       <div class="toolrow"><div class="cat">sandbox <span class="o">×13</span></div><div class="lst">create_session · run_command · upload_file · read_file · list_files · get_session_logs · …</div></div>
       <div class="toolrow"><div class="cat">databases <span class="o">×13</span></div><div class="lst">sqlite_query · pg_query · pg_schema · mongo_find · mongo_aggregate · …</div></div>
       <div class="toolrow"><div class="cat">aws <span class="o">×14</span></div><div class="lst">s3_get_object · ssm_get_parameter · sm_get_secret · lambda_invoke · … <span class="o">(explicit opt-in)</span></div></div>
@@ -409,10 +512,19 @@
   <div class="wrap">
     <h2>sdks</h2>
     <p class="h2-big">Five lines to a sandboxed run.</p>
-    <div class="cols">
-      <div>
-        <p class="label">python</p>
-        <div class="term"><pre><span class="c"># pip install vaultrun-sdk</span>
+    <p class="sub" style="margin-bottom:20px">Same API surface — switch language without rewriting the mental model.</p>
+    <div class="tabs" role="tablist" aria-label="SDK language" data-tabs="sdk">
+      <button type="button" role="tab" aria-selected="true" data-tab="python">python</button>
+      <button type="button" role="tab" aria-selected="false" data-tab="go">go</button>
+    </div>
+    <div class="tab-panels" data-panels="sdk">
+      <div class="tab-panel active" data-panel="python">
+        <div class="term">
+          <div class="term-bar">
+            <span class="left"><i></i><i></i><i></i>&nbsp;python — sandbox_sdk</span>
+            <button type="button" class="copy-btn" data-copy="sdk-py">copy</button>
+          </div>
+<pre data-copy-src="sdk-py"><span class="c"># pip install vaultrun-sdk</span>
 from sandbox_sdk import Client
 
 client = Client("http://localhost:8080",
@@ -423,11 +535,16 @@ client.upload_file(s.id, "script.py",
         open("script.py", "rb"))
 r = client.run(s.id, command="python",
         args=["script.py"])
-print(r.stdout)</pre></div>
+print(r.stdout)</pre>
+        </div>
       </div>
-      <div>
-        <p class="label">go</p>
-        <div class="term"><pre>import vaultrun "github.com/nickvd7/vaultrun/sdk/go"
+      <div class="tab-panel" data-panel="go">
+        <div class="term">
+          <div class="term-bar">
+            <span class="left"><i></i><i></i><i></i>&nbsp;go — sdk/go</span>
+            <button type="button" class="copy-btn" data-copy="sdk-go">copy</button>
+          </div>
+<pre data-copy-src="sdk-go">import vaultrun "github.com/nickvd7/vaultrun/sdk/go"
 
 client := vaultrun.New(
     "http://localhost:8080", "vr_...")
@@ -439,7 +556,8 @@ client.UploadFile(ctx, s.ID,
 run, _ := client.Run(ctx, s.ID,
     vaultrun.RunOptions{Command: "python",
         Args: []string{"script.py"}})
-fmt.Println(*run.Stdout)</pre></div>
+fmt.Println(*run.Stdout)</pre>
+        </div>
       </div>
     </div>
   </div>
@@ -687,6 +805,179 @@ fmt.Println(*run.Stdout)</pre></div>
   </div>
 </footer>
 
+<script>
+(function () {
+  var DEMO_STEPS = [
+    [
+      '<span class="c"># agent → MCP tools/call</span>',
+      '<span class="p">$</span> run_command',
+      '{',
+      '  <span class="k">"session_id"</span>: "ses_8f3a21c0",',
+      '  <span class="k">"command"</span>: "python",',
+      '  <span class="k">"args"</span>: ["analyze.py"]',
+      '}',
+      '<span class="o">→ vaultRun accepts · forwarding to policy</span>'
+    ],
+    [
+      '<span class="c"># policy hook (OPA-ready)</span>',
+      '<span class="p">$</span> policy.evaluate(run_command)',
+      'allow:     <span class="o">true</span>',
+      'cpu:       1',
+      'memory:    512m',
+      'timeout:   30s',
+      'network:   <span class="o">deny</span>  <span class="c"># default</span>',
+      '<span class="o">→ limits attached · spinning sandbox</span>'
+    ],
+    [
+      '<span class="c"># isolated Docker session</span>',
+      '<span class="p">$</span> docker exec ses_8f3a21c0 python analyze.py',
+      'rows_scanned: 12480',
+      'anomalies:    3',
+      'exit_code:    0',
+      '<span class="o">→ stdout returned to agent · no host shell</span>'
+    ],
+    [
+      '<span class="c"># HMAC-signed audit append</span>',
+      '<span class="p">$</span> audit.append',
+      'action:   run_command',
+      'session:  ses_8f3a21c0',
+      'actor:    key_vr_a1…',
+      'sig:      a3f91c… <span class="o">✓ verified</span>',
+      '<span class="o">→ replayable · tamper-evident</span>'
+    ]
+  ];
+
+  var demo = document.querySelector("[data-demo]");
+  if (demo) {
+    var out = demo.querySelector("[data-demo-out]");
+    var tabs = demo.querySelectorAll("[data-step]");
+    var step = 0;
+    var timer = null;
+    var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function paint(lines, animate) {
+      out.innerHTML = "";
+      if (!animate || reduceMotion) {
+        lines.forEach(function (line) {
+          var div = document.createElement("div");
+          div.className = "demo-line";
+          div.innerHTML = line;
+          out.appendChild(div);
+        });
+        return;
+      }
+      var i = 0;
+      function next() {
+        if (i >= lines.length) return;
+        var div = document.createElement("div");
+        div.className = "demo-line";
+        div.innerHTML = lines[i++];
+        out.appendChild(div);
+        timer = setTimeout(next, 140);
+      }
+      next();
+    }
+
+    function show(n, animate) {
+      if (timer) { clearTimeout(timer); timer = null; }
+      step = (n + DEMO_STEPS.length) % DEMO_STEPS.length;
+      tabs.forEach(function (btn) {
+        var on = Number(btn.getAttribute("data-step")) === step;
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      paint(DEMO_STEPS[step], animate !== false);
+    }
+
+    tabs.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        show(Number(btn.getAttribute("data-step")), true);
+      });
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (!demo.contains(document.activeElement) && document.activeElement !== document.body) return;
+      var rect = demo.getBoundingClientRect();
+      var inView = rect.top < window.innerHeight && rect.bottom > 0;
+      if (!inView) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); show(step + 1, true); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); show(step - 1, true); }
+    });
+
+    show(0, false);
+    var auto = 0;
+    var autoTimer = null;
+    var io = ("IntersectionObserver" in window) ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting || autoTimer || reduceMotion) return;
+        autoTimer = setInterval(function () {
+          auto += 1;
+          if (auto >= DEMO_STEPS.length) {
+            clearInterval(autoTimer);
+            autoTimer = null;
+            return;
+          }
+          show(auto, true);
+        }, 2200);
+      });
+    }, { threshold: 0.45 }) : null;
+    if (io) io.observe(demo);
+    else show(0, true);
+
+    tabs.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+      });
+    });
+  }
+
+  document.querySelectorAll("[data-tabs]").forEach(function (tablist) {
+    var name = tablist.getAttribute("data-tabs");
+    var panels = document.querySelector('[data-panels="' + name + '"]');
+    if (!panels) return;
+    tablist.querySelectorAll("[data-tab]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-tab");
+        tablist.querySelectorAll("[data-tab]").forEach(function (b) {
+          b.setAttribute("aria-selected", b === btn ? "true" : "false");
+        });
+        panels.querySelectorAll("[data-panel]").forEach(function (p) {
+          p.classList.toggle("active", p.getAttribute("data-panel") === id);
+        });
+      });
+    });
+  });
+
+  document.querySelectorAll(".copy-btn[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var id = btn.getAttribute("data-copy");
+      var src = document.querySelector('[data-copy-src="' + id + '"]');
+      if (!src) return;
+      var text = src.innerText.replace(/\u00a0/g, " ").trim();
+      function done() {
+        btn.textContent = "copied";
+        btn.classList.add("copied");
+        setTimeout(function () {
+          btn.textContent = "copy";
+          btn.classList.remove("copied");
+        }, 1400);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand("copy"); } catch (e) {}
+          document.body.removeChild(ta);
+          done();
+        });
+      } else {
+        done();
+      }
+    });
+  });
+})();
+</script>
 <script>
 (function () {
   var SUBJECTS = {

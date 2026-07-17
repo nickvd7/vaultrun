@@ -374,6 +374,16 @@ go test ./cmd/ci-runner/...
 go build -o ci-runner ./cmd/ci-runner/
 ```
 
+## Support & feedback
+
+| Topic | Channel |
+|-------|---------|
+| **Bugs & feature requests** (open core) | [GitHub Issues](https://github.com/nickvd7/vaultrun/issues/new/choose) |
+| **Security vulnerabilities** | Private only — see [SECURITY.md](SECURITY.md) |
+| **Enterprise / SSO / licensing** | [vaultrun.dev/#contact](https://vaultrun.dev/#contact) → **mail@030.dev** |
+
+Please use the issue templates (version, component, repro steps). Do not put secrets in issues.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history.

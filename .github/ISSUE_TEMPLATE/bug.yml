@@ -1,0 +1,81 @@
+name: Bug report
+description: Something in the open-core product is broken or unexpected.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. **Security issues** → [SECURITY.md](https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md) (do not file here).
+        **Enterprise / licensing** → [vaultrun.dev/#contact](https://vaultrun.dev/#contact).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where does the problem show up?
+      options:
+        - API server (cmd/api)
+        - MCP server (sdk/mcp)
+        - Dashboard (apps/frontend)
+        - CLI (cmd/cli)
+        - CI runner (cmd/ci-runner)
+        - Go SDK
+        - Python SDK
+        - Docs / site
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: VaultRun version
+      description: Release tag, commit SHA, or `main` + date. Example — `v0.2.1` or `git rev-parse --short HEAD`.
+      placeholder: v0.2.1
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, and how you run VaultRun (Compose, binary, etc.).
+      placeholder: "Linux / Docker 27 / make up"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. Redact API keys and secrets.
+      placeholder: |
+        1. make up
+        2. create session with …
+        3. run_command …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages or relevant logs (no secrets).
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, MCP transport (stdio/HTTP), optional Flowd bridge, etc.
+    validations:
+      required: false

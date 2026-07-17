@@ -42,9 +42,10 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - Auth: API keys (`vr_…`); optional OIDC/SAML via VaultRun Enterprise
 - MCP: 53 core tools (+6 Flowd when MCP_FLOWD_ENABLED); stdio or HTTP JSON-RPC
 - Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
-- Contact: mail@030.dev · https://github.com/nickvd7/vaultrun/issues
+- Bugs / features: https://github.com/nickvd7/vaultrun/issues/new/choose (use templates)
+- Security: private only — https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md
+- Enterprise / sales: https://vaultrun.dev/#enterprise · mail@030.dev
 - Flowd companion: https://vaultrun.dev/flowd.html · https://flowd.net
-- Enterprise: https://vaultrun.dev/#enterprise — evaluate (free for dev/test), production license, or sales; all requests email mail@030.dev
 
 ## Optional
 

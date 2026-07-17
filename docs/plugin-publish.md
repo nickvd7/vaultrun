@@ -12,14 +12,20 @@ vaultrun/
 ├── .claude-plugin/
 │   ├── plugin.json          # Claude Code plugin manifest
 │   └── marketplace.json     # Claude marketplace catalog
+├── .codex-plugin/
+│   └── plugin.json          # OpenAI Codex / ChatGPT plugin manifest
+├── .agents/
+│   ├── skills/vaultrun → ../../skills/vaultrun   # Codex repo skill discovery
+│   └── plugins/marketplace.json                 # Codex repo marketplace
 ├── skills/vaultrun/
-│   ├── SKILL.md             # Canonical skill (marketplace installs)
-│   └── reference.md         # Env vars, API summary
-├── .cursor/skills/vaultrun/ # Project copy (repo contributors)
-└── AGENTS.md                # Cross-tool agent context
+│   ├── SKILL.md             # Canonical skill (all marketplaces)
+│   ├── reference.md
+│   └── agents/openai.yaml   # Codex UI metadata
+├── .cursor/skills/vaultrun/ # Project copy (Cursor repo contributors)
+└── AGENTS.md                # Cross-tool agent context (Cursor, Claude, Codex)
 ```
 
-**Canonical skill for marketplaces:** `skills/vaultrun/`. When you edit the skill, update both `skills/vaultrun/` and `.cursor/skills/vaultrun/`, then bump `version` in both `plugin.json` files.
+**Canonical skill for marketplaces:** `skills/vaultrun/`. When you edit the skill, update both `skills/vaultrun/` and `.cursor/skills/vaultrun/`, then bump `version` in `.cursor-plugin`, `.claude-plugin`, and `.codex-plugin` manifests.
 
 ---
 
@@ -94,12 +100,47 @@ Submit to Anthropic's community catalog (`anthropics/claude-plugins-community`) 
 
 ---
 
+## OpenAI Codex / ChatGPT
+
+Codex discovers repo skills under `.agents/skills/` (this repo symlinks to `skills/vaultrun`).
+`AGENTS.md` at the repo root is also loaded as project guidance.
+
+### Test locally
+
+1. Open the VaultRun repo in Codex CLI or ChatGPT desktop (Work / Codex mode)
+2. Confirm skill `vaultrun` appears in Skills / `$` mention
+3. Try: `Help me configure VaultRun MCP for Claude Desktop`
+
+Repo marketplace (ChatGPT desktop Plugins Directory):
+
+- Catalog: `.agents/plugins/marketplace.json`
+- Plugin root: repo itself (`.codex-plugin/plugin.json` + `skills/`)
+
+```bash
+# if you have the Codex CLI
+codex plugin marketplace add .
+# or: nickvd7/vaultrun
+```
+
+### Workspace sharing
+
+There is no public OpenAI skills marketplace yet. Distribute via:
+
+- Clone of this repo (`.agents/skills` + `AGENTS.md`)
+- Team / Enterprise ChatGPT workspace plugin sharing
+- Your own curated marketplace pointing at this GitHub repo
+
+Docs: [OpenAI Codex skills](https://developers.openai.com/codex/skills) · [Build plugins](https://developers.openai.com/codex/plugins/build)
+
+---
+
 ## Versioning
 
 Bump `version` in:
 
 - `.cursor-plugin/plugin.json`
 - `.claude-plugin/plugin.json`
+- `.codex-plugin/plugin.json`
 - `.cursor-plugin/marketplace.json` (plugin entry)
 - `.claude-plugin/marketplace.json` (plugin entry)
 
@@ -107,15 +148,26 @@ Or omit `version` to pin to git commit SHA (auto-updates on install).
 
 ---
 
-## Checklist before submit
+## Validation checklist (run before submit)
 
-- [ ] `skills/vaultrun/SKILL.md` description includes trigger terms (vaultrun, MCP, sandbox, flowd)
-- [ ] SKILL.md under 500 lines
+```bash
+# JSON manifests parse
+python3 -c 'import json,pathlib; [json.loads(p.read_text()) for p in pathlib.Path(".").rglob("plugin.json")]'
+
+# Skill frontmatter + size
+test -f skills/vaultrun/SKILL.md
+test -f .agents/skills/vaultrun/SKILL.md   # symlink
+wc -l skills/vaultrun/SKILL.md             # should be < 500
+```
+
+Manual:
+
+- [ ] Cursor: `ln -s $(pwd) ~/.cursor/plugins/local/vaultrun` → Customize shows skill
+- [ ] Claude Code: `/plugin marketplace add .` → install `vaultrun@vaultrun-plugins`
+- [ ] Codex: open repo → skill `vaultrun` in Skills / `$vaultrun`
+- [ ] `SKILL.md` description includes trigger terms (vaultrun, MCP, sandbox, flowd)
 - [ ] No secrets in skill or reference files
-- [ ] Links use `https://vaultrun.dev` or GitHub URLs (not relative `../../` paths)
-- [ ] `plugin.json` name is `vaultrun` (lowercase, no spaces)
-- [ ] Repo is public (Cursor Marketplace requirement)
-- [ ] Tested locally in Cursor and/or Claude Code
+- [ ] Marketplace skill links use https:// (not `../../` in `skills/vaultrun/`)
 
 ---
 
@@ -123,8 +175,10 @@ Or omit `version` to pin to git commit SHA (auto-updates on install).
 
 | Tool | How users get context |
 |------|----------------------|
-| **Repo clone** | `.cursor/skills/vaultrun/` + `AGENTS.md` auto-loaded |
-| **Codex / OpenAI** | Point at `AGENTS.md` or `site/llms.txt` |
-| **Any MCP client** | `https://vaultrun.dev/llms.txt` |
+| **Repo clone** | `.cursor/skills/`, `.agents/skills/`, `AGENTS.md` |
+| **Cursor Marketplace** | Submit via cursor.com/marketplace/publish |
+| **Claude Code** | `/plugin marketplace add nickvd7/vaultrun` |
+| **OpenAI Codex** | `.agents/skills` + `.codex-plugin` + `AGENTS.md` |
+| **Any LLM crawler** | https://vaultrun.dev/llms.txt |
 
 Contact: mail@030.dev

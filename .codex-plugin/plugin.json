@@ -1,0 +1,28 @@
+{
+  "name": "vaultrun",
+  "version": "1.0.0",
+  "description": "Self-hosted secure runtime for AI agents — repo map, MCP setup, Flowd integration, and VaultRun conventions for coding assistants.",
+  "author": {
+    "name": "VaultRun",
+    "email": "mail@030.dev",
+    "url": "https://vaultrun.dev"
+  },
+  "homepage": "https://vaultrun.dev",
+  "repository": "https://github.com/nickvd7/vaultrun",
+  "license": "Apache-2.0",
+  "keywords": ["vaultrun", "mcp", "ai-agents", "sandbox", "self-hosted", "docker", "flowd"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "VaultRun",
+    "shortDescription": "Secure self-hosted sandboxes for AI agents",
+    "longDescription": "Repo map, MCP setup, Flowd bridge, and conventions for developing VaultRun.",
+    "developerName": "VaultRun",
+    "category": "Developer Tools",
+    "websiteURL": "https://vaultrun.dev",
+    "brandColor": "#0a0a0a",
+    "defaultPrompt": [
+      "Help me set up VaultRun MCP with Claude or OpenAI.",
+      "Explain how to create a VaultRun sandbox session and run a command."
+    ]
+  }
+}

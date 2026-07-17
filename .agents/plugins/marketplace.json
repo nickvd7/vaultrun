@@ -1,0 +1,20 @@
+{
+  "name": "vaultrun-plugins",
+  "interface": {
+    "displayName": "VaultRun"
+  },
+  "plugins": [
+    {
+      "name": "vaultrun",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

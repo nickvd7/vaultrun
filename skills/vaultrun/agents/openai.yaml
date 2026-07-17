@@ -1,0 +1,8 @@
+interface:
+  display_name: VaultRun
+  short_description: Self-hosted secure runtime for AI agents
+  brand_color: "#0a0a0a"
+  default_prompt: "Help me work on VaultRun — sandboxes, MCP, or Flowd integration."
+
+policy:
+  allow_implicit_invocation: true

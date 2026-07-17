@@ -5,7 +5,8 @@ Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, MCP server 
 ## For AI coding assistants
 
 - **Skill:** [.cursor/skills/vaultrun/SKILL.md](.cursor/skills/vaultrun/SKILL.md) — detailed repo map and conventions
-- **Marketplace plugin:** [skills/vaultrun/](skills/vaultrun/) — install via Cursor / Claude Code marketplaces ([docs/plugin-publish.md](docs/plugin-publish.md))
+- **Marketplace plugin:** [skills/vaultrun/](skills/vaultrun/) — Cursor / Claude / Codex ([docs/plugin-publish.md](docs/plugin-publish.md))
+- **OpenAI Codex:** [.agents/skills/vaultrun](.agents/skills/vaultrun) (symlink) + [AGENTS.md](AGENTS.md)
 - **LLM grounding:** [site/llms.txt](site/llms.txt) and [site/llms-full.txt](site/llms-full.txt)
 
 ## Build & test

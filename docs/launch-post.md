@@ -57,6 +57,22 @@ VaultRun v0.2.1 — website + Enterprise acquisition clarity + Python SDK metada
 
 ---
 
+## LinkedIn — VaultRun + Flowd (week 2)
+
+Local file workflows and agent sandboxes solve different problems.
+
+**Flowd** watches your machine, detects repeated rename/move patterns, and suggests automations you approve in the terminal.
+
+**VaultRun** gives AI agents isolated Docker sandboxes on *your* infra — with MCP tools and an audit trail.
+
+Together: observe → suggest → approve locally, then run risky work in a container.
+
+Flowd: https://flowd.net
+VaultRun: https://vaultrun.dev/flowd.html
+#LocalFirst #MCP #AIAgents #DevTools
+
+---
+
 ## Optional tweet / X
 
 Self-hosted sandboxes for AI agents — not another SaaS runner.

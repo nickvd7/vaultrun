@@ -154,12 +154,33 @@
   .demo-steps button .n { color: var(--faint); margin-right: 8px; }
   .demo-body { padding: 0; }
   .demo-body pre {
-    margin: 0; padding: 18px 16px; min-height: 220px;
+    margin: 0; padding: 18px 16px; min-height: 280px;
     overflow-x: auto; font-size: 13px; line-height: 1.75;
   }
   .demo-line { animation: fadeIn .25s ease; }
   .demo-hint { padding: 10px 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
   .demo-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .verify { margin-top: 20px; }
+  .verify .sub { margin-bottom: 12px; }
+
+  /* honest trust — facts only, no fake logos/quotes */
+  .trust {
+    display: flex; flex-wrap: wrap; gap: 10px 18px;
+    margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--dim); max-width: 640px;
+  }
+  .trust span b { color: var(--fg); font-weight: 500; }
+
+  /* enterprise bridge */
+  .bridge {
+    border: 1px solid var(--line); background: var(--bg-alt);
+    padding: 22px 20px; display: flex; flex-wrap: wrap; gap: 16px 24px;
+    align-items: center; justify-content: space-between;
+  }
+  .bridge .bridge-copy { max-width: 560px; }
+  .bridge .bridge-copy p { margin: 0 0 6px; color: var(--fg); font-size: 16px; font-weight: 600; }
+  .bridge .bridge-copy span { color: var(--dim); font-size: 13px; }
+  .bridge .cta { margin: 0; }
 
   /* tabs + copy */
   .tabs {
@@ -357,14 +378,21 @@
       <a class="btn ghost" href="#quickstart">$ install</a>
       <a class="btn ghost" href="https://github.com/nickvd7/vaultrun">github ↗</a>
     </div>
+    <div class="trust" aria-label="Product facts">
+      <span>status <b>early open source</b></span>
+      <span>proof <b>repo + docs, not logos</b></span>
+      <span>data <b>stays on your infra</b></span>
+      <span>license <b>apache-2.0 core</b></span>
+    </div>
   </div>
 </header>
 
 <section id="demo" aria-labelledby="demo-title">
   <div class="wrap">
-    <h2 id="demo-title">live path</h2>
+    <h2 id="demo-title">request path</h2>
     <p class="h2-big">Agent asks. Sandbox runs. Audit sticks.</p>
-    <p class="sub">Click a step — this is the kill chain when an agent calls VaultRun. Not a slide: the path your SOC can replay.</p>
+    <p class="sub">Illustrated walkthrough using the <em>real</em> API shapes — not a recorded customer run.
+    Click a step, then verify the same trail on your own instance with the curl below.</p>
     <div class="demo-shell" data-demo>
       <div class="demo-steps" role="tablist" aria-label="Demo steps">
         <button type="button" role="tab" aria-selected="true" data-step="0"><span class="n">01</span>agent asks</button>
@@ -375,7 +403,19 @@
       <div class="demo-body">
         <pre data-demo-out aria-live="polite"></pre>
       </div>
-      <div class="demo-hint">tip: click steps · or use ← → · auto-plays once on first view</div>
+      <div class="demo-hint">illustrated · click steps · ← → · auto-plays once on first view</div>
+    </div>
+    <div class="verify">
+      <p class="sub">After <a href="#quickstart">install</a>, replay <em>your</em> audit trail (same endpoint the demo shows):</p>
+      <div class="term">
+        <div class="term-bar">
+          <span class="left"><i></i><i></i><i></i>&nbsp;sh — verify audit</span>
+          <button type="button" class="copy-btn" data-copy="verify-audit">copy</button>
+        </div>
+<pre data-copy-src="verify-audit"><span class="p">$</span> curl -sS -H "Authorization: Bearer $VAULTRUN_API_KEY" \
+  "http://localhost:8080/api/v1/audit?session_id=$SESSION_ID"
+<span class="c"># → { "audit_logs": [ { "action": "command.finished", "sig": "…" }, … ] }</span></pre>
+      </div>
     </div>
     <div class="demo-actions">
       <a class="btn primary" href="#mcp">wire MCP →</a>
@@ -600,6 +640,17 @@ fmt.Println(*run.Stdout)</pre>
       <li>AWS tools require explicit opt-in — no ambient IAM credentials</li>
     </ul>
     <p class="sub" style="margin-top:24px">Full write-up: <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/security.md">docs/security.md</a></p>
+
+    <div class="bridge" style="margin-top:28px" id="for-teams">
+      <div class="bridge-copy">
+        <p>Teams with an IdP?</p>
+        <span>OIDC / SAML SSO and org-aware RBAC — evaluate free, license for prod. No fake case studies; talk to us instead.</span>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="#contact" data-intent="evaluation">request evaluation →</a>
+        <a class="btn ghost" href="#enterprise">core vs enterprise ↓</a>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -809,41 +860,50 @@ fmt.Println(*run.Stdout)</pre>
 (function () {
   var DEMO_STEPS = [
     [
-      '<span class="c"># agent → MCP tools/call</span>',
-      '<span class="p">$</span> run_command',
+      '<span class="c"># MCP tool → POST /api/v1/sessions/:id/run</span>',
+      '<span class="p">$</span> curl -X POST …/sessions/3f8a2c1e-…/run \\',
+      '    -H "Authorization: Bearer $VAULTRUN_API_KEY" \\',
+      '    -d \'{"command":"python","args":["analyze.py"]}\'',
       '{',
-      '  <span class="k">"session_id"</span>: "ses_8f3a21c0",',
       '  <span class="k">"command"</span>: "python",',
       '  <span class="k">"args"</span>: ["analyze.py"]',
       '}',
-      '<span class="o">→ vaultRun accepts · forwarding to policy</span>'
+      '<span class="o">→ accepted · policy eval next</span>'
     ],
     [
-      '<span class="c"># policy hook (OPA-ready)</span>',
-      '<span class="p">$</span> policy.evaluate(run_command)',
-      'allow:     <span class="o">true</span>',
-      'cpu:       1',
-      'memory:    512m',
-      'timeout:   30s',
-      'network:   <span class="o">deny</span>  <span class="c"># default</span>',
-      '<span class="o">→ limits attached · spinning sandbox</span>'
+      '<span class="c"># POST /api/v1/policy/eval  (dry-run; OPA-ready hook)</span>',
+      '<span class="p">$</span> curl -X POST …/policy/eval -d \'{"type":"command","command":"python"}\'',
+      '{',
+      '  <span class="k">"allowed"</span>: <span class="o">true</span>,',
+      '  <span class="k">"type"</span>: "command"',
+      '}',
+      '<span class="c"># session defaults: network deny · cpu/mem/timeout caps</span>',
+      '<span class="o">→ allow · attach limits · start container exec</span>'
     ],
     [
-      '<span class="c"># isolated Docker session</span>',
-      '<span class="p">$</span> docker exec ses_8f3a21c0 python analyze.py',
-      'rows_scanned: 12480',
-      'anomalies:    3',
-      'exit_code:    0',
-      '<span class="o">→ stdout returned to agent · no host shell</span>'
+      '<span class="c"># Docker exec API only — no host shell</span>',
+      '<span class="p">$</span> # response from POST …/run',
+      '{',
+      '  <span class="k">"id"</span>: "7b91e4d2-…",',
+      '  <span class="k">"status"</span>: "completed",',
+      '  <span class="k">"exit_code"</span>: 0,',
+      '  <span class="k">"stdout"</span>: "rows_scanned=12480\\nanomalies=3\\n"',
+      '}',
+      '<span class="o">→ stdout back to agent · workspace isolated</span>'
     ],
     [
-      '<span class="c"># HMAC-signed audit append</span>',
-      '<span class="p">$</span> audit.append',
-      'action:   run_command',
-      'session:  ses_8f3a21c0',
-      'actor:    key_vr_a1…',
-      'sig:      a3f91c… <span class="o">✓ verified</span>',
-      '<span class="o">→ replayable · tamper-evident</span>'
+      '<span class="c"># GET /api/v1/audit?session_id=…</span>',
+      '<span class="p">$</span> curl -H "Authorization: Bearer $VAULTRUN_API_KEY" \\',
+      '    "…/api/v1/audit?session_id=3f8a2c1e-…"',
+      '{',
+      '  <span class="k">"audit_logs"</span>: [{',
+      '    <span class="k">"action"</span>: "command.finished",',
+      '    <span class="k">"actor"</span>: "key:vr_…",',
+      '    <span class="k">"session_id"</span>: "3f8a2c1e-…",',
+      '    <span class="k">"sig"</span>: "a3f91c…hex"  <span class="c"># HMAC-SHA256</span>',
+      '  }]',
+      '}',
+      '<span class="o">→ tamper-evident · verify with AUDIT_HMAC_KEY</span>'
     ]
   ];
 

@@ -59,11 +59,29 @@ Open `http://localhost:3000` for the dashboard.
 |---|---|
 | **API server** (`cmd/api`) | Gin-based REST API — sessions, runs, files, audit |
 | **CLI** (`cmd/cli`) | `vaultrun` command-line tool |
-| **MCP server** (`sdk/mcp`) | 53-tool MCP server (stdio + HTTP) |
+| **MCP server** (`sdk/mcp`) | 61-tool MCP server (stdio + HTTP, +8 browser tools) |
 | **CI runner** (`cmd/ci-runner`) | GitHub webhook → sandbox CI + Slack/Teams notify |
 | **Dashboard** (`apps/frontend`) | Next.js management UI |
 | **Go SDK** (`sdk/go`) | Typed Go client |
 | **Python SDK** (`sdk/python`) | Python client — [`pip install vaultrun-sdk`](https://pypi.org/project/vaultrun-sdk/) |
+
+## 🚀 Killer Features
+
+VaultRun includes production-ready features that make it the AI agent platform:
+
+### ✅ Session Replay & Time-Travel Debugging
+Record every command execution with full state snapshots. Jump back to any moment, reproduce bugs exactly, test "what if" scenarios. ([docs](docs/features/session-replay.md))
+
+### ✅ Browser Automation Layer
+Headless Chromium with Playwright pre-installed. 8 MCP tools for web scraping, E2E testing, PDF generation. SSRF protection built-in. ([docs](docs/browser-automation.md))
+
+### ✅ Cost Intelligence Dashboard
+Real-time cost tracking per session with HMAC-signed metrics. Budget alerts, idle detection, top spenders. AWS pricing defaults. ([docs](docs/features/cost-intelligence.md))
+
+### ✅ Natural Language Policy Engine
+Write "Allow github.com and pypi.org, max 2 CPU" → get OPA policies, iptables rules, Docker constraints. LLM-powered, 4 templates included. ([docs](docs/natural-language-policy.md))
+
+**Progress: 4/6 features shipped** — See [killer features roadmap](docs/features/README.md)
 
 ## Architecture
 
@@ -94,9 +112,9 @@ vaultrun/
 └── examples/         Usage examples
 ```
 
-## MCP Server (53 tools)
+## MCP Server (61 tools)
 
-The MCP server exposes every VaultRun capability as a Model Context Protocol tool.
+The MCP server exposes every VaultRun capability as a Model Context Protocol tool, including 8 browser automation tools.
 Add it to Claude Desktop, Claude Code, or any MCP-compatible platform in seconds.
 
 ### Stdio transport (Claude Desktop / Claude Code)

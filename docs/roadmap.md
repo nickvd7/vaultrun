@@ -85,3 +85,42 @@ These remain intentional non-goals until there is clear demand and infrastructur
 - Redis-backed sliding-window rate limiting (beyond in-memory)
 - Richer dashboard Session UX and org switcher
 - Optional public “starting from” commercial packaging once pricing is finalized
+
+## Killer Features (proposed)
+
+Comprehensive feature specifications available in `docs/features/`:
+
+**Priority 1 (Highest Impact):**
+- [ ] **Session Replay & Time-Travel Debugging** — [spec](features/session-replay.md)
+  - Checkpoint every command execution for debugging
+  - Restore/fork from any point in session history
+  - Effort: 2-3 weeks
+
+- [ ] **Browser Automation Layer** — [spec](features/browser-automation.md)
+  - Headless browser with Playwright/Puppeteer
+  - 8 new MCP tools for web scraping and E2E testing
+  - Effort: 1-2 weeks
+
+**Priority 2 (Strong Value):**
+- [ ] **Live Multi-Agent Collaboration** — [spec](features/multi-agent-collaboration.md)
+  - Multiple agents working in same sandbox with real-time sync
+  - Agent-to-agent messaging and presence awareness
+  - Effort: 4-6 weeks
+
+- [ ] **Natural Language Policy Engine** — [spec](features/natural-language-policy.md)
+  - LLM-powered policy generation from plain English
+  - Makes security accessible for non-DevOps users
+  - Effort: 2-3 weeks
+
+- [ ] **Cost Intelligence Dashboard** — [spec](features/cost-intelligence.md)
+  - Real-time cost tracking and optimization recommendations
+  - Idle session detection and budget management
+  - Effort: 2-3 weeks
+
+**Priority 3 (Nice-to-Have):**
+- [ ] **Session Templates Marketplace** — [spec](features/session-templates.md)
+  - Pre-configured environments (Python DS, Node.js API, etc.)
+  - Community contributions and ratings
+  - Effort: 2-3 weeks
+
+See [docs/features/README.md](features/README.md) for full overview and implementation guidance.

@@ -124,3 +124,57 @@ export interface Checkpoint {
   created_at: string;
   size_bytes: number;
 }
+
+export interface CostMetric {
+  id: string;
+  session_id: string;
+  period_start: string;
+  period_end: string;
+  cpu_core_hours: number;
+  memory_gb_hours: number;
+  gpu_hours: number;
+  workspace_gb_days: number;
+  snapshot_gb_days: number;
+  artifact_gb_days: number;
+  egress_gb: number;
+  ingress_gb: number;
+  compute_cost: number;
+  storage_cost: number;
+  network_cost: number;
+  total_cost: number;
+  created_at: string;
+}
+
+export interface SessionCostSummary {
+  session_id: string;
+  session_name: string;
+  compute_cost: number;
+  storage_cost: number;
+  network_cost: number;
+  total_cost: number;
+  first_metric: string;
+  last_metric: string;
+}
+
+export interface CostBreakdown {
+  period: string;
+  compute_cost: number;
+  storage_cost: number;
+  network_cost: number;
+  total_cost: number;
+  top_sessions: SessionCostSummary[];
+  alert_count: number;
+}
+
+export interface CostAlert {
+  id: string;
+  alert_type: string;
+  severity: string;
+  session_id?: string;
+  org_id?: string;
+  title: string;
+  description: string;
+  potential_savings?: number;
+  resolved: boolean;
+  created_at: string;
+}

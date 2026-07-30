@@ -15,7 +15,7 @@
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network.
 
-> **Latest:** VaultRun is now open core — this Apache 2.0 repository ships everything below, and Enterprise SSO (OIDC + SAML 2.0) is available separately for commercial use (mail@030.dev). The MCP server speaks both stdio *and* HTTP (53 tools — Claude, OpenAI, OpenRouter, custom agents). See the [changelog](CHANGELOG.md) and the [SSO setup guide](docs/sso-setup.md).
+> **Latest v0.3.0:** 6 killer features released — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (61 tools). Security tested (see [security report](docs/security-testing-report.md)). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -65,23 +65,29 @@ Open `http://localhost:3000` for the dashboard.
 | **Go SDK** (`sdk/go`) | Typed Go client |
 | **Python SDK** (`sdk/python`) | Python client — [`pip install vaultrun-sdk`](https://pypi.org/project/vaultrun-sdk/) |
 
-## 🚀 Killer Features
+## 🚀 Killer Features (6/6 Complete)
 
-VaultRun includes production-ready features that make it the AI agent platform:
+VaultRun includes production-ready features that make it **the** AI agent platform:
 
 ### ✅ Session Replay & Time-Travel Debugging
-Record every command execution with full state snapshots. Jump back to any moment, reproduce bugs exactly, test "what if" scenarios. ([docs](docs/features/session-replay.md))
+Record every command execution with full state snapshots. Jump back to any moment, reproduce bugs exactly, test "what if" scenarios. HMAC-signed checkpoints prevent tampering. ([docs](docs/features/session-replay.md))
 
 ### ✅ Browser Automation Layer
-Headless Chromium with Playwright pre-installed. 8 MCP tools for web scraping, E2E testing, PDF generation. SSRF protection built-in. ([docs](docs/browser-automation.md))
+Headless Chromium with Playwright pre-installed. 8 MCP tools for web scraping, E2E testing, PDF generation. SSRF protection blocks private IPs + cloud metadata. ([docs](docs/browser-automation.md))
 
 ### ✅ Cost Intelligence Dashboard
-Real-time cost tracking per session with HMAC-signed metrics. Budget alerts, idle detection, top spenders. AWS pricing defaults. ([docs](docs/features/cost-intelligence.md))
+Real-time cost tracking per session with HMAC-signed metrics. Budget alerts, idle detection, top spenders. Immutable cost records via DB trigger. ([docs](docs/features/cost-intelligence.md))
 
 ### ✅ Natural Language Policy Engine
-Write "Allow github.com and pypi.org, max 2 CPU" → get OPA policies, iptables rules, Docker constraints. LLM-powered, 4 templates included. ([docs](docs/natural-language-policy.md))
+Write "Allow github.com and pypi.org, max 2 CPU" → get OPA policies, iptables rules, Docker constraints. LLM-powered (OpenAI), 4 templates included, 20+ examples. ([docs](docs/natural-language-policy.md))
 
-**Progress: 4/6 features shipped** — See [killer features roadmap](docs/features/README.md)
+### ✅ Session Templates Marketplace
+Pre-configured environments (Python Data Science, Node.js API, Web Scraping, Rust Dev). One-click session creation with resource limits, network policies, env vars. ([docs](docs/features/session-templates.md))
+
+### ✅ Multi-Agent Collaboration
+Multiple agents in one session via WebSocket + Redis. Real-time presence, agent-to-agent messaging, file version tracking. Max 4 agents/session (configurable). ([docs](docs/features/multi-agent-collaboration.md))
+
+**Progress: 100%** (6/6 features shipped) — Security tested ✅ ([report](docs/security-testing-report.md))
 
 ## Architecture
 

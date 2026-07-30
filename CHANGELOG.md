@@ -11,6 +11,101 @@ _Nothing yet._
 
 ---
 
+## [0.3.0] — 2026-07-30
+
+**Major Feature Release** — 6 killer features for AI agent platforms.
+
+### Added — Session Replay & Time-Travel Debugging
+
+- **Checkpoint System** (`internal/replay`) — Capture full session state (files + metadata) at any moment
+- **HMAC Signing** — Tamper detection for checkpoints via HMAC-SHA256
+- **Workspace Snapshots** — Gzip-compressed tar archives stored in file vault
+- **Sensitive Data Redaction** — Environment variables masked from checkpoints
+- **Resource Limits** — Max 100 checkpoints/session, 500MB/checkpoint, 50GB/org
+- **API Endpoints** — `POST /sessions/:id/checkpoints`, `GET /checkpoints/:id`, `POST /checkpoints/:id/restore`, `POST /checkpoints/:id/fork`
+- **Migration 011** — `replay_checkpoints` table with JSONB state + archive paths
+- **Dashboard UI** — Checkpoints tab in session detail page
+
+### Added — Browser Automation Layer
+
+- **Playwright Integration** (`internal/browser`) — Headless Chromium via Python + Playwright
+- **SSRF Protection** — Blocks private IPs, localhost, cloud metadata endpoints (AWS/GCP/Azure)
+- **8 MCP Tools** — `browser_navigate`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_extract`, `browser_evaluate`, `browser_wait`, `browser_pdf`
+- **Artifact Capture** — Screenshots + PDFs saved as artifacts with checksums
+- **Network Policy** — Respects session `allowed_hosts` for security
+- **Docker Image** — `docker/browser-playwright-python.Dockerfile` with Chromium pre-installed
+
+### Added — Cost Intelligence Dashboard
+
+- **Cost Tracking** (`internal/cost`) — Real-time resource usage tracking per session
+- **HMAC Signed Metrics** — Immutable cost records with tamper detection
+- **Budget Alerts** — Org-level spending limits with configurable alerts
+- **Cost Breakdown** — Compute, storage, network costs with AWS pricing defaults
+- **PostgreSQL Trigger** — Prevents UPDATE/DELETE on `cost_metrics` for immutability
+- **API Endpoints** — `GET /sessions/:id/costs`, `GET /costs/breakdown`, `GET /costs/alerts`, `POST /orgs/:id/budget`
+- **Migration 012** — `cost_rates`, `cost_metrics`, `cost_budgets`, `cost_alerts` tables
+- **Dashboard UI** — `/costs` page with total cost, breakdown, top spenders, alerts
+
+### Added — Natural Language Policy Engine
+
+- **LLM-Powered Parser** (`internal/nlpolicy`) — Converts natural language → structured security policies
+- **OpenAI Integration** — Uses GPT models to generate policies from plain English
+- **Policy Compiler** — Generates OPA Rego, Docker configs, iptables rules from structured policies
+- **4 Built-in Templates** — `python-data-science`, `nodejs-web-app`, `security-audit`, `unrestricted-dev`
+- **Mock Parser** — For testing without OpenAI API key
+- **API Endpoints** — `POST /policies/parse`, `POST /policies/compile`, `GET /policies/templates`, `POST /policies/from-template/:name`
+- **20+ Example Policies** — `examples/nlpolicy/example-policies.md`
+
+### Added — Session Templates Marketplace
+
+- **Template System** (`internal/templates`) — Pre-configured session templates with Docker image, resources, network, env vars
+- **4 Built-in Templates** — Python Data Science, Node.js API, Web Scraping, Rust Development
+- **CRUD Operations** — Create, list, get, update, delete custom templates
+- **Usage Tracking** — Auto-increment `use_count` via PostgreSQL trigger
+- **Template-Based Sessions** — `POST /templates/:id/use` creates session with template config
+- **Full-Text Search** — GIN indexes on template name + description
+- **API Endpoints** — `GET /templates`, `POST /templates`, `POST /templates/:id/use`
+- **Migration 013** — `session_templates`, `template_usage` tables
+
+### Added — Multi-Agent Collaboration
+
+- **WebSocket Server** (`internal/collab`) — Real-time agent presence + messaging
+- **Redis Pub/Sub** — Cross-instance event broadcasting for multi-server deployments
+- **Agent Presence** — Track active agents, current file, last activity
+- **Agent Messaging** — Direct messages + broadcast messages between agents
+- **File Versioning** — Incremental version tracking for conflict detection
+- **Hub Pattern** — Manages WebSocket connections + pub/sub subscriptions
+- **Max Agents Limit** — Configurable per session (default 4)
+- **API Endpoints** — `GET /sessions/:id/ws`, `GET /sessions/:id/agents`, `POST /sessions/:id/messages`
+- **Migration 014** — `session_agents`, `agent_messages`, `file_versions` tables
+- **WebSocket Protocol** — `agent_joined`, `agent_left`, `message`, `file_changed`, `presence_update`, `ping`/`pong`
+
+### Added — Security & Testing
+
+- **Security Testing Report** (`docs/security-testing-report.md`) — Comprehensive penetration testing + edge case analysis
+- **6 Attack Scenarios** — All blocked (session hijacking, SSRF, cost manipulation, template injection, message flooding, checkpoint tampering)
+- **OWASP Top 10** — All mitigated (SQL injection, XSS, SSRF, auth bypass, etc.)
+- **Rate Limiting** — Global + per-actor limits, Redis-backed for distributed deployments
+- **HMAC Signatures** — Applied to checkpoints, cost metrics, audit logs for tamper detection
+- **Container Isolation** — Docker exec API, no shell injection, resource limits enforced
+
+### Changed
+
+- **MCP Tools Count** — 53 → 61 tools (+8 browser automation)
+- **README** — Added "Killer Features" section highlighting 6 new features
+- **Documentation** — All features have dedicated docs in `docs/features/`
+- **Dependencies** — Added `github.com/gorilla/websocket`, upgraded `github.com/redis/go-redis/v9`
+
+### Security
+
+- ✅ All 6 features tested for security (see `docs/security-testing-report.md`)
+- ✅ Input validation on all endpoints
+- ✅ RBAC enforced for multi-tenant isolation
+- ✅ Audit logging for all privileged operations
+- ✅ Production-ready security posture
+
+---
+
 ## [0.2.1] — 2026-07-15
 
 Packaging, website, and Enterprise acquisition clarity — no API breaking changes.

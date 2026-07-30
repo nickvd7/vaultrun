@@ -356,11 +356,189 @@ BROWSER_VIDEO_ENABLED=false  # Enable video recording (future)
 
 ## Security Considerations
 
+### Critical Security Measures
+
+#### SSRF Protection
+
+Prevent agents from using browser to scan internal networks:
+
+```go
+type BrowserNetworkPolicy struct {
+    AllowedHosts    []string
+    BlockPrivateIPs bool  // Block 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    BlockLocalhost  bool
+    BlockMetadata   bool  // Block cloud metadata endpoints
+}
+
+func (b *BrowserManager) Navigate(sessionID uuid.UUID, url string) error {
+    parsed, _ := url.Parse(url)
+    hostname := parsed.Hostname()
+    
+    // Resolve hostname to IP
+    ips, err := net.LookupIP(hostname)
+    if err != nil {
+        return fmt.Errorf("failed to resolve hostname: %w", err)
+    }
+    
+    // Check each IP
+    for _, ip := range ips {
+        // Block private IPs
+        if b.policy.BlockPrivateIPs && isPrivateIP(ip) {
+            return errors.New("navigation to private IP blocked")
+        }
+        
+        // Block localhost
+        if b.policy.BlockLocalhost && ip.IsLoopback() {
+            return errors.New("navigation to localhost blocked")
+        }
+        
+        // Block cloud metadata endpoints
+        if b.policy.BlockMetadata && isMetadataIP(ip) {
+            return errors.New("navigation to cloud metadata endpoint blocked")
+        }
+    }
+    
+    // Check allowlist
+    if len(b.policy.AllowedHosts) > 0 {
+        if !contains(b.policy.AllowedHosts, hostname) {
+            return errors.New("host not in allowlist")
+        }
+    }
+    
+    // Proceed with navigation
+    return b.performNavigation(sessionID, url)
+}
+
+func isPrivateIP(ip net.IP) bool {
+    privateRanges := []string{
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "169.254.0.0/16",  // Link-local
+        "fd00::/8",         // IPv6 ULA
+    }
+    
+    for _, cidr := range privateRanges {
+        _, network, _ := net.ParseCIDR(cidr)
+        if network.Contains(ip) {
+            return true
+        }
+    }
+    return false
+}
+
+func isMetadataIP(ip net.IP) bool {
+    // AWS, GCP, Azure metadata endpoints
+    metadataIPs := []string{
+        "169.254.169.254",  // AWS, Azure
+        "169.254.169.253",  // AWS IMDSv2
+        "metadata.google.internal",  // GCP
+    }
+    
+    ipStr := ip.String()
+    for _, metaIP := range metadataIPs {
+        if ipStr == metaIP {
+            return true
+        }
+    }
+    return false
+}
+```
+
+#### Browser Isolation
+
+Each session gets isolated browser profile:
+
+```go
+func (b *BrowserManager) startBrowser(sessionID uuid.UUID) error {
+    // Create isolated profile directory
+    profileDir := filepath.Join("/tmp/browser-profiles", sessionID.String())
+    os.MkdirAll(profileDir, 0700)
+    
+    // Chromium security flags
+    flags := []string{
+        "--user-data-dir=" + profileDir,
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        "--disable-plugins",
+        "--disable-sync",
+        "--disable-background-networking",
+        "--disable-dev-shm-usage",  // Prevent /dev/shm issues in Docker
+        "--disable-gpu",
+        "--no-sandbox",  // Already in Docker sandbox
+        "--incognito",
+        
+        // JavaScript limits
+        "--js-flags=--max-old-space-size=512",  // 512MB JS heap
+        
+        // Disable dangerous features
+        "--disable-web-security",  // Only if explicitly needed
+        "--disable-features=TranslateUI,MediaRouter",
+    }
+    
+    return b.launchBrowser(sessionID, flags)
+}
+```
+
+#### Resource Limits
+
+Prevent resource exhaustion:
+
+```go
+type BrowserLimits struct {
+    MaxMemoryMB        int
+    MaxNavigationTime  time.Duration
+    MaxPageLoadTime    time.Duration
+    MaxResourcesLoaded int
+}
+
+func (b *BrowserManager) monitorResources(sessionID uuid.UUID) {
+    ticker := time.NewTicker(1 * time.Second)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        // Get browser memory usage
+        mem := b.getBrowserMemory(sessionID)
+        
+        if mem > b.limits.MaxMemoryMB * 1024 * 1024 {
+            log.Warn("Browser memory limit exceeded, killing",
+                "session", sessionID,
+                "memory_mb", mem/(1024*1024),
+            )
+            b.killBrowser(sessionID)
+            return
+        }
+    }
+}
+
+func (b *BrowserManager) Navigate(sessionID uuid.UUID, url string) error {
+    // Set timeout
+    ctx, cancel := context.WithTimeout(context.Background(), b.limits.MaxNavigationTime)
+    defer cancel()
+    
+    // Navigate with timeout
+    done := make(chan error)
+    go func() {
+        done <- b.performNavigation(sessionID, url)
+    }()
+    
+    select {
+    case err := <-done:
+        return err
+    case <-ctx.Done():
+        return errors.New("navigation timeout exceeded")
+    }
+}
+```
+
 ### Network Security
 
-- Browser sessions should have `network_enabled: true`
+- Browser sessions require `network_enabled: true`
 - Use network policies to allowlist specific domains only
 - Block ads/trackers by default (saves bandwidth)
+- **Always** block private IPs and cloud metadata endpoints
 
 ### Resource Limits
 

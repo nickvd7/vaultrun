@@ -553,29 +553,188 @@ resources:
 ### Template Validation
 
 ```go
+type TemplateValidator struct {
+    scanner       ImageScanner  // Trivy/Snyk/Aqua
+    docker        *docker.Client
+    db            *sql.DB
+}
+
 func (v *TemplateValidator) Validate(template *Template) error {
-    // Security checks
-    if err := v.scanDockerImage(template.Image); err != nil {
-        return fmt.Errorf("image security scan failed: %w", err)
+    // 1. Image security scanning
+    if err := v.validateImageSecurity(template.Image); err != nil {
+        return fmt.Errorf("image security validation failed: %w", err)
     }
     
-    // Policy check
+    // 2. Startup script security
+    if err := v.validateStartupScript(template.Config.StartupScript); err != nil {
+        return fmt.Errorf("startup script validation failed: %w", err)
+    }
+    
+    // 3. Policy check
     if template.Config.Network.Enabled && len(template.Config.Network.AllowedHosts) == 0 {
         return errors.New("network enabled without allowed_hosts — security risk")
     }
     
-    // Resource limits
+    // 4. Resource limits
     if template.Config.Resources.MemoryLimitMB > 16384 {
         return errors.New("memory limit too high (max 16GB for community templates)")
     }
     
-    // Image size
+    // 5. Image size
     imageSize := v.getImageSize(template.Image)
     if imageSize > 5*1024*1024*1024 {  // 5GB
         return errors.New("image too large (max 5GB)")
     }
     
+    // 6. Name squatting check
+    if err := v.checkNameSquatting(template); err != nil {
+        return err
+    }
+    
     return nil
+}
+
+// Comprehensive image security scan
+func (v *TemplateValidator) validateImageSecurity(image string) error {
+    // Pull image
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+    defer cancel()
+    
+    if err := v.docker.PullImage(ctx, image); err != nil {
+        return fmt.Errorf("failed to pull image: %w", err)
+    }
+    
+    // Scan for vulnerabilities
+    scanResults, err := v.scanner.Scan(image)
+    if err != nil {
+        return fmt.Errorf("scan failed: %w", err)
+    }
+    
+    // Reject critical vulnerabilities
+    if scanResults.CriticalCount > 0 {
+        return fmt.Errorf("%d critical vulnerabilities found", scanResults.CriticalCount)
+    }
+    
+    // Warn on high vulnerabilities
+    if scanResults.HighCount > 10 {
+        return fmt.Errorf("too many high severity vulnerabilities: %d", scanResults.HighCount)
+    }
+    
+    // Check for suspicious files
+    suspiciousPatterns := []string{
+        "**/cryptominer*", "**/backdoor*", "**/*.onion",
+        "**/reverse_shell*", "**/keylogger*",
+    }
+    
+    for _, pattern := range suspiciousPatterns {
+        matches := v.findInImage(image, pattern)
+        if len(matches) > 0 {
+            return fmt.Errorf("suspicious files found: %v", matches)
+        }
+    }
+    
+    // Check for cryptocurrency miners (common in backdoored images)
+    minerProcesses := []string{"xmrig", "ethminer", "cpuminer", "minerd"}
+    for _, proc := range minerProcesses {
+        if v.imageContainsFile(image, proc) {
+            return fmt.Errorf("cryptocurrency miner detected: %s", proc)
+        }
+    }
+    
+    // Verify image provenance (if available)
+    if !v.isOfficialImage(image) && !v.isVerifiedPublisher(image) {
+        log.Warn("Image from unverified publisher",
+            "image", image,
+            "template", template.Name,
+        )
+    }
+    
+    return nil
+}
+
+// Validate startup script for dangerous commands
+func (v *TemplateValidator) validateStartupScript(script string) error {
+    if script == "" {
+        return nil
+    }
+    
+    // Check length
+    if len(script) > 10000 {
+        return errors.New("startup script too long (max 10KB)")
+    }
+    
+    // Dangerous commands that should never be in startup scripts
+    dangerousCommands := []string{
+        "curl http://", "curl https://",  // External downloads
+        "wget http://", "wget https://",
+        "nc ", "netcat ",                  // Network tools
+        "eval ", "exec ",                  // Code execution
+        "/dev/tcp/", "/dev/udp/",         // Network redirects
+        "rm -rf /", "mkfs",                // Destructive operations
+        "iptables", "ip route",            // Network manipulation
+        "docker", "kubectl",               // Container escape
+        "sudo su", "sudo bash",            // Privilege escalation
+    }
+    
+    scriptLower := strings.ToLower(script)
+    for _, cmd := range dangerousCommands {
+        if strings.Contains(scriptLower, cmd) {
+            return fmt.Errorf("startup script contains dangerous command: %s", cmd)
+        }
+    }
+    
+    // Check for obfuscation attempts
+    if strings.Count(script, "base64") > 2 {
+        return errors.New("suspicious base64 usage in startup script")
+    }
+    
+    if strings.Count(script, "\\x") > 10 {
+        return errors.New("suspicious hex encoding in startup script")
+    }
+    
+    // Parse bash and check for redirections to untrusted sources
+    // (This would need a proper bash parser, simplified here)
+    
+    return nil
+}
+
+// Check for template name squatting
+func (v *TemplateValidator) checkNameSquatting(template *Template) error {
+    // Reserved names for official templates
+    reservedNames := []string{
+        "python-data-science", "nodejs-api", "rust-dev",
+        "go-dev", "java-spring", "web-scraping",
+    }
+    
+    if contains(reservedNames, template.Slug) && template.AuthorID != OfficialAuthorID {
+        return errors.New("template name reserved for official use")
+    }
+    
+    // Check similarity to existing templates
+    existing := v.db.GetPublishedTemplates()
+    for _, e := range existing {
+        if e.ID == template.ID {
+            continue  // Skip self
+        }
+        
+        similarity := levenshteinDistance(template.Name, e.Name)
+        if similarity < 3 {
+            return fmt.Errorf("template name too similar to existing '%s'", e.Name)
+        }
+        
+        // Check slug similarity
+        if levenshteinDistance(template.Slug, e.Slug) < 2 {
+            return fmt.Errorf("template slug too similar to existing '%s'", e.Slug)
+        }
+    }
+    
+    return nil
+}
+
+// Levenshtein distance for string similarity
+func levenshteinDistance(s1, s2 string) int {
+    // Implementation omitted for brevity
+    // Returns edit distance between two strings
 }
 ```
 

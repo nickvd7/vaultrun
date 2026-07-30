@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact, Checkpoint } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact, Checkpoint, CostMetric, SessionCostSummary, CostBreakdown, CostAlert } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -255,6 +255,26 @@ export const api = {
 
     delete: (sessionId: string, checkpointId: string) =>
       request<void>(`/sessions/${sessionId}/checkpoints/${checkpointId}`, { method: "DELETE" }),
+  },
+
+  costs: {
+    getSessionCosts: (sessionId: string) =>
+      request<{ metrics: CostMetric[]; summary: SessionCostSummary }>(
+        `/sessions/${sessionId}/costs`
+      ),
+
+    getBreakdown: (period?: string) => {
+      const qs = period ? `?period=${period}` : "";
+      return request<CostBreakdown>(`/costs/breakdown${qs}`);
+    },
+
+    getAlerts: (resolved = false) =>
+      request<{ alerts: CostAlert[] }>(`/costs/alerts?resolved=${resolved}`).then(
+        (r) => r.alerts
+      ),
+
+    resolveAlert: (alertId: string) =>
+      request<{ status: string }>(`/costs/alerts/${alertId}/resolve`, { method: "POST" }),
   },
 };
 

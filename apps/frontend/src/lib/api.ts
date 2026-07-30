@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact } from "@/types";
+import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact, Checkpoint } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -220,6 +220,41 @@ export const api = {
       request<void>(`/artifacts/${id}`, { method: "DELETE" }),
 
     downloadUrl: (id: string) => `${API_BASE}/api/v1/artifacts/${id}/download`,
+  },
+
+  checkpoints: {
+    list: (sessionId: string) =>
+      request<{ checkpoints: Checkpoint[] }>(`/sessions/${sessionId}/checkpoints`).then(
+        (r) => r.checkpoints
+      ),
+
+    get: (sessionId: string, checkpointId: string) =>
+      request<Checkpoint>(`/sessions/${sessionId}/checkpoints/${checkpointId}`),
+
+    create: (sessionId: string, body: {
+      run_id?: string;
+      name?: string;
+      description: string;
+    }) =>
+      request<Checkpoint>(`/sessions/${sessionId}/checkpoints`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+
+    restore: (sessionId: string, checkpointId: string, stopActiveCommands = false) =>
+      request<{ status: string }>(`/sessions/${sessionId}/checkpoints/${checkpointId}/restore`, {
+        method: "POST",
+        body: JSON.stringify({ stop_active_commands: stopActiveCommands }),
+      }),
+
+    fork: (checkpointId: string, name: string) =>
+      request<{ session_id: string }>(`/checkpoints/${checkpointId}/fork`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+
+    delete: (sessionId: string, checkpointId: string) =>
+      request<void>(`/sessions/${sessionId}/checkpoints/${checkpointId}`, { method: "DELETE" }),
   },
 };
 

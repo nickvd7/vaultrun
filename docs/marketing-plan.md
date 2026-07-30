@@ -39,6 +39,8 @@ VaultRun is the **self-hosted secure runtime** for AI agents — isolated Docker
 
 ## Existing assets to reuse
 
+- [brand guidelines](brand.md) + [`site/brand/`](../site/brand/) — logo, OG, social, video end card
+- [content kit](content-kit.md) — pitches, captions, signature, sales talking points
 - [launch-post.md](launch-post.md) — LinkedIn short/long, HN draft
 - [demo-video-script.md](demo-video-script.md) — 2–3 min walkthrough
 - [enterprise.html](../site/enterprise.html) — procurement one-pager

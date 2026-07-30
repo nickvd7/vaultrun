@@ -1,5 +1,9 @@
 # VaultRun
 
+<p align="center">
+  <img src="site/brand/lockup.png" alt="VaultRun" width="420">
+</p>
+
 [![CI](https://github.com/nickvd7/vaultrun/actions/workflows/ci.yml/badge.svg)](https://github.com/nickvd7/vaultrun/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/vaultrun-sdk.svg)](https://pypi.org/project/vaultrun-sdk/)
 ![Go version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)
@@ -7,7 +11,7 @@
 ![Self-hosted](https://img.shields.io/badge/self--hosted-no%20SaaS%2C%20no%20telemetry-success)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/nickvd7/vaultrun/pulls)
 
-**Self-hosted secure runtime for AI agents.** — [vaultrun.dev](https://vaultrun.dev) · [llms.txt](https://vaultrun.dev/llms.txt) · [PyPI](https://pypi.org/project/vaultrun-sdk/)
+**Self-hosted secure runtime for AI agents.** — [vaultrun.dev](https://vaultrun.dev) · [llms.txt](https://vaultrun.dev/llms.txt) · [PyPI](https://pypi.org/project/vaultrun-sdk/) · [Brand kit](site/brand/README.md)
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network.
 

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="VaultRun">
+  <title>VaultRun</title>
+  <rect x="8" y="8" width="48" height="48" fill="none" stroke="#e8e8e8" stroke-width="2.5"/>
+  <path d="M20 22 L34 32 L20 42" fill="none" stroke="#e8e8e8" stroke-width="3.2" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="38" y="28" width="10" height="8" fill="#e8e8e8"/>
+</svg>

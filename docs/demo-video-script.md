@@ -21,6 +21,8 @@ Viewer understands in under three minutes: what VaultRun is, that it runs on *th
 
 ## On-screen end card (text)
 
+Use raster: [`site/brand/video-endcard.png`](../site/brand/video-endcard.png) (1920×1080).
+
 ```
 VaultRun — self-hosted secure runtime for AI agents
 https://vaultrun.dev
@@ -30,10 +32,12 @@ Enterprise: https://vaultrun.dev/#enterprise
 
 ## B-roll assets already in-repo
 
+- Brand: `site/brand/` (mark, lockup, og.png, social-square.png)
 - Site: `site/index.html`, `site/enterprise.html`, `site/use-cases.html`
 - Quickstart commands: README.md
 - MCP JSON: docs/mcp.md / site MCP section
 - SSO setup: docs/sso-setup.md
+- Copy: docs/content-kit.md
 
 ## After export
 

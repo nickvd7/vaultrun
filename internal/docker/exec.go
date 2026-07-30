@@ -186,6 +186,23 @@ func demuxDockerStream(r io.Reader, stdout, stderr io.Writer) error {
 	}
 }
 
+// ExecSimple is a convenience wrapper for running simple commands
+// that returns stdout, stderr and error
+func (c *Client) ExecSimple(ctx context.Context, containerID string, cmd []string) (stdout, stderr string, err error) {
+	result, err := c.Exec(ctx, ExecConfig{
+		ContainerID: containerID,
+		Command:     cmd[0],
+		Args:        cmd[1:],
+	})
+	if err != nil {
+		return "", "", err
+	}
+	if result.ExitCode != 0 {
+		return result.Stdout, result.Stderr, fmt.Errorf("command exited with code %d", result.ExitCode)
+	}
+	return result.Stdout, result.Stderr, nil
+}
+
 type limitedWriter struct {
 	w         io.Writer
 	limit     int64

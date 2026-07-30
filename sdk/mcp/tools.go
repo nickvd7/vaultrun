@@ -705,6 +705,10 @@ func toolDefinitions() []mcpTool {
 	if flowdEnabled() {
 		tools = append(tools, flowdToolDefinitions()...)
 	}
+
+	// Browser automation tools (always enabled)
+	tools = append(tools, browserToolDefinitions()...)
+
 	return tools
 }
 
@@ -839,6 +843,25 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolFlowdStats(ctx)
 	case "flowd_undo_run":
 		return s.toolFlowdUndoRun(ctx, args)
+
+	// Browser automation tools
+	case "browser_navigate":
+		return s.toolBrowserNavigate(ctx, args)
+	case "browser_screenshot":
+		return s.toolBrowserScreenshot(ctx, args)
+	case "browser_click":
+		return s.toolBrowserClick(ctx, args)
+	case "browser_fill":
+		return s.toolBrowserFill(ctx, args)
+	case "browser_extract":
+		return s.toolBrowserExtract(ctx, args)
+	case "browser_evaluate":
+		return s.toolBrowserEvaluate(ctx, args)
+	case "browser_wait":
+		return s.toolBrowserWait(ctx, args)
+	case "browser_pdf":
+		return s.toolBrowserPDF(ctx, args)
+
 	default:
 		return mcpToolResult{}, fmt.Errorf("unknown tool %q", name)
 	}

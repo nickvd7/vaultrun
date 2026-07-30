@@ -29,6 +29,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
+	"github.com/nickvd7/vaultrun/internal/templates"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -142,6 +143,14 @@ func main() {
 
 	// Cost tracker for resource usage and billing (uses same key as audit HMAC).
 	costTracker := cost.New(db, []byte(cfg.Observability.AuditHMACKey))
+
+	// Session templates manager — marketplace and template-based session creation.
+	templatesManager := templates.New(db)
+	// Bootstrap built-in templates (idempotent).
+	if err := templatesManager.Bootstrap(context.Background()); err != nil {
+		slog.Error("bootstrap templates", "err", err)
+		os.Exit(1)
+	}
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
 	sec := secrets.New()
@@ -278,7 +287,7 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

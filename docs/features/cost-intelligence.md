@@ -675,6 +675,74 @@ Monthly cost report with:
 
 ---
 
+## Security & Data Integrity
+
+### Critical Security Measures
+
+#### Authorization Enforcement
+
+```go
+// Middleware for cost API endpoints
+func (m *CostAuthMiddleware) Authorize(c *gin.Context) {
+    user := c.MustGet("user").(*User)
+    sessionID := c.Param("session_id")
+    orgID := c.Param("org_id")
+    
+    // Verify session access
+    if sessionID != "" {
+        session, _ := m.db.GetSession(uuid.MustParse(sessionID))
+        if session.OrgID != user.OrgID {
+            m.audit.Log("cost_access_denied", user.ID, sessionID)
+            c.AbortWithStatusJSON(403, gin.H{"error": "access denied"})
+            return
+        }
+    }
+    
+    // Verify org access
+    if orgID != "" && orgID != user.OrgID.String() {
+        c.AbortWithStatusJSON(403, gin.H{"error": "access denied"})
+        return
+    }
+    
+    c.Next()
+}
+```
+
+#### Immutable Cost Records
+
+```sql
+-- Prevent cost data tampering
+CREATE TABLE cost_metrics (
+    id UUID PRIMARY KEY,
+    session_id UUID NOT NULL,
+    total_cost DECIMAL(10, 4) NOT NULL,
+    checksum VARCHAR(64) NOT NULL,  -- HMAC-SHA256
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Trigger prevents updates
+CREATE TRIGGER no_update_cost_metrics
+    BEFORE UPDATE ON cost_metrics
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_cost_metrics_update();
+```
+
+```go
+// Sign all cost metrics
+func (s *CostSigner) CreateMetric(metric *CostMetric) error {
+    data := fmt.Sprintf("%s:%f:%d",
+        metric.SessionID, metric.TotalCost, metric.PeriodStart.Unix())
+    
+    h := hmac.New(sha256.New, s.signingKey)
+    h.Write([]byte(data))
+    metric.Checksum = hex.EncodeToString(h.Sum(nil))
+    
+    return s.db.Insert(metric)  // No updates allowed
+}
+```
+
+---
+
 ## Success Metrics
 
 - % of orgs using cost tracking (target: 80%)

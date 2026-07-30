@@ -263,14 +263,321 @@ REDIS_URL=redis://localhost:6379
 
 ## Security Considerations
 
+### Critical Security Measures
+
+#### Message Authentication
+
+Prevent agent impersonation:
+
+```go
+// Server-side message authentication
+type AgentConnection struct {
+    AgentID   string
+    APIKey    string
+    SessionID uuid.UUID
+    OrgID     uuid.UUID
+    ws        *websocket.Conn
+}
+
+func (s *CollaborationServer) handleSendMessage(conn *AgentConnection, req *SendMessageRequest) error {
+    // CRITICAL: Never trust client-provided "from" field
+    // Server ALWAYS sets sender from authenticated connection
+    
+    message := Message{
+        ID:        uuid.New(),
+        From:      conn.AgentID,  // Server sets this based on auth
+        To:        req.To,
+        Body:      req.Body,
+        Timestamp: time.Now(),
+        SessionID: conn.SessionID,
+    }
+    
+    // Validate sender is part of session
+    if !s.isAgentInSession(conn.AgentID, conn.SessionID) {
+        return errors.New("agent not authorized for this session")
+    }
+    
+    // Validate recipient exists (if not broadcast)
+    if message.To != "all" {
+        if !s.isAgentInSession(message.To, conn.SessionID) {
+            return errors.New("recipient not in session")
+        }
+    }
+    
+    // Sign message for integrity
+    message.Signature = s.signMessage(&message)
+    
+    // Store in database
+    s.db.SaveMessage(&message)
+    
+    // Broadcast to session
+    return s.broadcast(conn.SessionID, &message)
+}
+
+func (s *CollaborationServer) signMessage(msg *Message) string {
+    data := fmt.Sprintf("%s:%s:%s:%s:%d",
+        msg.ID, msg.From, msg.To, msg.Body, msg.Timestamp.Unix())
+    
+    h := hmac.New(sha256.New, s.signingKey)
+    h.Write([]byte(data))
+    return hex.EncodeToString(h.Sum(nil))
+}
+```
+
+#### File Race Condition Protection
+
+Implement optimistic locking for concurrent file edits:
+
+```go
+type FileVersion struct {
+    Path           string
+    Version        int
+    ContentHash    string  // SHA-256 of content
+    LastModifiedBy string
+    LastModifiedAt time.Time
+}
+
+type FileSync struct {
+    versions map[string]*FileVersion
+    mu       sync.RWMutex
+    db       *sql.DB
+}
+
+func (f *FileSync) WriteFile(agentID, sessionID uuid.UUID, path string, content []byte, expectedVersion int) error {
+    f.mu.Lock()
+    defer f.mu.Unlock()
+    
+    key := fmt.Sprintf("%s:%s", sessionID, path)
+    current := f.versions[key]
+    
+    // Check version
+    if current != nil && current.Version != expectedVersion {
+        return &ConflictError{
+            Message: "File modified by another agent",
+            CurrentVersion: current.Version,
+            ExpectedVersion: expectedVersion,
+            LastModifiedBy: current.LastModifiedBy,
+            LastModifiedAt: current.LastModifiedAt,
+        }
+    }
+    
+    // Atomic write using temp file
+    tmpPath := path + ".tmp." + uuid.New().String()
+    if err := ioutil.WriteFile(tmpPath, content, 0644); err != nil {
+        return err
+    }
+    
+    // Atomic rename
+    if err := os.Rename(tmpPath, path); err != nil {
+        os.Remove(tmpPath)
+        return err
+    }
+    
+    // Update version
+    newVersion := &FileVersion{
+        Path:           path,
+        Version:        current.Version + 1,
+        ContentHash:    sha256Sum(content),
+        LastModifiedBy: agentID.String(),
+        LastModifiedAt: time.Now(),
+    }
+    
+    f.versions[key] = newVersion
+    
+    // Store in database
+    f.db.SaveFileVersion(sessionID, newVersion)
+    
+    // Broadcast change
+    f.broadcast(sessionID, FileChangedEvent{
+        Path:       path,
+        Version:    newVersion.Version,
+        ModifiedBy: agentID,
+        ContentHash: newVersion.ContentHash,
+    })
+    
+    return nil
+}
+
+// Agent retry logic with exponential backoff
+func (a *Agent) writeFileWithRetry(path string, content []byte) error {
+    maxRetries := 3
+    backoff := 100 * time.Millisecond
+    
+    for i := 0; i < maxRetries; i++ {
+        // Get current version
+        version := a.getFileVersion(path)
+        
+        // Attempt write
+        err := a.client.WriteFile(a.sessionID, path, content, version)
+        if err == nil {
+            return nil
+        }
+        
+        // Check if conflict
+        if conflictErr, ok := err.(*ConflictError); ok {
+            log.Info("File conflict detected, retrying",
+                "path", path,
+                "attempt", i+1,
+                "modified_by", conflictErr.LastModifiedBy,
+            )
+            
+            // Exponential backoff
+            time.Sleep(backoff * time.Duration(1<<i))
+            
+            // Re-read file and merge changes if possible
+            continue
+        }
+        
+        // Other error
+        return err
+    }
+    
+    return errors.New("max retries exceeded for file write")
+}
+```
+
+#### Connection Rate Limiting
+
+Prevent WebSocket storms:
+
+```go
+type ConnectionLimiter struct {
+    attempts map[string][]time.Time  // agentID -> connection timestamps
+    mu       sync.RWMutex
+}
+
+func (l *ConnectionLimiter) AllowConnection(agentID string) error {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    
+    now := time.Now()
+    
+    // Clean old attempts
+    if attempts, exists := l.attempts[agentID]; exists {
+        recent := []time.Time{}
+        for _, t := range attempts {
+            if now.Sub(t) < 1*time.Minute {
+                recent = append(recent, t)
+            }
+        }
+        l.attempts[agentID] = recent
+    } else {
+        l.attempts[agentID] = []time.Time{}
+    }
+    
+    // Check limit
+    if len(l.attempts[agentID]) >= 10 {
+        return errors.New("connection rate limit exceeded (max 10/minute)")
+    }
+    
+    // Record attempt
+    l.attempts[agentID] = append(l.attempts[agentID], now)
+    return nil
+}
+
+func (s *CollaborationServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+    agentID := r.Header.Get("X-Agent-ID")
+    apiKey := r.Header.Get("X-API-Key")
+    
+    // Rate limit check
+    if err := s.connLimiter.AllowConnection(agentID); err != nil {
+        http.Error(w, "Too many connection attempts", http.StatusTooManyRequests)
+        return
+    }
+    
+    // Authenticate
+    if !s.auth.ValidateAPIKey(apiKey) {
+        http.Error(w, "Invalid API key", http.StatusUnauthorized)
+        return
+    }
+    
+    // Upgrade to WebSocket
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        return
+    }
+    
+    // Handle connection
+    s.handleAgentConnection(agentID, apiKey, conn)
+}
+```
+
+#### Agent Disconnect Recovery
+
+Handle partial file writes on disconnect:
+
+```go
+type FileTransaction struct {
+    ID        uuid.UUID
+    AgentID   string
+    Path      string
+    StartedAt time.Time
+    Status    string  // "in_progress", "committed", "aborted"
+}
+
+func (f *FileSync) BeginTransaction(agentID, path string) (*FileTransaction, error) {
+    tx := &FileTransaction{
+        ID:        uuid.New(),
+        AgentID:   agentID,
+        Path:      path,
+        StartedAt: time.Now(),
+        Status:    "in_progress",
+    }
+    
+    f.db.SaveTransaction(tx)
+    return tx, nil
+}
+
+func (f *FileSync) CommitTransaction(txID uuid.UUID, content []byte) error {
+    tx := f.db.GetTransaction(txID)
+    if tx == nil {
+        return errors.New("transaction not found")
+    }
+    
+    // Atomic write
+    if err := f.writeFileAtomic(tx.Path, content); err != nil {
+        tx.Status = "aborted"
+        f.db.UpdateTransaction(tx)
+        return err
+    }
+    
+    tx.Status = "committed"
+    f.db.UpdateTransaction(tx)
+    return nil
+}
+
+// Cleanup orphaned transactions
+func (f *FileSync) CleanupOrphanedTransactions() {
+    orphans := f.db.GetTransactions(TransactionQuery{
+        Status:    "in_progress",
+        OlderThan: time.Now().Add(-5 * time.Minute),
+    })
+    
+    for _, tx := range orphans {
+        log.Warn("Cleaning up orphaned transaction",
+            "tx_id", tx.ID,
+            "agent_id", tx.AgentID,
+            "path", tx.Path,
+        )
+        
+        tx.Status = "aborted"
+        f.db.UpdateTransaction(tx)
+    }
+}
+```
+
+### Additional Security
+
 ### Agent Authentication
 
 - Each agent needs valid API key
 - Agents can only join sessions in their org
 - Session owner can kick agents out
+- All WebSocket connections are authenticated
 
 ### Rate Limiting
 
+- Max 10 connections per minute per agent
 - Max 100 messages per minute per agent
 - Max 1000 file changes per minute per session
 
@@ -279,6 +586,7 @@ REDIS_URL=redis://localhost:6379
 - Agent messages are audited
 - Full message history stored for compliance
 - Admins can view all agent communication
+- All messages are signed with HMAC
 
 ---
 

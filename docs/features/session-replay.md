@@ -615,6 +615,129 @@ Start simple:
 
 ## Security & Audit
 
+### Critical Security Measures
+
+#### Sensitive Data Protection
+
+**Problem:** Checkpoints kunnen credentials, API keys, en private keys bevatten.
+
+**Solution:**
+```go
+// Exclude sensitive files from checkpoints
+var SensitivePathPatterns = []string{
+    "**/*.key", "**/*.pem", "**/.ssh/*", "**/.aws/*",
+    "**/id_rsa", "**/id_ed25519", "**/.env",
+    "**/credentials", "**/secrets.yaml",
+}
+
+// Redact sensitive environment variables
+var SensitiveEnvVars = []string{
+    "AWS_SECRET_ACCESS_KEY", "DATABASE_PASSWORD",
+    "API_KEY", "SECRET_KEY", "PRIVATE_KEY",
+    // Add more as needed
+}
+
+func (m *Manager) CreateCheckpoint(opts CreateCheckpointOpts) (*Checkpoint, error) {
+    // Scan for sensitive files
+    if err := m.scanForSensitiveData(opts.SessionID); err != nil {
+        return nil, fmt.Errorf("checkpoint blocked: %w", err)
+    }
+    
+    // Redact env vars
+    sanitizedEnv := m.redactEnvVars(opts.EnvVars, SensitiveEnvVars)
+    opts.EnvVars = sanitizedEnv
+    
+    // Create checkpoint with sanitized data
+    checkpoint := m.createCheckpointSnapshot(opts)
+    
+    // Sign checkpoint for integrity
+    checkpoint.Signature = m.signCheckpoint(checkpoint)
+    
+    return checkpoint, nil
+}
+```
+
+#### Checkpoint Integrity
+
+All checkpoints are signed with HMAC to prevent tampering:
+
+```go
+func (m *Manager) signCheckpoint(cp *Checkpoint) string {
+    data := fmt.Sprintf("%s:%s:%d:%s",
+        cp.SessionID, cp.SnapshotID, cp.Number, cp.CreatedAt.Unix())
+    
+    h := hmac.New(sha256.New, m.signingKey)
+    h.Write([]byte(data))
+    return hex.EncodeToString(h.Sum(nil))
+}
+
+func (m *Manager) RestoreCheckpoint(checkpointID uuid.UUID) error {
+    cp := m.db.GetCheckpoint(checkpointID)
+    
+    // Verify signature
+    expectedSig := m.signCheckpoint(cp)
+    if !hmac.Equal([]byte(cp.Signature), []byte(expectedSig)) {
+        return errors.New("checkpoint signature invalid - possible tampering")
+    }
+    
+    // Proceed with restore
+}
+```
+
+#### Storage Limits
+
+Prevent DoS via checkpoint spam:
+
+```go
+const (
+    MaxCheckpointsPerSession = 50
+    MaxCheckpointSizeBytes = 2 * 1024 * 1024 * 1024  // 2GB
+    MaxTotalCheckpointStoragePerOrg = 100 * 1024 * 1024 * 1024  // 100GB
+)
+
+func (m *Manager) CreateCheckpoint(opts CreateCheckpointOpts) error {
+    // Check session limit
+    count := m.db.CountCheckpoints(opts.SessionID)
+    if count >= MaxCheckpointsPerSession {
+        // Auto-prune oldest
+        m.pruneOldestCheckpoint(opts.SessionID)
+    }
+    
+    // Check size limit
+    snapshotSize := m.getWorkspaceSize(opts.SessionID)
+    if snapshotSize > MaxCheckpointSizeBytes {
+        return ErrCheckpointTooLarge
+    }
+    
+    // Check org storage limit
+    orgStorage := m.db.GetOrgCheckpointStorage(opts.OrgID)
+    if orgStorage + snapshotSize > MaxTotalCheckpointStoragePerOrg {
+        return ErrOrgStorageLimitExceeded
+    }
+}
+```
+
+#### Concurrency Protection
+
+Prevent race conditions in checkpoint creation:
+
+```go
+func (m *Manager) RestoreCheckpoint(sessionID, checkpointID uuid.UUID) error {
+    // Check for active commands
+    activeRuns := m.db.GetActiveRuns(sessionID)
+    if len(activeRuns) > 0 {
+        return errors.New("cannot restore: %d active commands. Stop them first", len(activeRuns))
+    }
+    
+    // Lock session for restore
+    lock := m.sessionLocks.Lock(sessionID)
+    defer lock.Unlock()
+    
+    // Proceed with restore
+    return m.performRestore(sessionID, checkpointID)
+}
+```
+
 ### Audit Log Integration
 
 All replay operations are logged:

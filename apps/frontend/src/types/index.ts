@@ -104,3 +104,23 @@ export interface SharedArtifact {
   created_by: string;
   created_at: string;
 }
+
+export interface Checkpoint {
+  id: string;
+  session_id: string;
+  run_id?: string;
+  checkpoint_number: number;
+  name?: string;
+  description: string;
+  workspace_snapshot_id: string;
+  env_vars_snapshot?: Record<string, string>;
+  command?: string;
+  args?: Record<string, string>;
+  exit_code?: number;
+  duration_ms?: number;
+  stdout_preview?: string;
+  stderr_preview?: string;
+  signature: string;
+  created_at: string;
+  size_bytes: number;
+}

@@ -2,16 +2,16 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check } from "lucide-react";
+import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check, History, RotateCcw, GitFork } from "lucide-react";
 import Link from "next/link";
 import { api, getStoredApiKey } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
-import type { Session, Run, File } from "@/types";
+import type { Session, Run, File, Checkpoint } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-type Tab = "runs" | "files" | "audit";
+type Tab = "runs" | "files" | "checkpoints" | "audit";
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +20,7 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [tab, setTab] = useState<Tab>("runs");
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
 
@@ -53,11 +54,16 @@ export default function SessionDetailPage() {
     api.runs.list(id).then(setRuns).catch(console.error);
   }, [id]);
 
+  const loadCheckpoints = useCallback(() => {
+    api.checkpoints.list(id).then(setCheckpoints).catch(console.error);
+  }, [id]);
+
   useEffect(() => {
     loadSession();
     loadRuns();
+    loadCheckpoints();
     api.files.list(id).then(setFiles).catch(console.error);
-  }, [id, loadSession, loadRuns]);
+  }, [id, loadSession, loadRuns, loadCheckpoints]);
 
   // Auto-scroll stream output
   useEffect(() => {
@@ -476,7 +482,7 @@ export default function SessionDetailPage() {
       {/* Tabs */}
       <div>
         <div className="flex gap-4 border-b border-slate-800 mb-4">
-          {(["runs", "files", "audit"] as Tab[]).map((t) => (
+          {(["runs", "files", "checkpoints", "audit"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -488,6 +494,7 @@ export default function SessionDetailPage() {
             >
               {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" />}
               {t === "files" && <FileText className="w-3.5 h-3.5 inline mr-1" />}
+              {t === "checkpoints" && <History className="w-3.5 h-3.5 inline mr-1" />}
               {t === "audit" && <ScrollText className="w-3.5 h-3.5 inline mr-1" />}
               {t}
             </button>
@@ -503,6 +510,13 @@ export default function SessionDetailPage() {
             files={files}
             fileRef={fileRef}
             handleUpload={handleUpload}
+          />
+        )}
+        {tab === "checkpoints" && (
+          <CheckpointsTab
+            sessionId={id}
+            checkpoints={checkpoints}
+            onReload={loadCheckpoints}
           />
         )}
         {tab === "audit" && <AuditTab sessionId={id} />}
@@ -668,6 +682,190 @@ function FilesTab({
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Checkpoints Tab ──────────────────────────────────────────────────────────
+function CheckpointsTab({
+  sessionId,
+  checkpoints,
+  onReload,
+}: {
+  sessionId: string;
+  checkpoints: Checkpoint[];
+  onReload: () => void;
+}) {
+  const router = useRouter();
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState<Checkpoint | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [forking, setForking] = useState(false);
+  const [forkName, setForkName] = useState("");
+
+  const handleRestore = async (checkpointId: string) => {
+    if (!confirm("Restore session to this checkpoint? This will overwrite the current workspace.")) return;
+    setRestoring(true);
+    try {
+      await api.checkpoints.restore(sessionId, checkpointId, false);
+      alert("Checkpoint restored successfully!");
+      onReload();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Restore failed");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const handleFork = async (checkpointId: string) => {
+    const name = forkName.trim() || `Fork from ${checkpointId.slice(0, 8)}`;
+    setForking(true);
+    try {
+      const { session_id } = await api.checkpoints.fork(checkpointId, name);
+      router.push(`/sessions/${session_id}`);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Fork failed");
+    } finally {
+      setForking(false);
+      setForkName("");
+    }
+  };
+
+  const handleDelete = async (checkpointId: string) => {
+    if (!confirm("Delete this checkpoint?")) return;
+    try {
+      await api.checkpoints.delete(sessionId, checkpointId);
+      onReload();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {checkpoints.length === 0 && (
+        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center">
+          <History className="w-12 h-12 mx-auto mb-3 text-slate-700" />
+          <p className="text-slate-500 text-sm mb-2">No checkpoints yet</p>
+          <p className="text-slate-600 text-xs">
+            Checkpoints are automatically created after each command execution when replay is enabled.
+          </p>
+        </div>
+      )}
+
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
+        {checkpoints.length > 0 && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+                <th className="px-4 py-3 text-left">#</th>
+                <th className="px-4 py-3 text-left">Description</th>
+                <th className="px-4 py-3 text-left">Command</th>
+                <th className="px-4 py-3 text-left">Size</th>
+                <th className="px-4 py-3 text-left">Created</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {checkpoints.map((cp) => (
+                <tr
+                  key={cp.id}
+                  onClick={() => setSelectedCheckpoint(selectedCheckpoint?.id === cp.id ? null : cp)}
+                  className={`cursor-pointer hover:bg-slate-800/20 transition-colors ${
+                    selectedCheckpoint?.id === cp.id ? "bg-slate-800/30" : ""
+                  }`}
+                >
+                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-400">
+                    #{cp.checkpoint_number}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 max-w-xs truncate">
+                    {cp.name || cp.description}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500 max-w-xs truncate">
+                    {cp.command || "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                    {formatBytes(cp.size_bytes)}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                    {formatDate(cp.created_at)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRestore(cp.id); }}
+                        disabled={restoring}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-400 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-40"
+                        title="Restore to this checkpoint"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Restore
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleFork(cp.id); }}
+                        disabled={forking}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-400 border border-indigo-900/50 rounded hover:bg-indigo-900/20 disabled:opacity-40"
+                        title="Fork new session from this checkpoint"
+                      >
+                        <GitFork className="w-3 h-3" /> Fork
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(cp.id); }}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 border border-red-900/50 rounded hover:bg-red-900/20"
+                        title="Delete checkpoint"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {selectedCheckpoint && (
+        <div className="bg-[#060609] border border-slate-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-mono">
+              Checkpoint #{selectedCheckpoint.checkpoint_number}
+            </span>
+            <span className="text-xs text-slate-600">{selectedCheckpoint.id.slice(0, 16)}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Exit Code</div>
+              <div className="text-sm text-slate-300 font-mono">
+                {selectedCheckpoint.exit_code ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Duration</div>
+              <div className="text-sm text-slate-300 font-mono">
+                {selectedCheckpoint.duration_ms ? formatDuration(selectedCheckpoint.duration_ms) : "—"}
+              </div>
+            </div>
+          </div>
+
+          {selectedCheckpoint.stdout_preview && (
+            <div>
+              <div className="text-xs text-green-600 mb-1 uppercase tracking-wide">stdout (preview)</div>
+              <pre className="text-green-300 bg-black/30 rounded p-3 max-h-32 overflow-auto text-xs font-mono whitespace-pre-wrap">
+                {selectedCheckpoint.stdout_preview}
+              </pre>
+            </div>
+          )}
+
+          {selectedCheckpoint.stderr_preview && (
+            <div>
+              <div className="text-xs text-red-600 mb-1 uppercase tracking-wide">stderr (preview)</div>
+              <pre className="text-red-300 bg-black/30 rounded p-3 max-h-32 overflow-auto text-xs font-mono whitespace-pre-wrap">
+                {selectedCheckpoint.stderr_preview}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

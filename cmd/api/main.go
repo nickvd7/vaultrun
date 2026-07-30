@@ -20,6 +20,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/cleanup"
 	"github.com/nickvd7/vaultrun/internal/config"
+	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
@@ -138,6 +139,9 @@ func main() {
 	_ = os.Remove(probeFile)
 
 	al := audit.New(db, cfg.Observability.AuditHMACKey)
+
+	// Cost tracker for resource usage and billing (uses same key as audit HMAC).
+	costTracker := cost.New(db, []byte(cfg.Observability.AuditHMACKey))
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
 	sec := secrets.New()
@@ -274,7 +278,7 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

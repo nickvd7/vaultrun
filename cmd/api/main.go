@@ -25,6 +25,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
@@ -138,6 +139,9 @@ func main() {
 	_ = os.Remove(probeFile)
 
 	al := audit.New(db, cfg.Observability.AuditHMACKey)
+
+	// Replay manager for session checkpoints (uses same key as audit HMAC).
+	replayMgr := replay.New(db, []byte(cfg.Observability.AuditHMACKey))
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
 	sec := secrets.New()
@@ -274,7 +278,7 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, replayMgr, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

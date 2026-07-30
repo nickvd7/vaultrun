@@ -254,6 +254,15 @@ func newRouter(
 	authGroup.POST("/orgs/:id/budget", costH.SetBudget)
 	authGroup.GET("/costs/rates", costH.GetRates)
 
+	// Natural Language Policy endpoints — LLM-powered policy generation
+	nlPolicyH := handlers.NewNLPolicyHandler(hub)
+	authGroup.POST("/policies/parse", nlPolicyH.ParsePolicy)
+	authGroup.POST("/policies/validate", nlPolicyH.ValidatePolicy)
+	authGroup.POST("/policies/compile", nlPolicyH.CompilePolicy)
+	authGroup.GET("/policies/templates", nlPolicyH.ListTemplates)
+	authGroup.GET("/policies/templates/:name", nlPolicyH.GetTemplate)
+	authGroup.POST("/policies/from-template/:name", nlPolicyH.FromTemplate)
+
 	// Policy endpoints expose Rego source and dry-run eval — restrict to the
 	// master key so regular API keys cannot enumerate allowed commands (L-8).
 	masterMW := middleware.RequireMasterKey()

@@ -24,6 +24,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
+	"github.com/nickvd7/vaultrun/internal/templates"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -42,6 +43,7 @@ func newRouter(
 	pool *warmpool.Pool,
 	artStore artifacts.Store,
 	costTracker *cost.Tracker,
+	templatesManager *templates.Manager,
 	ent enterpriseHooks, // zero value when enterprise features are absent
 ) *gin.Engine {
 	r := gin.New()
@@ -262,6 +264,16 @@ func newRouter(
 	authGroup.GET("/policies/templates", nlPolicyH.ListTemplates)
 	authGroup.GET("/policies/templates/:name", nlPolicyH.GetTemplate)
 	authGroup.POST("/policies/from-template/:name", nlPolicyH.FromTemplate)
+
+	// Session Templates endpoints — marketplace and template-based session creation
+	templatesH := handlers.NewTemplateHandler(templatesManager, hub)
+	authGroup.GET("/templates", templatesH.ListTemplates)
+	authGroup.GET("/templates/:id", templatesH.GetTemplate)
+	authGroup.GET("/templates/slug/:slug", templatesH.GetTemplateBySlug)
+	authGroup.POST("/templates", templatesH.CreateTemplate)
+	authGroup.PUT("/templates/:id", templatesH.UpdateTemplate)
+	authGroup.DELETE("/templates/:id", templatesH.DeleteTemplate)
+	authGroup.POST("/templates/:id/use", templatesH.CreateSessionFromTemplate)
 
 	// Policy endpoints expose Rego source and dry-run eval — restrict to the
 	// master key so regular API keys cannot enumerate allowed commands (L-8).

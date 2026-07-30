@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound, LogOut, ShieldCheck, Archive, Package } from "lucide-react";
+import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound, LogOut, ShieldCheck, Archive, Package, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiKey } from "@/components/ApiKeyGate";
 
@@ -11,6 +11,7 @@ const nav = [
   { href: "/sessions", label: "Sessions", icon: Terminal },
   { href: "/snapshots", label: "Snapshots", icon: Archive },
   { href: "/artifacts", label: "Artifacts", icon: Package },
+  { href: "/costs", label: "Costs", icon: DollarSign },
   { href: "/keys", label: "API Keys", icon: KeyRound },
   { href: "/audit", label: "Audit Logs", icon: ScrollText },
   { href: "/policy", label: "Policy", icon: ShieldCheck },

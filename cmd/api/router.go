@@ -17,6 +17,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
+	"github.com/nickvd7/vaultrun/internal/cost"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
@@ -40,6 +41,7 @@ func newRouter(
 	sec secrets.Provider,
 	pool *warmpool.Pool,
 	artStore artifacts.Store,
+	costTracker *cost.Tracker,
 	ent enterpriseHooks, // zero value when enterprise features are absent
 ) *gin.Engine {
 	r := gin.New()
@@ -241,6 +243,16 @@ func newRouter(
 
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)
+
+	// Cost endpoints — session/org cost tracking and budget management
+	costH := handlers.NewCostHandler(hub, costTracker)
+	authGroup.GET("/sessions/:id/costs", costH.GetSessionCosts)
+	authGroup.GET("/costs/breakdown", costH.GetCostBreakdown)
+	authGroup.GET("/costs/alerts", costH.GetAlerts)
+	authGroup.POST("/costs/alerts/:id/resolve", costH.ResolveAlert)
+	authGroup.GET("/orgs/:id/costs", costH.GetOrgCosts)
+	authGroup.POST("/orgs/:id/budget", costH.SetBudget)
+	authGroup.GET("/costs/rates", costH.GetRates)
 
 	// Policy endpoints expose Rego source and dry-run eval — restrict to the
 	// master key so regular API keys cannot enumerate allowed commands (L-8).

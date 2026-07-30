@@ -36,6 +36,16 @@
   text-decoration: none;
   color: var(--nav-fg);
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.site-nav .logo-mark {
+  width: 20px;
+  height: 20px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .site-nav .logo span {

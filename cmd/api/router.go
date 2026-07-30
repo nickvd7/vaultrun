@@ -16,6 +16,7 @@ import (
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
+	"github.com/nickvd7/vaultrun/internal/collab"
 	"github.com/nickvd7/vaultrun/internal/config"
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
@@ -44,6 +45,8 @@ func newRouter(
 	artStore artifacts.Store,
 	costTracker *cost.Tracker,
 	templatesManager *templates.Manager,
+	collabManager *collab.Manager,
+	collabHub *collab.Hub,
 	ent enterpriseHooks, // zero value when enterprise features are absent
 ) *gin.Engine {
 	r := gin.New()
@@ -274,6 +277,16 @@ func newRouter(
 	authGroup.PUT("/templates/:id", templatesH.UpdateTemplate)
 	authGroup.DELETE("/templates/:id", templatesH.DeleteTemplate)
 	authGroup.POST("/templates/:id/use", templatesH.CreateSessionFromTemplate)
+
+	// Multi-agent collaboration endpoints — WebSocket + messaging
+	if collabManager != nil && collabHub != nil {
+		collabH := handlers.NewCollabHandler(collabManager, collabHub, hub)
+		authGroup.GET("/sessions/:id/ws", collabH.WebSocket)
+		authGroup.GET("/sessions/:id/agents", collabH.GetActiveAgents)
+		authGroup.GET("/sessions/:id/messages", collabH.GetMessages)
+		authGroup.POST("/sessions/:id/messages", collabH.SendMessage)
+		authGroup.POST("/sessions/:id/enable-collaboration", collabH.EnableCollaboration)
+	}
 
 	// Policy endpoints expose Rego source and dry-run eval — restrict to the
 	// master key so regular API keys cannot enumerate allowed commands (L-8).

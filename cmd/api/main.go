@@ -16,9 +16,12 @@ import (
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/nickvd7/vaultrun/internal/artifacts"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/cleanup"
+	"github.com/nickvd7/vaultrun/internal/collab"
 	"github.com/nickvd7/vaultrun/internal/config"
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
@@ -150,6 +153,28 @@ func main() {
 	if err := templatesManager.Bootstrap(context.Background()); err != nil {
 		slog.Error("bootstrap templates", "err", err)
 		os.Exit(1)
+	}
+
+	// Multi-agent collaboration — WebSocket + Redis pub/sub.
+	var collabManager *collab.Manager
+	var collabHub *collab.Hub
+	if cfg.Redis.Addr != "" {
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		// Test Redis connection
+		if err := redisClient.Ping(context.Background()).Err(); err != nil {
+			slog.Warn("redis ping failed, collaboration will be disabled", "err", err)
+		} else {
+			collabManager = collab.New(db, redisClient)
+			collabHub = collab.NewHub(collabManager)
+			go collabHub.Run(context.Background())
+			slog.Info("multi-agent collaboration enabled", "redis", cfg.Redis.Addr)
+		}
+	} else {
+		slog.Warn("REDIS_ADDR not set — multi-agent collaboration is disabled")
 	}
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
@@ -287,7 +312,7 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, collabManager, collabHub, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

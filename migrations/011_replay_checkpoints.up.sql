@@ -12,8 +12,9 @@ CREATE TABLE replay_checkpoints (
     description TEXT,                 -- Auto-generated or user-provided
     
     -- Snapshot references
-    workspace_snapshot_id UUID NOT NULL REFERENCES session_snapshots(id) ON DELETE CASCADE,
-    env_vars_snapshot JSONB,         -- Environment variables at this point
+    workspace_snapshot_id UUID NOT NULL,  -- Snapshot UUID (not FK to allow independent lifecycle)
+    archive_path TEXT NOT NULL,           -- Path to workspace snapshot archive
+    env_vars_snapshot JSONB,              -- Environment variables at this point
     
     -- Execution context
     command TEXT,                     -- The command that was run

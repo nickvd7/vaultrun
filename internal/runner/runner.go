@@ -25,12 +25,16 @@ import (
 
 const maxOutputBytes = 10 * 1024 * 1024 // 10 MB
 
+// CheckpointHook is called after successful command execution to create a checkpoint
+type CheckpointHook func(ctx context.Context, sessionID, runID uuid.UUID, exitCode int, durationMs int64, stdout, stderr string) error
+
 // Runner coordinates command execution inside sandbox containers.
 type Runner struct {
-	db     *sqlx.DB
-	docker *dockerpkg.Client
-	audit  *audit.Logger
-	hook   policy.Hook
+	db             *sqlx.DB
+	docker         *dockerpkg.Client
+	audit          *audit.Logger
+	hook           policy.Hook
+	checkpointHook CheckpointHook // optional — nil when replay disabled
 }
 
 func New(db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, hook policy.Hook) *Runner {
@@ -38,6 +42,11 @@ func New(db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, hook policy.Ho
 		hook = policy.AllowAll{}
 	}
 	return &Runner{db: db, docker: docker, audit: al, hook: hook}
+}
+
+// SetCheckpointHook sets a hook for automatic checkpoint creation after command execution
+func (r *Runner) SetCheckpointHook(hook CheckpointHook) {
+	r.checkpointHook = hook
 }
 
 type RunRequest struct {
@@ -149,6 +158,23 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 	// Detect any files the run created or modified and record them in the DB.
 	if req.WorkspacePath != "" {
 		r.detectArtifacts(ctx, req.SessionID, req.WorkspacePath, preSnap)
+	}
+
+	// Create checkpoint after successful execution (if replay enabled)
+	if r.checkpointHook != nil && execErr == nil && result != nil {
+		stdout := ""
+		stderr := ""
+		if result.Stdout != "" {
+			stdout = result.Stdout
+		}
+		if result.Stderr != "" {
+			stderr = result.Stderr
+		}
+		
+		// Best effort: log but don't fail the run if checkpoint creation fails
+		if err := r.checkpointHook(ctx, req.SessionID, run.ID, result.ExitCode, durationMS, stdout, stderr); err != nil {
+			slog.Warn("checkpoint creation failed", "session_id", req.SessionID, "run_id", run.ID, "err", err)
+		}
 	}
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)

@@ -51,16 +51,25 @@ var (
 	}
 )
 
+// WorkspaceManager defines the interface for workspace operations
+type WorkspaceManager interface {
+	CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath string, sizeBytes int64, err error)
+	RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
+	DeleteSnapshot(archivePath string) error
+}
+
 // Manager manages session replay checkpoints
 type Manager struct {
 	db         *sqlx.DB
+	ws         WorkspaceManager
 	signingKey []byte
 }
 
 // New creates a new replay Manager
-func New(db *sqlx.DB, signingKey []byte) *Manager {
+func New(db *sqlx.DB, ws WorkspaceManager, signingKey []byte) *Manager {
 	return &Manager{
 		db:         db,
+		ws:         ws,
 		signingKey: signingKey,
 	}
 }
@@ -88,24 +97,34 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 	}
 	
 	// 3. Create workspace snapshot
-	// TODO: This will call the snapshot manager to create actual snapshot
-	// For now, we'll create a placeholder snapshot record
 	snapshotID := uuid.New()
-	sizeBytes := int64(0) // TODO: Get actual size from snapshot
+	archivePath, sizeBytes, err := m.ws.CreateSnapshot(opts.SessionID, snapshotID)
+	if err != nil {
+		return nil, fmt.Errorf("create workspace snapshot: %w", err)
+	}
 	
 	// Check size limit
 	if sizeBytes > MaxCheckpointSizeBytes {
+		// Clean up snapshot on size violation
+		_ = m.ws.DeleteSnapshot(archivePath)
 		return nil, ErrCheckpointTooLarge
 	}
 	
-	// 4. Redact sensitive environment variables
+	// 4. Check org storage limit
+	if err := m.checkOrgStorageLimit(ctx, opts.SessionID, sizeBytes); err != nil {
+		// Clean up snapshot on storage limit violation
+		_ = m.ws.DeleteSnapshot(archivePath)
+		return nil, err
+	}
+	
+	// 5. Redact sensitive environment variables
 	sanitizedEnv := m.redactEnvVars(opts.EnvVars)
 	
-	// 5. Truncate output previews
+	// 6. Truncate output previews
 	stdoutPreview := truncate(opts.Stdout, 500)
 	stderrPreview := truncate(opts.Stderr, 500)
 	
-	// 6. Create checkpoint record
+	// 7. Create checkpoint record
 	checkpoint := &Checkpoint{
 		ID:                  uuid.New(),
 		SessionID:           opts.SessionID,
@@ -114,6 +133,7 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		Name:                opts.Name,
 		Description:         opts.Description,
 		WorkspaceSnapshotID: snapshotID,
+		ArchivePath:         archivePath,
 		EnvVarsSnapshot:     sanitizedEnv,
 		Command:             opts.Command,
 		Args:                argsToJSON(opts.Args),
@@ -125,11 +145,13 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		SizeBytes:           sizeBytes,
 	}
 	
-	// 7. Sign checkpoint
+	// 8. Sign checkpoint
 	checkpoint.Signature = m.signCheckpoint(checkpoint)
 	
-	// 8. Insert into database
+	// 9. Insert into database
 	if err := m.insertCheckpoint(ctx, checkpoint); err != nil {
+		// Clean up snapshot on DB failure
+		_ = m.ws.DeleteSnapshot(archivePath)
 		return nil, fmt.Errorf("insert checkpoint: %w", err)
 	}
 	
@@ -166,11 +188,13 @@ func (m *Manager) RestoreCheckpoint(ctx context.Context, opts RestoreOpts) error
 	}
 	
 	// 4. Restore workspace snapshot
-	// TODO: Call snapshot manager to restore snapshot
-	// For now, this is a placeholder
+	if err := m.ws.RestoreSnapshot(opts.SessionID, checkpoint.ArchivePath); err != nil {
+		return fmt.Errorf("restore workspace: %w", err)
+	}
 	
 	// 5. Restore environment variables (if any)
-	// TODO: Update container environment
+	// NOTE: Environment restoration requires container restart or exec
+	// For now, env vars are restored at next command execution
 	
 	return nil
 }
@@ -243,6 +267,13 @@ func (m *Manager) GetCheckpoint(ctx context.Context, id uuid.UUID) (*Checkpoint,
 
 // DeleteCheckpoint deletes a checkpoint
 func (m *Manager) DeleteCheckpoint(ctx context.Context, id uuid.UUID) error {
+	// Get checkpoint to delete its snapshot file
+	checkpoint, err := m.GetCheckpoint(ctx, id)
+	if err != nil {
+		return err
+	}
+	
+	// Delete from database
 	result, err := m.db.ExecContext(ctx, `
 		DELETE FROM replay_checkpoints WHERE id = $1
 	`, id)
@@ -255,6 +286,9 @@ func (m *Manager) DeleteCheckpoint(ctx context.Context, id uuid.UUID) error {
 	if rows == 0 {
 		return ErrCheckpointNotFound
 	}
+	
+	// Best effort: delete snapshot file
+	_ = m.ws.DeleteSnapshot(checkpoint.ArchivePath)
 	
 	return nil
 }
@@ -352,7 +386,21 @@ func (m *Manager) getNextCheckpointNumber(ctx context.Context, sessionID uuid.UU
 
 // pruneOldestCheckpoint deletes the oldest checkpoint for a session
 func (m *Manager) pruneOldestCheckpoint(ctx context.Context, sessionID uuid.UUID) error {
-	_, err := m.db.ExecContext(ctx, `
+	// Get the oldest checkpoint to delete its snapshot file
+	var archivePath string
+	err := m.db.GetContext(ctx, &archivePath, `
+		SELECT archive_path FROM replay_checkpoints
+		WHERE session_id = $1
+		ORDER BY checkpoint_number ASC
+		LIMIT 1
+	`, sessionID)
+	
+	if err != nil {
+		return err
+	}
+	
+	// Delete from database first
+	_, err = m.db.ExecContext(ctx, `
 		DELETE FROM replay_checkpoints
 		WHERE id IN (
 			SELECT id FROM replay_checkpoints
@@ -362,7 +410,14 @@ func (m *Manager) pruneOldestCheckpoint(ctx context.Context, sessionID uuid.UUID
 		)
 	`, sessionID)
 	
-	return err
+	if err != nil {
+		return err
+	}
+	
+	// Best effort: delete snapshot file
+	_ = m.ws.DeleteSnapshot(archivePath)
+	
+	return nil
 }
 
 // insertCheckpoint inserts a checkpoint into the database
@@ -370,18 +425,51 @@ func (m *Manager) insertCheckpoint(ctx context.Context, cp *Checkpoint) error {
 	_, err := m.db.NamedExecContext(ctx, `
 		INSERT INTO replay_checkpoints (
 			id, session_id, run_id, checkpoint_number, name, description,
-			workspace_snapshot_id, env_vars_snapshot, command, args,
+			workspace_snapshot_id, archive_path, env_vars_snapshot, command, args,
 			exit_code, duration_ms, stdout_preview, stderr_preview,
 			signature, created_at, size_bytes
 		) VALUES (
 			:id, :session_id, :run_id, :checkpoint_number, :name, :description,
-			:workspace_snapshot_id, :env_vars_snapshot, :command, :args,
+			:workspace_snapshot_id, :archive_path, :env_vars_snapshot, :command, :args,
 			:exit_code, :duration_ms, :stdout_preview, :stderr_preview,
 			:signature, :created_at, :size_bytes
 		)
 	`, cp)
 	
 	return err
+}
+
+// checkOrgStorageLimit checks if adding sizeBytes would exceed the org storage limit
+func (m *Manager) checkOrgStorageLimit(ctx context.Context, sessionID uuid.UUID, sizeBytes int64) error {
+	// Get session to find org
+	var orgID *uuid.UUID
+	err := m.db.GetContext(ctx, &orgID, `
+		SELECT org_id FROM sessions WHERE id = $1
+	`, sessionID)
+	
+	if err != nil || orgID == nil {
+		// No org or session owner - skip org limit check
+		return nil
+	}
+	
+	// Calculate total checkpoint storage for org
+	var totalStorage int64
+	err = m.db.GetContext(ctx, &totalStorage, `
+		SELECT COALESCE(SUM(rc.size_bytes), 0)
+		FROM replay_checkpoints rc
+		JOIN sessions s ON rc.session_id = s.id
+		WHERE s.org_id = $1
+	`, orgID)
+	
+	if err != nil {
+		return fmt.Errorf("check org storage: %w", err)
+	}
+	
+	if totalStorage+sizeBytes > MaxTotalCheckpointStoragePerOrg {
+		return ErrOrgStorageLimitExceeded
+	}
+	
+	return nil
 }
 
 // getActiveRuns returns active runs for a session

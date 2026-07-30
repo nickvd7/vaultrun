@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
@@ -141,7 +142,7 @@ func main() {
 	al := audit.New(db, cfg.Observability.AuditHMACKey)
 
 	// Replay manager for session checkpoints (uses same key as audit HMAC).
-	replayMgr := replay.New(db, []byte(cfg.Observability.AuditHMACKey))
+	replayMgr := replay.New(db, ws, []byte(cfg.Observability.AuditHMACKey))
 
 	// Initialise secrets provider (env / Vault / AWS based on SECRETS_PROVIDER).
 	sec := secrets.New()
@@ -165,6 +166,43 @@ func main() {
 	}
 
 	rnr := runner.New(db, docker, al, policyHook)
+
+	// Configure automatic checkpoint creation after command execution
+	rnr.SetCheckpointHook(func(ctx context.Context, sessionID, runID uuid.UUID, exitCode int, durationMs int64, stdout, stderr string) error {
+		// Check if session has replay enabled
+		var replayEnabled bool
+		err := db.GetContext(ctx, &replayEnabled, `
+			SELECT replay_enabled FROM sessions WHERE id = $1
+		`, sessionID)
+		if err != nil || !replayEnabled {
+			return nil // Replay disabled, skip checkpoint
+		}
+
+		// Get command details from run
+		var cmd string
+		var args []string
+		err = db.QueryRowContext(ctx, `
+			SELECT command, args FROM runs WHERE id = $1
+		`, runID).Scan(&cmd, &args)
+		if err != nil {
+			return err
+		}
+
+		// Create checkpoint
+		durationMsInt := int(durationMs)
+		_, err = replayMgr.CreateCheckpoint(ctx, replay.CreateCheckpointOpts{
+			SessionID:   sessionID,
+			RunID:       &runID,
+			Description: fmt.Sprintf("Auto checkpoint after: %s", cmd),
+			Command:     cmd,
+			Args:        args,
+			ExitCode:    &exitCode,
+			DurationMs:  &durationMsInt,
+			Stdout:      stdout,
+			Stderr:      stderr,
+		})
+		return err
+	})
 
 	// Warm container pool — optional; disabled when WARM_POOL_SIZE=0 or WARM_POOL_IMAGE is empty.
 	var pool *warmpool.Pool

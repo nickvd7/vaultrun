@@ -9,8 +9,26 @@ import (
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
+// mockWorkspaceManager implements WorkspaceManager for testing
+type mockWorkspaceManager struct{}
+
+func (m *mockWorkspaceManager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath string, sizeBytes int64, err error) {
+	return "/mock/path/" + snapshotID.String() + ".tar.gz", 1024, nil
+}
+
+func (m *mockWorkspaceManager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error {
+	return nil
+}
+
+func (m *mockWorkspaceManager) DeleteSnapshot(archivePath string) error {
+	return nil
+}
+
 func TestSignCheckpoint(t *testing.T) {
-	mgr := &Manager{signingKey: []byte("test-key-12345678901234567890")}
+	mgr := &Manager{
+		ws:         &mockWorkspaceManager{},
+		signingKey: []byte("test-key-12345678901234567890"),
+	}
 	
 	cp := &Checkpoint{
 		SessionID:           uuid.New(),
@@ -40,7 +58,10 @@ func TestSignCheckpoint(t *testing.T) {
 }
 
 func TestVerifyCheckpoint(t *testing.T) {
-	mgr := &Manager{signingKey: []byte("test-key-12345678901234567890")}
+	mgr := &Manager{
+		ws:         &mockWorkspaceManager{},
+		signingKey: []byte("test-key-12345678901234567890"),
+	}
 	
 	cp := &Checkpoint{
 		SessionID:           uuid.New(),
@@ -224,7 +245,10 @@ func TestArgsToJSON(t *testing.T) {
 // Benchmark tests
 
 func BenchmarkSignCheckpoint(b *testing.B) {
-	mgr := &Manager{signingKey: []byte("test-key-12345678901234567890")}
+	mgr := &Manager{
+		ws:         &mockWorkspaceManager{},
+		signingKey: []byte("test-key-12345678901234567890"),
+	}
 	cp := &Checkpoint{
 		SessionID:           uuid.New(),
 		WorkspaceSnapshotID: uuid.New(),
@@ -239,7 +263,10 @@ func BenchmarkSignCheckpoint(b *testing.B) {
 }
 
 func BenchmarkVerifyCheckpoint(b *testing.B) {
-	mgr := &Manager{signingKey: []byte("test-key-12345678901234567890")}
+	mgr := &Manager{
+		ws:         &mockWorkspaceManager{},
+		signingKey: []byte("test-key-12345678901234567890"),
+	}
 	cp := &Checkpoint{
 		SessionID:           uuid.New(),
 		WorkspaceSnapshotID: uuid.New(),

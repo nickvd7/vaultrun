@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -101,10 +103,7 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 	}
 
 	// Check if collaboration is allowed
-	var allowCollab bool
-	err = h.baseHub.db.GetContext(c.Request.Context(), &allowCollab,
-		"SELECT COALESCE(allow_collaboration, false) FROM sessions WHERE id = $1", sessionID)
-	if err != nil || !allowCollab {
+	if !h.collaborationEnabled(c, sessionID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled for this session"})
 		return
 	}
@@ -113,14 +112,21 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 	// no longer write an HTTP error response, so every rejection must happen here.
 	agent, err := h.manager.JoinSession(c.Request.Context(), sessionID, agentID, agentName)
 	switch {
-	case err == collab.ErrMaxAgentsReached:
+	case errors.Is(err, collab.ErrMaxAgentsReached):
 		c.JSON(http.StatusConflict, gin.H{"error": "maximum agents reached for this session"})
 		return
-	case err == collab.ErrSessionNotCollab:
+	case errors.Is(err, collab.ErrSessionNotCollab):
 		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled"})
 		return
+	case errors.Is(err, collab.ErrSessionNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	case errors.Is(err, collab.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	case err != nil:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("join collab session", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to join session"})
 		return
 	}
 
@@ -183,7 +189,8 @@ func (h *CollabHandler) GetActiveAgents(c *gin.Context) {
 
 	agents, err := h.manager.GetActiveAgents(c.Request.Context(), sessionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list active agents", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list agents"})
 		return
 	}
 
@@ -207,13 +214,14 @@ func (h *CollabHandler) GetMessages(c *gin.Context) {
 	}
 
 	limit := 100
-	if limitStr := c.Query("limit"); limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil {
+		limit = v
 	}
 
 	messages, err := h.manager.GetMessages(c.Request.Context(), sessionID, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list agent messages", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list messages"})
 		return
 	}
 
@@ -256,13 +264,37 @@ func (h *CollabHandler) SendMessage(c *gin.Context) {
 		}
 	}
 
+	// Messages are only meaningful on a session that opted into collaboration;
+	// accepting them otherwise fills agent_messages for sessions that have no
+	// agents and no way to read them.
+	if !h.collaborationEnabled(c, sessionID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled for this session"})
+		return
+	}
+
 	message, err := h.manager.SendMessage(c.Request.Context(), sessionID, req.From, req.To, req.Body, msgType)
+	if errors.Is(err, collab.ErrInvalidInput) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("send agent message", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send message"})
 		return
 	}
 
 	c.JSON(http.StatusCreated, message)
+}
+
+// collaborationEnabled reports whether a session opted into collaboration.
+// A lookup failure is treated as "not enabled" — the session's access has
+// already been verified by the caller, so the only remaining reason to fail
+// is a database problem, and denying is the safe answer.
+func (h *CollabHandler) collaborationEnabled(c *gin.Context, sessionID uuid.UUID) bool {
+	var enabled bool
+	err := h.baseHub.db.GetContext(c.Request.Context(), &enabled,
+		"SELECT COALESCE(allow_collaboration, false) FROM sessions WHERE id = $1", sessionID)
+	return err == nil && enabled
 }
 
 // EnableCollaboration enables collaboration for a session
@@ -299,7 +331,8 @@ func (h *CollabHandler) EnableCollaboration(c *gin.Context) {
 		"UPDATE sessions SET allow_collaboration = true, max_agents = $1 WHERE id = $2",
 		maxAgents, sessionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("enable collaboration", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enable collaboration"})
 		return
 	}
 

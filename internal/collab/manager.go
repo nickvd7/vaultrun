@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +15,29 @@ import (
 
 var (
 	ErrAgentNotFound     = errors.New("agent not found")
+	ErrSessionNotFound   = errors.New("session not found")
 	ErrSessionNotCollab  = errors.New("session does not allow collaboration")
 	ErrMaxAgentsReached  = errors.New("maximum agents reached for session")
 )
+
+// claimAgentSlot adds an agent to a session's active set only while the set is
+// below the session's cap, in one round trip.
+//
+// A rejoin by an agent that already holds a slot succeeds without consuming a
+// second one, so a reconnect never fails against its own stale entry.
+//
+// KEYS[1] active-agents set · ARGV[1] agent id · ARGV[2] max agents
+// Returns 1 when the slot is held, 0 when the session is full.
+var claimAgentSlot = redis.NewScript(`
+if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then
+  return 1
+end
+if redis.call('SCARD', KEYS[1]) >= tonumber(ARGV[2]) then
+  return 0
+end
+redis.call('SADD', KEYS[1], ARGV[1])
+return 1
+`)
 
 // Manager handles multi-agent collaboration
 type Manager struct {
@@ -43,31 +64,38 @@ func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID,
 		return nil, err
 	}
 
-	// Check if session allows collaboration
-	var allowCollab bool
-	var maxAgents int
-	err := m.db.GetContext(ctx, &allowCollab,
-		"SELECT allow_collaboration FROM sessions WHERE id = $1", sessionID)
+	var settings struct {
+		AllowCollab bool `db:"allow_collaboration"`
+		MaxAgents   int  `db:"max_agents"`
+	}
+	err := m.db.GetContext(ctx, &settings, `
+		SELECT COALESCE(allow_collaboration, false) AS allow_collaboration,
+		       COALESCE(max_agents, 1) AS max_agents
+		FROM sessions WHERE id = $1
+	`, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrSessionNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("check collaboration: %w", err)
 	}
-	if !allowCollab {
+	if !settings.AllowCollab {
 		return nil, ErrSessionNotCollab
 	}
 
-	err = m.db.GetContext(ctx, &maxAgents,
-		"SELECT COALESCE(max_agents, 1) FROM sessions WHERE id = $1", sessionID)
+	// Claim a slot atomically. Counting members and then adding one is a
+	// race: N agents connecting at the same moment all see a count below the
+	// cap and all get in, so max_agents — the bound on WebSocket connections
+	// and goroutines per session — would not hold under exactly the load it
+	// exists to limit.
+	claimed, err := claimAgentSlot.Run(ctx, m.redis,
+		[]string{redisKeyActiveAgents(sessionID)},
+		agentID, settings.MaxAgents,
+	).Int()
 	if err != nil {
-		return nil, fmt.Errorf("get max agents: %w", err)
+		return nil, fmt.Errorf("claim agent slot: %w", err)
 	}
-
-	// Check current agent count
-	activeCount, err := m.redis.SCard(ctx, redisKeyActiveAgents(sessionID)).Result()
-	if err != nil && err != redis.Nil {
-		return nil, fmt.Errorf("get active count: %w", err)
-	}
-
-	if int(activeCount) >= maxAgents {
+	if claimed == 0 {
 		return nil, ErrMaxAgentsReached
 	}
 
@@ -86,11 +114,8 @@ func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID,
 		return nil, fmt.Errorf("marshal agent: %w", err)
 	}
 
-	pipe := m.redis.Pipeline()
-	pipe.SAdd(ctx, redisKeyActiveAgents(sessionID), agentID)
-	pipe.Set(ctx, redisKeyAgent(sessionID, agentID), agentJSON, 24*time.Hour)
-	_, err = pipe.Exec(ctx)
-	if err != nil {
+	if err := m.redis.Set(ctx, redisKeyAgent(sessionID, agentID), agentJSON, 24*time.Hour).Err(); err != nil {
+		m.releaseAgentSlot(ctx, sessionID, agentID)
 		return nil, fmt.Errorf("redis store agent: %w", err)
 	}
 
@@ -105,6 +130,9 @@ func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID,
 			disconnected_at = NULL
 	`, sessionID, agentID, agentName, AgentStatusActive, agent.ConnectedAt, agent.LastActivity)
 	if err != nil {
+		// Give the slot back: the join failed, so holding it would shrink the
+		// session's capacity until the presence key expires.
+		m.releaseAgentSlot(ctx, sessionID, agentID)
 		return nil, fmt.Errorf("db store agent: %w", err)
 	}
 
@@ -117,6 +145,15 @@ func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID,
 	})
 
 	return agent, nil
+}
+
+// releaseAgentSlot undoes a claim on a best-effort basis; the caller is already
+// returning an error, so a failure here has nowhere useful to go.
+func (m *Manager) releaseAgentSlot(ctx context.Context, sessionID uuid.UUID, agentID string) {
+	pipe := m.redis.Pipeline()
+	pipe.SRem(ctx, redisKeyActiveAgents(sessionID), agentID)
+	pipe.Del(ctx, redisKeyAgent(sessionID, agentID))
+	_, _ = pipe.Exec(ctx)
 }
 
 // LeaveSession removes an agent from a session

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -116,6 +117,10 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "template with this slug already exists"})
 		return
 	}
+	if errors.Is(err, templates.ErrInvalidTemplate) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -158,6 +163,10 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 	tmpl, err := h.manager.Update(c.Request.Context(), id, req)
 	if err == templates.ErrTemplateNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		return
+	}
+	if errors.Is(err, templates.ErrInvalidTemplate) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {

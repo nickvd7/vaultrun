@@ -418,69 +418,155 @@ func (m *PlaywrightManager) Close(ctx context.Context, sessionID uuid.UUID) erro
 }
 
 // Helper: validate URL and check network policy
+// blockedHostnames are resolved by cloud providers to their metadata service.
+// They are rejected by name as well as by IP: a provider may change the address
+// or answer only from inside the VPC, where our own resolution would fail open.
+var blockedHostnames = map[string]bool{
+	"metadata":                       true,
+	"metadata.google.internal":       true,
+	"metadata.goog":                  true,
+	"instance-data":                  true,
+	"instance-data.ec2.internal":     true,
+}
+
 func (m *PlaywrightManager) validateURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("malformed URL: %w", err)
 	}
 
+	// Scheme is checked before anything else: file://, javascript:, data: and
+	// gopher: must never reach a DNS lookup, let alone the browser.
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("only http/https URLs are allowed")
+		return fmt.Errorf("only http/https URLs are allowed, got %q", parsed.Scheme)
 	}
 
 	hostname := parsed.Hostname()
+	if hostname == "" {
+		return fmt.Errorf("URL has no host")
+	}
 
-	// Resolve hostname to IP
+	if m.policy.BlockLocalhost && strings.EqualFold(hostname, "localhost") {
+		return fmt.Errorf("navigation to localhost is blocked")
+	}
+
+	if m.policy.BlockMetadata && blockedHostnames[strings.ToLower(hostname)] {
+		return fmt.Errorf("navigation to cloud metadata endpoint is blocked")
+	}
+
+	// When the host is already an IP literal, check it directly. net.LookupIP
+	// does handle literals, but doing it here keeps the check working even if
+	// the resolver is unavailable.
+	if literal := net.ParseIP(hostname); literal != nil {
+		return m.checkIP(literal)
+	}
+
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
 		return fmt.Errorf("failed to resolve hostname: %w", err)
 	}
+	if len(ips) == 0 {
+		return fmt.Errorf("hostname %q resolved to no addresses", hostname)
+	}
 
-	// Check each IP against policy
+	// Every returned address must pass: a hostname with both a public and a
+	// private A record would otherwise be usable to reach the private one.
 	for _, ip := range ips {
-		if m.policy.BlockPrivateIPs && isPrivateIP(ip) {
-			return fmt.Errorf("navigation to private IP (%s) is blocked", ip)
-		}
-
-		if m.policy.BlockLocalhost && ip.IsLoopback() {
-			return fmt.Errorf("navigation to localhost is blocked")
-		}
-
-		if m.policy.BlockMetadata && isMetadataIP(ip) {
-			return fmt.Errorf("navigation to cloud metadata endpoint is blocked")
+		if err := m.checkIP(ip); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// Helper: check if IP is private
-func isPrivateIP(ip net.IP) bool {
-	privateRanges := []string{
+// checkIP applies the network policy to a single resolved address.
+func (m *PlaywrightManager) checkIP(ip net.IP) error {
+	if m.policy.BlockMetadata && isMetadataIP(ip) {
+		return fmt.Errorf("navigation to cloud metadata endpoint (%s) is blocked", ip)
+	}
+
+	if m.policy.BlockLocalhost && ip.IsLoopback() {
+		return fmt.Errorf("navigation to localhost (%s) is blocked", ip)
+	}
+
+	if m.policy.BlockPrivateIPs && isPrivateIP(ip) {
+		return fmt.Errorf("navigation to private IP (%s) is blocked", ip)
+	}
+
+	return nil
+}
+
+// privateCIDRs lists every range an agent must not reach from a sandbox.
+// Parsed once at init: net.ParseCIDR on every request is both wasteful and
+// silently ignores parse errors.
+var privateCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		// RFC1918 private
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
+		// Loopback — also covered by ip.IsLoopback(), kept for defence in depth
+		"127.0.0.0/8",
+		// Link-local, includes the cloud metadata endpoints
+		"169.254.0.0/16",
+		// Carrier-grade NAT (RFC6598) — routable inside many hosting networks
+		"100.64.0.0/10",
+		// "This host on this network" (RFC1122) — 0.0.0.0 resolves to localhost
+		// on several stacks
+		"0.0.0.0/8",
+		// Shared/reserved ranges that should never be a legitimate target
+		"192.0.0.0/24",   // IETF protocol assignments
+		"198.18.0.0/15",  // benchmarking
+		"240.0.0.0/4",    // reserved
+		// IPv6
+		"::1/128",   // loopback
+		"fc00::/7",  // unique local addresses
+		"fe80::/10", // link-local
+		"::/128",    // unspecified
 	}
 
-	for _, cidr := range privateRanges {
-		_, ipNet, _ := net.ParseCIDR(cidr)
-		if ipNet.Contains(ip) {
-			return true
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("browser: invalid private CIDR %q: %v", cidr, err))
 		}
+		nets = append(nets, ipNet)
 	}
+	return nets
+}()
 
-	return false
-}
-
-// Helper: check if IP is cloud metadata endpoint
-func isMetadataIP(ip net.IP) bool {
-	metadata := []string{
-		"169.254.169.254/32", // AWS, GCP, Azure
+// metadataCIDRs lists cloud instance-metadata endpoints. Reaching these leaks
+// IAM credentials, so they are checked separately from the private ranges to
+// produce a clearer error and to survive any future loosening of those ranges.
+var metadataCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		"169.254.169.254/32", // AWS, GCP, Azure, DigitalOcean, Oracle
+		"169.254.170.2/32",   // AWS ECS task metadata
 		"fd00:ec2::254/128",  // AWS IPv6
 	}
 
-	for _, cidr := range metadata {
-		_, ipNet, _ := net.ParseCIDR(cidr)
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("browser: invalid metadata CIDR %q: %v", cidr, err))
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
+}()
+
+// isPrivateIP reports whether ip falls in a range that is unreachable for
+// sandboxed agents.
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+
+	for _, ipNet := range privateCIDRs {
 		if ipNet.Contains(ip) {
 			return true
 		}
@@ -489,9 +575,49 @@ func isMetadataIP(ip net.IP) bool {
 	return false
 }
 
-// Helper: escape single quotes for Python strings
+// isMetadataIP reports whether ip is a cloud instance-metadata endpoint.
+func isMetadataIP(ip net.IP) bool {
+	for _, ipNet := range metadataCIDRs {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// escapeString renders s safe for interpolation into a single-quoted Python
+// string literal. Backslashes must be doubled first, otherwise the escaping of
+// the quotes themselves can be undone by a trailing backslash in the input.
+// Newlines are escaped because a raw newline terminates the literal and lets
+// the caller append arbitrary Python statements.
 func escapeString(s string) string {
-	return strings.ReplaceAll(s, "'", "\\'")
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString(`\'`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case 0:
+			// A NUL byte truncates the string for some C-backed parsers.
+			b.WriteString(`\x00`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
 }
 
 // Helper: get container ID from session ID

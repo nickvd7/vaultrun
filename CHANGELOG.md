@@ -5,9 +5,129 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [0.3.1] — 2026-07-31
 
-_Nothing yet._
+**Security and correctness release.** Testing the v0.3.0 features against a real
+PostgreSQL instance, and writing per-attack-class unit tests, surfaced eleven
+defects. Full analysis in [docs/security-testing-report.md](docs/security-testing-report.md).
+
+Upgrade is recommended for every v0.3.0 deployment: two of the six features did
+not work at all, and six of the security defects were exploitable with an
+ordinary API key.
+
+### Fixed — Security
+
+- **Rego injection via policy explanation** (`internal/nlpolicy`) — The
+  LLM-produced explanation was written into a Rego comment unescaped. A newline
+  ended the comment and the remainder was parsed as policy code, so an
+  explanation containing `allow { true }` turned a restrictive policy into
+  allow-all.
+- **iptables injection via allowed hosts** (`internal/nlpolicy`) — Hosts were
+  interpolated into `iptables -A OUTPUT -d %s -j ACCEPT`. A value such as
+  `1.1.1.1 -j ACCEPT; iptables -P OUTPUT ACCEPT` reversed the default drop and
+  granted the sandbox unrestricted egress.
+- **Checkpoint HMAC widened** (`internal/replay`) — The signature covered only
+  session ID, snapshot ID, checkpoint number and timestamp. The recorded
+  command, arguments, exit code, duration, captured output, archive path, size
+  and environment snapshot were unauthenticated and could be rewritten while
+  the signature still verified. Now covers every immutable field, NUL-separated,
+  and fails closed when no signing key is set.
+- **Cost checksum widened** (`internal/cost`) — Covered only the derived totals.
+  The raw usage counters, `network_cost` and `rate_id` were unprotected, so the
+  evidence behind a charge could be rewritten. Float formatting changed from
+  `%f` (which truncated at six decimals and collided for sub-microdollar
+  amounts) to `strconv.FormatFloat('g', -1, 64)`. Added `Tracker.VerifyMetric`.
+- **SSRF filter completed** (`internal/browser`) — `isPrivateIP` covered only
+  `10/8`, `172.16/12` and `192.168/16`. Added loopback, link-local
+  (`169.254/16`, which contains the cloud metadata endpoints), CGNAT
+  (`100.64/10`), `0.0.0.0/8`, reserved ranges and the IPv6 private ranges.
+  Added the AWS ECS metadata endpoint. Metadata hostnames are now blocked by
+  name. The URL scheme is checked before DNS resolution, and every resolved
+  address must pass rather than just the first.
+- **Python literal escaping completed** (`internal/browser`) — `escapeString`
+  escaped only single quotes, so a backslash or newline in a selector or form
+  value could terminate the generated literal and append arbitrary Python.
+- **`cost_metrics` deletion blocked** (migration 015) — The immutability trigger
+  was `BEFORE UPDATE` only, so a billing row could be erased. Extended to
+  `DELETE` while still permitting the cascade from `sessions`. The same
+  protection added to `replay_checkpoints`.
+- **WebSocket origin checked** (`cmd/api/handlers/collab.go`) — `CheckOrigin`
+  returned `true` unconditionally, so any page a user visited could open a
+  collaboration socket with their credentials. Now checks
+  `CORS_ALLOWED_ORIGINS`; a missing `Origin` header is still allowed for
+  non-browser clients.
+- **`replay_enabled` enforced** (`internal/replay`) — The API handler did not
+  check the flag, so a workspace and environment snapshot could be recorded for
+  a session that never opted in. The check moved into the manager, covering both
+  the handler and the runner hook.
+
+### Fixed — Correctness
+
+- **Checkpoint creation always failed** (`internal/replay`) — The number
+  allocation ran `SELECT MAX(…) … FOR UPDATE`, which PostgreSQL rejects for
+  aggregate queries, so every `POST /sessions/:id/checkpoints` returned 500.
+  Replaced with a transaction-scoped advisory lock held across allocation,
+  signing and insert. Numbering now starts at 1.
+- **Cost summaries always failed** (`internal/cost`) — `SessionCostSummary` and
+  `OrgCostSummary` had no `db:` tags, so sqlx failed with *missing destination
+  name session_id*. `FirstMetric`/`LastMetric` are now pointers, since
+  `MIN`/`MAX` return NULL for a session with no metrics.
+- **Session listing broken** (`internal/models`) — `models.Session` was missing
+  all seven columns added by migrations 011–014, so any query using
+  `SELECT s.*` failed and `GET /api/v1/sessions` returned 500 for every
+  non-master caller.
+- **Migration 012 could not apply** — Referenced a non-existent table `orgs`
+  instead of `organizations`, so `cost_budgets` and `cost_alerts` were never
+  created on a fresh database.
+- **Session Replay API was never wired up** — `cmd/api/handlers/replay.go` and
+  its six routes existed in a branch but had not been merged, so the feature had
+  no HTTP surface despite the dashboard UI shipping in v0.3.0.
+
+### Added — Validation
+
+- **Template validation** (`internal/templates/validate.go`) — Previously
+  absent. Image references reject URL schemes, path traversal and shell
+  metacharacters; resource limits reject zero, negative and absurd values;
+  allowed hosts reject `*`, URLs and paths; env var names must be POSIX
+  identifiers; slugs must be lowercase kebab-case; list sizes and the startup
+  script are bounded. Invalid input now returns 400 rather than 500.
+- **Collaboration validation** (`internal/collab/validate.go`) — Previously
+  absent. Agent IDs reject `:` and glob characters, which would collide with
+  sibling Redis keys in the `collab:session:<uuid>:` namespace. Message bodies
+  bounded at 64 KB and required to be valid UTF-8. Message types and agent
+  statuses restricted to known values. `max_agents` capped at 32.
+- **Checkpoint metadata bounds** (`internal/replay`) — Name, description,
+  command, argument count and environment variable count are bounded.
+- **WebSocket rejection ordering** — Validation ran after `upgrader.Upgrade`,
+  where an HTTP error can no longer be written. All checks now precede the
+  upgrade, and a failed upgrade releases the agent slot.
+
+### Added — Tests
+
+- `internal/browser/security_test.go` — 28 SSRF payloads, 28 IP boundary
+  values, Python literal escaping verified by scanning output rather than
+  matching payloads.
+- `internal/nlpolicy/security_test.go` — Rego and iptables injection, with
+  positive cases confirming normal policies still compile.
+- `internal/replay/security_test.go` — 16 checkpoint tamper cases.
+- `internal/cost/security_test.go` — usage-counter tamper cases, float
+  precision, timezone normalisation.
+- `internal/templates/validate_test.go`, `internal/collab/validate_test.go` —
+  ~110 validation cases.
+- `cmd/api/handlers/features_e2e_test.go` — end-to-end lifecycle, cross-session
+  and cross-tenant isolation, tamper detection at both the trigger and HMAC
+  layers, malformed input, oversized bodies, audit coverage.
+
+### Changed
+
+- Audit action names for the new features now use constants in
+  `internal/models` and follow the existing `<noun>.<past participle>`
+  convention: `checkpoint.create` became `checkpoint.created`, and similarly for
+  restore, fork and delete.
+- Environment variable redaction in checkpoints replaced a list of specific
+  names with generic substrings. `AWS_ACCESS_KEY_ID` was previously not
+  redacted, along with SSH keys, session and cookie secrets, salts, passphrases,
+  certificates and connection strings.
 
 ---
 

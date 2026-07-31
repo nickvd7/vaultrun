@@ -189,6 +189,10 @@ type Run struct {
 	FinishedAt      *time.Time  `db:"finished_at"      json:"finished_at,omitempty"`
 	// CallbackURL is stored but never returned in API responses (may contain secrets).
 	CallbackURL     *string     `db:"callback_url"     json:"-"`
+	// Session Replay (migration 011). Linked when a checkpoint was recorded for
+	// this run, or when the run was started after restoring a checkpoint.
+	CheckpointID             *uuid.UUID `db:"checkpoint_id"               json:"checkpoint_id,omitempty"`
+	RestoredFromCheckpointID *uuid.UUID `db:"restored_from_checkpoint_id" json:"restored_from_checkpoint_id,omitempty"`
 	// OutputTruncated is not persisted; set in-memory when docker capped output.
 	OutputTruncated bool        `db:"-"                json:"output_truncated,omitempty"`
 }

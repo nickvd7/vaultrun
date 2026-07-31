@@ -45,6 +45,8 @@ export interface Run {
   created_at: string;
   started_at?: string;
   finished_at?: string;
+  checkpoint_id?: string;
+  restored_from_checkpoint_id?: string;
 }
 
 export interface File {

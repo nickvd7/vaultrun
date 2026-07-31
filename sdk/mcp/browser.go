@@ -324,7 +324,7 @@ func (s *server) toolBrowserFill(ctx context.Context, args map[string]string) (m
 	}
 
 	value:= args["value"]
-	if !ok {
+	if value == "" {
 		return mcpToolResult{}, fmt.Errorf("value is required")
 	}
 

@@ -43,7 +43,7 @@ func (h *TemplateHandler) callerOrg(c *gin.Context, actor string) (*uuid.UUID, e
 	}
 	var orgID uuid.UUID
 	err := h.hub.db.GetContext(c.Request.Context(), &orgID,
-		"SELECT org_id FROM org_members WHERE principal = $1 ORDER BY joined_at LIMIT 1", actor)
+		"SELECT org_id FROM org_members WHERE principal = $1 ORDER BY created_at LIMIT 1", actor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -443,17 +443,19 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 	}
 
 	if err := dbpkg.CreateSession(c.Request.Context(), h.hub.db, session); err != nil {
+		slog.Error("persist session from template", "err", err, "template_id", templateID)
 		_ = h.hub.ws.Delete(sessionID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist session failed"})
 		return
 	}
 
-	// Link template to session
+	// CreateSession does not carry template_id, so the link is a second write.
 	_, err = h.hub.db.ExecContext(c.Request.Context(),
 		"UPDATE sessions SET template_id = $1 WHERE id = $2",
 		templateID, sessionID,
 	)
 	if err != nil {
+		slog.Error("link session to template", "err", err, "template_id", templateID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to link template"})
 		return
 	}

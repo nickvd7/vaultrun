@@ -33,11 +33,21 @@ const testHMACKey = "e2e-test-hmac-key-not-for-production"
 // touches the filesystem and Docker in production; here it records the calls so
 // tests can assert the manager was driven correctly without either dependency.
 type stubWorkspace struct {
-	created  []uuid.UUID
-	restored []string
-	deleted  []string
-	sizeB    int64
-	failNext error
+	created    []uuid.UUID
+	restored   []string
+	deleted    []string
+	workspaces []uuid.UUID
+	sizeB      int64
+	failNext   error
+}
+
+func (s *stubWorkspace) Create(sessionID uuid.UUID) (string, error) {
+	s.workspaces = append(s.workspaces, sessionID)
+	return fmt.Sprintf("/tmp/vaultrun-test/ws-%s", sessionID), nil
+}
+
+func (s *stubWorkspace) Delete(sessionID uuid.UUID) error {
+	return nil
 }
 
 func (s *stubWorkspace) CreateSnapshot(sessionID, snapshotID uuid.UUID) (string, int64, error) {
@@ -66,7 +76,11 @@ func (s *stubWorkspace) DeleteSnapshot(archivePath string) error {
 
 // featureRouter builds a router with the replay, template and cost endpoints
 // registered. It mirrors newRouter's wiring for those features.
-func featureRouter(t *testing.T, db *sqlx.DB) (*gin.Engine, *stubWorkspace, *templates.Manager) {
+//
+// The optional tweaks adjust the config before the handlers are built, which
+// lets a test exercise deployment limits (image allowlist, resource ceilings,
+// session quota) without a second router builder.
+func featureRouter(t *testing.T, db *sqlx.DB, tweaks ...func(*config.Config)) (*gin.Engine, *stubWorkspace, *templates.Manager) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -77,6 +91,9 @@ func featureRouter(t *testing.T, db *sqlx.DB) (*gin.Engine, *stubWorkspace, *tem
 		Auth:      config.AuthConfig{MasterKey: testMasterKey},
 		Docker:    config.DockerConfig{DefaultImage: "python:3.12-slim"},
 		Workspace: config.WorkspaceConfig{BaseDir: os.TempDir(), MaxFileMB: 100},
+	}
+	for _, tweak := range tweaks {
+		tweak(cfg)
 	}
 
 	al := audit.New(db, testHMACKey)
@@ -109,10 +126,20 @@ func featureRouter(t *testing.T, db *sqlx.DB) (*gin.Engine, *stubWorkspace, *tem
 	api.POST("/templates", tmplH.CreateTemplate)
 	api.PATCH("/templates/:id", tmplH.UpdateTemplate)
 	api.DELETE("/templates/:id", tmplH.DeleteTemplate)
+	api.POST("/templates/:id/use", tmplH.CreateSessionFromTemplate)
 
 	costTracker := cost.New(db, []byte(testHMACKey))
 	costH := handlers.NewCostHandler(hub, costTracker)
 	api.GET("/costs/sessions/:id", costH.GetSessionCosts)
+	api.GET("/costs/breakdown", costH.GetCostBreakdown)
+	api.GET("/costs/alerts", costH.GetAlerts)
+	api.POST("/costs/alerts/:id/resolve", costH.ResolveAlert)
+	api.GET("/orgs/:id/costs", costH.GetOrgCosts)
+	api.POST("/orgs/:id/budget", costH.SetBudget)
+
+	nlH := handlers.NewNLPolicyHandler(hub)
+	api.POST("/policies/parse", nlH.ParsePolicy)
+	api.POST("/policies/compile", nlH.CompilePolicy)
 
 	return r, stubWS, tmplMgr
 }

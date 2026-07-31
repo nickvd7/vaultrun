@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"database/sql"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -28,6 +31,62 @@ func NewTemplateHandler(manager *templates.Manager, hub *Hub) *TemplateHandler {
 	}
 }
 
+// callerOrg returns the org a caller acts on behalf of, or nil when it belongs
+// to none (the master key, or a key that was never added to an org).
+//
+// A principal can be a member of several orgs; the first row is used, matching
+// the behaviour of the rest of the API where org selection is explicit only on
+// session creation.
+func (h *TemplateHandler) callerOrg(c *gin.Context, actor string) (*uuid.UUID, error) {
+	if actor == "master" {
+		return nil, nil
+	}
+	var orgID uuid.UUID
+	err := h.hub.db.GetContext(c.Request.Context(), &orgID,
+		"SELECT org_id FROM org_members WHERE principal = $1 ORDER BY joined_at LIMIT 1", actor)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &orgID, nil
+}
+
+// mayRead reports whether the caller may see a template.
+//
+// Published templates are the marketplace and readable by every authenticated
+// caller. An unpublished template is a draft: its image, env keys and startup
+// script are only visible to the org that authored it. Get-by-id and
+// get-by-slug have to enforce this themselves — the list endpoint's
+// published-only filter does not apply to a direct lookup.
+func (h *TemplateHandler) mayRead(c *gin.Context, actor string, tmpl *templates.Template) bool {
+	if actor == "master" || tmpl.Published {
+		return true
+	}
+	if tmpl.AuthorOrg == nil {
+		return false
+	}
+	_, err := dbpkg.GetOrgMemberRole(c.Request.Context(), h.hub.db, *tmpl.AuthorOrg, actor)
+	return err == nil
+}
+
+// mayAdminister reports whether the caller may modify or delete a template.
+//
+// Templates are shared infrastructure: whoever can rewrite one decides which
+// image every future session built from it runs. Only an admin of the authoring
+// org qualifies, and built-in templates (no authoring org) are master-key only.
+func (h *TemplateHandler) mayAdminister(c *gin.Context, actor string, tmpl *templates.Template) bool {
+	if actor == "master" {
+		return true
+	}
+	if tmpl.AuthorOrg == nil {
+		return false
+	}
+	role, err := dbpkg.GetOrgMemberRole(c.Request.Context(), h.hub.db, *tmpl.AuthorOrg, actor)
+	return err == nil && models.RoleAtLeast(role, models.OrgRoleAdmin)
+}
+
 // ListTemplates returns all templates with optional filtering
 // GET /api/v1/templates
 func (h *TemplateHandler) ListTemplates(c *gin.Context) {
@@ -45,7 +104,8 @@ func (h *TemplateHandler) ListTemplates(c *gin.Context) {
 
 	tmplList, err := h.manager.List(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("list templates", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list templates"})
 		return
 	}
 
@@ -68,7 +128,14 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+		return
+	}
+
+	// Report a hidden draft as missing rather than forbidden: a 403 would
+	// confirm the slug exists.
+	if !h.mayRead(c, middleware.Actor(c), tmpl) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
 		return
 	}
 
@@ -86,7 +153,12 @@ func (h *TemplateHandler) GetTemplateBySlug(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+		return
+	}
+
+	if !h.mayRead(c, middleware.Actor(c), tmpl) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
 		return
 	}
 
@@ -102,11 +174,8 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
-	// Get caller's org (use first org the user belongs to)
 	actor := middleware.Actor(c)
-	var orgID uuid.UUID
-	err := h.hub.db.GetContext(c.Request.Context(), &orgID,
-		"SELECT org_id FROM org_members WHERE principal = $1 LIMIT 1", actor)
+	orgID, err := h.callerOrg(c, actor)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get organization"})
 		return
@@ -122,7 +191,8 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("persist template", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save template"})
 		return
 	}
 
@@ -158,7 +228,19 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 
 	actor := middleware.Actor(c)
 
-	// TODO: Check if user owns this template or is admin
+	existing, err := h.manager.Get(c.Request.Context(), id)
+	if err == templates.ErrTemplateNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+		return
+	}
+	if !h.mayAdminister(c, actor, existing) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "template is owned by another organization"})
+		return
+	}
 
 	tmpl, err := h.manager.Update(c.Request.Context(), id, req)
 	if err == templates.ErrTemplateNotFound {
@@ -170,7 +252,8 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("persist template", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save template"})
 		return
 	}
 
@@ -198,7 +281,19 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 
 	actor := middleware.Actor(c)
 
-	// TODO: Check if user owns this template or is admin
+	existing, err := h.manager.Get(c.Request.Context(), id)
+	if err == templates.ErrTemplateNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+		return
+	}
+	if !h.mayAdminister(c, actor, existing) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "template is owned by another organization"})
+		return
+	}
 
 	err = h.manager.Delete(c.Request.Context(), id)
 	if err == templates.ErrTemplateNotFound {
@@ -206,7 +301,7 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
 		return
 	}
 
@@ -220,6 +315,50 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "template deleted"})
+}
+
+// enforceSessionPolicy applies the deployment's session gates to a template's
+// configuration. It writes the error response itself and returns a non-nil
+// error when the caller must be refused.
+func (h *TemplateHandler) enforceSessionPolicy(c *gin.Context, actor string, tmpl *templates.Template) error {
+	limits := h.hub.cfg.SessionLimits()
+
+	if tmpl.Resources.CPULimit > limits.MaxCPU {
+		err := fmt.Errorf("template cpu_limit %.1f exceeds maximum of %.1f", tmpl.Resources.CPULimit, limits.MaxCPU)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
+	if tmpl.Resources.MemoryLimitMB > limits.MaxMemoryMB {
+		err := fmt.Errorf("template memory_limit_mb %d exceeds maximum of %d", tmpl.Resources.MemoryLimitMB, limits.MaxMemoryMB)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
+	if tmpl.Resources.TimeoutSeconds > limits.MaxTimeoutSec {
+		err := fmt.Errorf("template timeout_seconds %d exceeds maximum of %d", tmpl.Resources.TimeoutSeconds, limits.MaxTimeoutSec)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
+
+	if !h.hub.cfg.ImageAllowed(tmpl.Image) {
+		err := errors.New("template image not permitted")
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
+
+	if limits.MaxSessionsPerActor > 0 && actor != "master" {
+		count, cerr := dbpkg.CountActiveSessionsByActor(c.Request.Context(), h.hub.db, actor)
+		if cerr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
+			return cerr
+		}
+		if count >= limits.MaxSessionsPerActor {
+			err := fmt.Errorf("active session limit of %d reached", limits.MaxSessionsPerActor)
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+			return err
+		}
+	}
+
+	return nil
 }
 
 // CreateSessionFromTemplate creates a new session from a template
@@ -241,14 +380,24 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
 
-	// Get user's org (use first org the user belongs to)
-	var orgID uuid.UUID
-	err = h.hub.db.GetContext(c.Request.Context(), &orgID,
-		"SELECT org_id FROM org_members WHERE principal = $1 LIMIT 1", actor)
+	if !h.mayRead(c, actor, tmpl) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+		return
+	}
+
+	// A template is a session request like any other, so it passes the same
+	// gates as POST /sessions. Skipping them would make this endpoint a way to
+	// run a disallowed image, claim more CPU or memory than the deployment
+	// permits, or exceed the per-actor session quota.
+	if err := h.enforceSessionPolicy(c, actor, tmpl); err != nil {
+		return
+	}
+
+	orgID, err := h.callerOrg(c, actor)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get organization"})
 		return
@@ -287,7 +436,8 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 		Labels:         models.JSONB{},
 		AllowedHosts:   models.StringArray(tmpl.Network.AllowedHosts),
 		CreatedBy:      actor,
-		OrgID:          &orgID,
+		OrgID:          orgID,
+		TemplateID:     &templateID,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -308,11 +458,10 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 		return
 	}
 
-	// Record usage
-	err = h.manager.RecordUsage(c.Request.Context(), templateID, sessionID, orgID)
-	if err != nil {
-		// Non-fatal, just log
-		// TODO: Add proper logging
+	// Usage feeds the marketplace's use_count; a failure here must not fail the
+	// session the caller actually asked for.
+	if err := h.manager.RecordUsage(c.Request.Context(), templateID, sessionID, orgID); err != nil {
+		slog.Warn("record template usage", "err", err, "template_id", templateID, "session_id", sessionID)
 	}
 
 	// Audit log

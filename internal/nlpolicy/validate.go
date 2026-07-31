@@ -26,6 +26,31 @@ const (
 	MaxHostLen         = 253 // RFC 1035 maximum domain name length
 )
 
+// MaxNaturalLanguageLen bounds the free-text policy description a caller may
+// submit.
+//
+// The description is forwarded verbatim to an LLM, so an unbounded field lets an
+// authenticated caller run up the deployment's inference bill — and, with a
+// large enough prompt, hold an API worker open for the length of the completion.
+// 4000 characters is far more than any real policy needs.
+const MaxNaturalLanguageLen = 4000
+
+// ErrDescriptionTooLong is returned for a policy description over the limit.
+var ErrDescriptionTooLong = errors.New("policy description too long")
+
+// ValidateNaturalLanguage bounds a free-text policy description before it
+// reaches a parser.
+func ValidateNaturalLanguage(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return fmt.Errorf("%w: policy description must not be empty", ErrUnsafePolicy)
+	}
+	if len(s) > MaxNaturalLanguageLen {
+		return fmt.Errorf("%w: description is %d characters, maximum is %d",
+			ErrDescriptionTooLong, len(s), MaxNaturalLanguageLen)
+	}
+	return nil
+}
+
 // commandPattern matches a bare executable name or an absolute path to one.
 // Commands are compared against input.command in Rego, so shell syntax has no
 // meaning there and its presence indicates a malformed or hostile policy.

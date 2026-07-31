@@ -46,6 +46,11 @@ func (ph *NLPolicyHandler) ParsePolicy(c *gin.Context) {
 		return
 	}
 
+	if err := nlpolicy.ValidateNaturalLanguage(req.NaturalLanguage); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	policy, err := ph.parser.Parse(c.Request.Context(), req.NaturalLanguage)
 	if err != nil {
 		slog.Error("policy parse failed", "err", err)
@@ -68,6 +73,11 @@ func (ph *NLPolicyHandler) ValidatePolicy(c *gin.Context) {
 		return
 	}
 
+	if err := nlpolicy.ValidateNaturalLanguage(req.NaturalLanguage); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	result, err := ph.parser.Validate(c.Request.Context(), req.NaturalLanguage)
 	if err != nil {
 		slog.Error("policy validation failed", "err", err)
@@ -86,6 +96,11 @@ func (ph *NLPolicyHandler) CompilePolicy(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := nlpolicy.ValidateNaturalLanguage(req.NaturalLanguage); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

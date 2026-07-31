@@ -238,8 +238,9 @@ func (h *CollabHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	// Check session access
-	_, ok := h.baseHub.checkSessionAccess(c, sessionID, "viewer")
+	// Posting into the agent channel drives the other agents in the session, so
+	// it is an executor action. A viewer may read the transcript, not write to it.
+	_, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleExecutor)
 	if !ok {
 		return
 	}
@@ -269,6 +270,25 @@ func (h *CollabHandler) SendMessage(c *gin.Context) {
 	// agents and no way to read them.
 	if !h.collaborationEnabled(c, sessionID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled for this session"})
+		return
+	}
+
+	// The WebSocket path takes the sender from the connection it authenticated;
+	// here it comes from the body. Without this check any caller with session
+	// access can post as any agent, which turns the channel the agents read
+	// their instructions from into an injection point.
+	joined, err := h.manager.IsAgentActive(c.Request.Context(), sessionID, req.From)
+	if errors.Is(err, collab.ErrInvalidInput) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		slog.Error("check agent membership", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send message"})
+		return
+	}
+	if !joined {
+		c.JSON(http.StatusForbidden, gin.H{"error": "sender is not an active agent in this session"})
 		return
 	}
 

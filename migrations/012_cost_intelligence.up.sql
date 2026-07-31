@@ -94,7 +94,7 @@ CREATE TRIGGER cost_metrics_immutable
 -- Budget management per organization
 CREATE TABLE cost_budgets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     
     -- Budget limits
     monthly_limit DECIMAL(10, 2) NOT NULL,     -- $ per month
@@ -126,7 +126,7 @@ CREATE TABLE cost_alerts (
     
     -- Context
     session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
-    org_id UUID REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
     
     -- Alert details
     title TEXT NOT NULL,

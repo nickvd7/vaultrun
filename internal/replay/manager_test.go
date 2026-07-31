@@ -24,6 +24,14 @@ func (m *mockWorkspaceManager) DeleteSnapshot(archivePath string) error {
 	return nil
 }
 
+func (m *mockWorkspaceManager) Create(sessionID uuid.UUID) (string, error) {
+	return "/mock/workspace/" + sessionID.String(), nil
+}
+
+func (m *mockWorkspaceManager) Delete(sessionID uuid.UUID) error {
+	return nil
+}
+
 func TestSignCheckpoint(t *testing.T) {
 	mgr := &Manager{
 		ws:         &mockWorkspaceManager{},

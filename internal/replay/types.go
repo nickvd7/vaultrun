@@ -73,6 +73,9 @@ var (
 	
 	// MaxCheckpointsPerSession is the maximum checkpoints allowed per session
 	MaxCheckpointsPerSession = 50
+
+	// MaxCheckpointListLimit is the largest page a list request may ask for.
+	MaxCheckpointListLimit = 100
 	
 	// MaxCheckpointSizeBytes is the maximum size of a single checkpoint
 	MaxCheckpointSizeBytes = int64(2 * 1024 * 1024 * 1024) // 2GB

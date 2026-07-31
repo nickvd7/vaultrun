@@ -1,10 +1,20 @@
 package collab
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"unicode/utf8"
 )
+
+// ErrInvalidInput wraps every validation failure in this package so that HTTP
+// handlers can answer 400 instead of turning a caller's mistake into a 500.
+var ErrInvalidInput = errors.New("invalid input")
+
+// invalid builds a validation error that satisfies errors.Is(err, ErrInvalidInput).
+func invalid(format string, args ...interface{}) error {
+	return fmt.Errorf("%w: %s", ErrInvalidInput, fmt.Sprintf(format, args...))
+}
 
 // Limits on agent-supplied values. Agent IDs become part of Redis key names and
 // a Postgres unique key, so they are the most tightly constrained.
@@ -25,13 +35,13 @@ var agentIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_\-.]*$`)
 // or stored as part of the (session_id, agent_id) unique constraint.
 func ValidateAgentID(agentID string) error {
 	if agentID == "" {
-		return fmt.Errorf("agent_id must not be empty")
+		return invalid("agent_id must not be empty")
 	}
 	if len(agentID) > MaxAgentIDLength {
-		return fmt.Errorf("agent_id is %d characters, maximum is %d", len(agentID), MaxAgentIDLength)
+		return invalid("agent_id is %d characters, maximum is %d", len(agentID), MaxAgentIDLength)
 	}
 	if !agentIDPattern.MatchString(agentID) {
-		return fmt.Errorf("agent_id %q must start with an alphanumeric and contain only letters, digits, '_', '-' and '.'", agentID)
+		return invalid("agent_id %q must start with an alphanumeric and contain only letters, digits, '_', '-' and '.'", agentID)
 	}
 	return nil
 }
@@ -40,13 +50,13 @@ func ValidateAgentID(agentID string) error {
 // displayed, so the constraint is length and valid UTF-8 rather than charset.
 func ValidateAgentName(name string) error {
 	if name == "" {
-		return fmt.Errorf("agent_name must not be empty")
+		return invalid("agent_name must not be empty")
 	}
 	if len(name) > MaxAgentNameLength {
-		return fmt.Errorf("agent_name is %d bytes, maximum is %d", len(name), MaxAgentNameLength)
+		return invalid("agent_name is %d bytes, maximum is %d", len(name), MaxAgentNameLength)
 	}
 	if !utf8.ValidString(name) {
-		return fmt.Errorf("agent_name is not valid UTF-8")
+		return invalid("agent_name is not valid UTF-8")
 	}
 	return nil
 }
@@ -56,13 +66,13 @@ func ValidateAgentName(name string) error {
 // the message table and saturate every peer's send buffer.
 func ValidateMessageBody(body string) error {
 	if body == "" {
-		return fmt.Errorf("message body must not be empty")
+		return invalid("message body must not be empty")
 	}
 	if len(body) > MaxMessageBytes {
-		return fmt.Errorf("message body is %d bytes, maximum is %d", len(body), MaxMessageBytes)
+		return invalid("message body is %d bytes, maximum is %d", len(body), MaxMessageBytes)
 	}
 	if !utf8.ValidString(body) {
-		return fmt.Errorf("message body is not valid UTF-8")
+		return invalid("message body is not valid UTF-8")
 	}
 	return nil
 }
@@ -74,7 +84,7 @@ func ValidateMessageType(msgType string) error {
 	case MessageTypeDirect, MessageTypeBroadcast, MessageTypeSystem:
 		return nil
 	default:
-		return fmt.Errorf("message type %q must be one of %q, %q, %q",
+		return invalid("message type %q must be one of %q, %q, %q",
 			msgType, MessageTypeDirect, MessageTypeBroadcast, MessageTypeSystem)
 	}
 }
@@ -83,10 +93,10 @@ func ValidateMessageType(msgType string) error {
 // informational — it is never opened — so only length and encoding matter.
 func ValidateFilePath(path string) error {
 	if len(path) > MaxFilePathLength {
-		return fmt.Errorf("file path is %d bytes, maximum is %d", len(path), MaxFilePathLength)
+		return invalid("file path is %d bytes, maximum is %d", len(path), MaxFilePathLength)
 	}
 	if !utf8.ValidString(path) {
-		return fmt.Errorf("file path is not valid UTF-8")
+		return invalid("file path is not valid UTF-8")
 	}
 	return nil
 }
@@ -97,7 +107,7 @@ func ValidateAgentStatus(status string) error {
 	case AgentStatusActive, AgentStatusIdle, AgentStatusDisconnected:
 		return nil
 	default:
-		return fmt.Errorf("status %q must be one of %q, %q, %q",
+		return invalid("status %q must be one of %q, %q, %q",
 			status, AgentStatusActive, AgentStatusIdle, AgentStatusDisconnected)
 	}
 }
@@ -107,10 +117,10 @@ func ValidateAgentStatus(status string) error {
 // resource-exhaustion vector.
 func ValidateMaxAgents(maxAgents int) error {
 	if maxAgents < 1 {
-		return fmt.Errorf("max_agents must be at least 1, got %d", maxAgents)
+		return invalid("max_agents must be at least 1, got %d", maxAgents)
 	}
 	if maxAgents > MaxAgentsPerSession {
-		return fmt.Errorf("max_agents is %d, maximum is %d", maxAgents, MaxAgentsPerSession)
+		return invalid("max_agents is %d, maximum is %d", maxAgents, MaxAgentsPerSession)
 	}
 	return nil
 }

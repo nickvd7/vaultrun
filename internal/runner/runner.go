@@ -179,6 +179,21 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
+		// Update succeeded but re-read failed (e.g. schema drift). Never return
+		// the pre-exec pending stub — surface the post-exec fields instead.
+		slog.Error("reload run after update", "run_id", run.ID, "err", err)
+		run.Status = status
+		run.DurationMS = &durationMS
+		run.StartedAt = &startedAt
+		run.FinishedAt = &finishedAt
+		if execErr == nil && result != nil {
+			run.ExitCode = &result.ExitCode
+			run.Stdout = &result.Stdout
+			run.Stderr = &result.Stderr
+			if result.Truncated {
+				run.OutputTruncated = true
+			}
+		}
 		return run, nil
 	}
 	// Surface output truncation on the response (not persisted to DB).
@@ -250,6 +265,17 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 
 	updated, err := dbpkg.GetRun(ctx, r.db, run.ID)
 	if err != nil {
+		slog.Error("reload run after update", "run_id", run.ID, "err", err)
+		run.Status = status
+		run.DurationMS = &durationMS
+		run.StartedAt = &startedAt
+		run.FinishedAt = &finishedAt
+		if execErr == nil && result != nil {
+			run.ExitCode = &result.ExitCode
+			if result.Truncated {
+				run.OutputTruncated = true
+			}
+		}
 		return run, nil
 	}
 	if execErr == nil && result != nil && result.Truncated {

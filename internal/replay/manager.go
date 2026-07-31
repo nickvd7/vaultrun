@@ -341,6 +341,11 @@ func (m *Manager) ForkFromCheckpoint(ctx context.Context, opts ForkOpts) (*uuid.
 		memoryLimit = *opts.MemoryLimitMB
 	}
 
+	owner := opts.Actor
+	if owner == "" {
+		owner = src.CreatedBy
+	}
+
 	now := time.Now().UTC()
 	fork := &models.Session{
 		ID:                     newSessionID,
@@ -354,7 +359,7 @@ func (m *Manager) ForkFromCheckpoint(ctx context.Context, opts ForkOpts) (*uuid.
 		WorkspacePath:          wsPath,
 		Labels:                 models.JSONB{},
 		AllowedHosts:           src.AllowedHosts,
-		CreatedBy:              src.CreatedBy,
+		CreatedBy:              owner,
 		OrgID:                  src.OrgID,
 		ReplayEnabled:          src.ReplayEnabled,
 		ForkedFromCheckpointID: &checkpoint.ID,

@@ -55,8 +55,14 @@ type RestoreOpts struct {
 // ForkOpts contains options for forking a checkpoint.
 type ForkOpts struct {
 	CheckpointID uuid.UUID
-	Name         string  // Name for new session
-	CPULimit     *float64
+	Name         string // Name for new session
+	// Actor owns the new session. It must be the caller, not the owner of the
+	// source session: quotas and ownership are keyed on created_by, so
+	// attributing a fork to someone else both misreports who started it and
+	// leaves the caller's own quota untouched. Empty falls back to the source
+	// session's owner.
+	Actor         string
+	CPULimit      *float64
 	MemoryLimitMB *int
 }
 

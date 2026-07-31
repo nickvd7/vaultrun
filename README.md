@@ -15,7 +15,9 @@
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network.
 
-> **Latest v0.3.1:** Security and correctness release for the six v0.3.0 features — eleven defects found and fixed, including Rego and iptables injection through LLM-generated policies, incomplete SSRF filtering, HMAC signatures that did not cover the data they protect, and two features that did not work at all. Recommended for every v0.3.0 deployment; the full analysis is in the [security report](docs/security-testing-report.md).
+> **Latest v0.3.2:** A second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
+>
+> **v0.3.1:** Security and correctness release for the six v0.3.0 features — eleven defects found and fixed, including Rego and iptables injection through LLM-generated policies, incomplete SSRF filtering, HMAC signatures that did not cover the data they protect, and two features that did not work at all.
 >
 > **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (61 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
 

@@ -40,11 +40,14 @@ import (
 
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
+	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
+	"github.com/nickvd7/vaultrun/internal/templates"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
@@ -110,7 +113,16 @@ func TestE2ESmoke(t *testing.T) {
 	ws := workspace.New(wsDir)
 	rnr := runner.New(db, dockerClient, al, policy.AllowAll{})
 	queue := jobqueue.New(rnr, 2, 64, "")
-	r := newRouter(cfg, db, dockerClient, ws, rnr, al, policy.AllowAll{}, queue, nil, nil, nil, enterpriseHooks{})
+
+	// The v0.3.x feature managers are wired in so their routes are reachable.
+	// collab is left nil: it needs Redis, which this smoke test does not start,
+	// and newRouter skips those routes when it is absent.
+	costTracker := cost.New(db, []byte(e2eMasterKey))
+	templatesManager := templates.New(db)
+	replayMgr := replay.New(db, ws, []byte(e2eMasterKey))
+
+	r := newRouter(cfg, db, dockerClient, ws, rnr, al, policy.AllowAll{}, queue,
+		nil, nil, nil, costTracker, templatesManager, nil, nil, replayMgr, enterpriseHooks{})
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

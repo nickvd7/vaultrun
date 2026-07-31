@@ -14,6 +14,21 @@ export interface Session {
   created_at: string;
   updated_at: string;
   stopped_at?: string;
+  org_id?: string;
+
+  /** Checkpoints are only recorded when this is true. */
+  replay_enabled: boolean;
+  forked_from_checkpoint_id?: string;
+
+  /** Running total; the per-period records live in cost_metrics. */
+  total_cost?: number;
+  last_cost_update?: string;
+
+  /** Set when the session was created from a marketplace template. */
+  template_id?: string;
+
+  max_agents?: number;
+  allow_collaboration?: boolean;
 }
 
 export interface Run {

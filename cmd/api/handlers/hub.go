@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"strconv"
@@ -26,17 +27,43 @@ import (
 
 // Hub holds shared dependencies that all handlers need.
 type Hub struct {
-	db            *sqlx.DB
-	docker        *dockerpkg.Client
-	ws            *workspace.Manager
-	runner        *runner.Runner
-	audit         *audit.Logger
-	cfg           *config.Config
-	policy        policy.Hook
-	queue         jobqueue.Queue    // interface — nil when async not configured
-	secrets       secrets.Provider
-	warmPool      *warmpool.Pool    // nil when pool disabled
-	artifactStore artifacts.Store
+	db             *sqlx.DB
+	docker         *dockerpkg.Client
+	ws             *workspace.Manager
+	runner         *runner.Runner
+	audit          *audit.Logger
+	cfg            *config.Config
+	policy         policy.Hook
+	queue          jobqueue.Queue // interface — nil when async not configured
+	secrets        secrets.Provider
+	warmPool       *warmpool.Pool // nil when pool disabled
+	artifactStore  artifacts.Store
+	sessionManager *sessionManager // session access helper
+	orgManager     *orgManager     // org access helper
+}
+
+// sessionManager provides session access helpers
+type sessionManager struct {
+	db *sqlx.DB
+}
+
+func (sm *sessionManager) GetSession(ctx context.Context, id uuid.UUID) (*models.Session, error) {
+	return dbpkg.GetSession(ctx, sm.db, id)
+}
+
+// orgManager provides org access helpers
+type orgManager struct {
+	db *sqlx.DB
+}
+
+func (om *orgManager) GetUserOrgRole(ctx context.Context, principal string, orgID uuid.UUID) (*models.OrgMember, error) {
+	role, err := dbpkg.GetOrgMemberRole(ctx, om.db, orgID, principal)
+	if err != nil {
+		return nil, err
+	}
+	return &models.OrgMember{
+		Role: role,
+	}, nil
 }
 
 func NewHub(
@@ -61,7 +88,9 @@ func NewHub(
 	return &Hub{
 		db: db, docker: docker, ws: ws, runner: runner, audit: audit,
 		cfg: cfg, policy: pol, queue: queue, secrets: sec, warmPool: pool,
-		artifactStore: artStore,
+		artifactStore:  artStore,
+		sessionManager: &sessionManager{db: db},
+		orgManager:     &orgManager{db: db},
 	}
 }
 

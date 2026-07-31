@@ -133,6 +133,7 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		Name:                opts.Name,
 		Description:         opts.Description,
 		WorkspaceSnapshotID: snapshotID,
+		ArchivePath:         archivePath,
 		EnvVarsSnapshot:     sanitizedEnv,
 		Command:             opts.Command,
 		Args:                argsToJSON(opts.Args),
@@ -186,17 +187,8 @@ func (m *Manager) RestoreCheckpoint(ctx context.Context, opts RestoreOpts) error
 		}
 	}
 	
-	// 4. Get archive path from session_snapshots
-	var archivePath string
-	err = m.db.GetContext(ctx, &archivePath,
-		"SELECT archive_path FROM session_snapshots WHERE id = $1",
-		checkpoint.WorkspaceSnapshotID)
-	if err != nil {
-		return fmt.Errorf("get archive path: %w", err)
-	}
-	
-	// 5. Restore workspace snapshot
-	if err := m.ws.RestoreSnapshot(opts.SessionID, archivePath); err != nil {
+	// 4. Restore workspace snapshot
+	if err := m.ws.RestoreSnapshot(opts.SessionID, checkpoint.ArchivePath); err != nil {
 		return fmt.Errorf("restore workspace: %w", err)
 	}
 	
@@ -296,13 +288,7 @@ func (m *Manager) DeleteCheckpoint(ctx context.Context, id uuid.UUID) error {
 	}
 	
 	// Best effort: delete snapshot file
-	var archivePath string
-	err = m.db.GetContext(ctx, &archivePath,
-		"SELECT archive_path FROM session_snapshots WHERE id = $1",
-		checkpoint.WorkspaceSnapshotID)
-	if err == nil {
-		_ = m.ws.DeleteSnapshot(archivePath)
-	}
+	_ = m.ws.DeleteSnapshot(checkpoint.ArchivePath)
 	
 	return nil
 }

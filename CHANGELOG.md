@@ -5,6 +5,82 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.2] — 2026-07-31
+
+**Cross-feature security release.** A second testing pass, focused on where features interact rather than each in isolation, found twelve more defects — eight security-relevant. Full analysis in [docs/security-testing-report.md](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
+
+The most significant finding: the SSRF and Python-escaping fixes shipped in 0.3.1 hardened `internal/browser`, but nothing in the API constructs that package — the MCP server's `browser_*` tools, which is how an agent actually drives the browser, had their own separate and still-vulnerable implementation. That gap is now closed by sharing one implementation between both.
+
+### Fixed — Security
+
+- **MCP browser tools had incomplete escaping and no SSRF check**
+  (`sdk/mcp/browser.go`) — `escapeString` only applied JSON escaping, leaving
+  single quotes unescaped inside the single-quoted Python literals the
+  generated scripts use; a selector like `'); import os; os.system('id')`
+  ran as Python inside the sandbox. There was also no URL validation at all
+  on this path, and screenshot/PDF paths were not confined to `/workspace`.
+  `internal/browser`'s hardening is now exported (`internal/browser/validate.go`)
+  and shared by both the (unused) API package and the MCP tools.
+- **Checkpoint fork bypassed the session quota** (`internal/replay`) — Forks
+  were attributed to the source session's owner, not the caller, so an actor
+  at their session limit could keep forking a colleague's session
+  indefinitely without it counting against their own quota.
+- **Checkpoint fork did not re-check the image allowlist** (`cmd/api/handlers/replay.go`) —
+  A fork re-ran the source image without validating it against the current
+  allowlist, letting a withdrawn (e.g. newly-vulnerable) image back into
+  service via any old session that had used it.
+- **`SendMessage` allowed agent impersonation** (`cmd/api/handlers/collab.go`) —
+  The `from` field was trusted from the request body with no check that the
+  caller was that agent, letting any session member post messages other
+  agents would act on as if from a different sender.
+- **`SendMessage` required only viewer access** (`cmd/api/handlers/collab.go`) —
+  Sending a message is a write into the channel agents act on; raised to
+  require `executor`.
+- **Agent slot claim was a check-then-act race** (`internal/collab/manager.go`) —
+  Counting active agents and then adding one let concurrent joins all pass
+  the cap check, so `max_agents` did not hold under concurrent load. Replaced
+  with an atomic Lua script.
+- **Cost aggregates unscoped by tenant** (`cmd/api/handlers/costs.go`) — The
+  breakdown and alert-listing endpoints queried every session in the
+  deployment regardless of caller. Now scoped: only the master key sees
+  deployment-wide data.
+- **Template update/delete had no ownership check** (`internal/templates/manager.go`) —
+  Any authenticated key could retarget any template, including built-ins, at
+  an arbitrary image. Now requires admin of the authoring org; built-ins are
+  master-key only.
+- **NL policy refusals answered 500 instead of 422** (`cmd/api/handlers/nlpolicy.go`) —
+  A policy the compiler refused for safety (e.g. a prompt-injected
+  explanation) was indistinguishable from a server outage. Now 422, and
+  `ParsePolicy` validates before returning.
+
+### Fixed — Correctness
+
+- **Template session creation skipped session-creation gates**
+  (`cmd/api/handlers/templates.go`) — Creating a session from a template
+  bypassed the image allowlist, resource ceilings and per-actor quota that
+  `POST /sessions` enforces directly. Now runs the same checks.
+- **`GetOrgSummary`, `CostBreakdown`, budget lookup all broken**
+  (`internal/cost`) — `FROM orgs` (table is `organizations`), missing `db:`
+  tags, and a double-pointer scan target respectively. All three failed on
+  every call.
+- **`nil` string array serialised as SQL `NULL`** (`internal/models`) —
+  `StringArray.Value()` returned `NULL` for a `nil` slice, violating the
+  `NOT NULL DEFAULT '{}'` constraint on `sessions.allowed_hosts` and
+  `runs.args`. Broke session creation from a template and command runs with
+  no arguments.
+
+### Testing
+
+- Added `cmd/api/handlers/features_edge_e2e_test.go`,
+  `cmd/api/handlers/collab_e2e_test.go`, `cmd/api/handlers/nlpolicy_e2e_test.go`,
+  `sdk/mcp/browser_test.go` — cost/template ownership and parity, replay fork
+  attribution and allowlist re-checks, collaboration concurrency and
+  impersonation, NL policy input bounds and injection resistance, and browser
+  MCP tool SSRF/escaping/path-confinement, run against live PostgreSQL and
+  Redis.
+- Full suite (`go test ./...`, `-race`, and the integration suite against
+  live Postgres + Redis) passes.
+
 ## [0.3.1] — 2026-07-31
 
 **Security and correctness release.** Testing the v0.3.0 features against a real

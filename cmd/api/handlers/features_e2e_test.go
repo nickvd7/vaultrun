@@ -139,7 +139,11 @@ func featureRouter(t *testing.T, db *sqlx.DB, tweaks ...func(*config.Config)) (*
 
 	nlH := handlers.NewNLPolicyHandler(hub)
 	api.POST("/policies/parse", nlH.ParsePolicy)
+	api.POST("/policies/validate", nlH.ValidatePolicy)
 	api.POST("/policies/compile", nlH.CompilePolicy)
+	api.GET("/policies/templates", nlH.ListTemplates)
+	api.GET("/policies/templates/:name", nlH.GetTemplate)
+	api.POST("/policies/from-template/:name", nlH.FromTemplate)
 
 	return r, stubWS, tmplMgr
 }

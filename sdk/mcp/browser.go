@@ -3,9 +3,59 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
+
+	"github.com/nickvd7/vaultrun/internal/browser"
 )
+
+// Every tool here assembles a Playwright script and runs it through
+// run_command, so each argument that reaches the script is either escaped for a
+// Python string literal or checked against an allowlist. The helpers come from
+// internal/browser rather than being restated: two copies of an escaping rule
+// means one of them is eventually wrong.
+//
+// browserPolicy is the network policy applied to navigation targets. It is the
+// secure default — private ranges, loopback and cloud metadata endpoints are
+// refused — because the MCP server has no per-session policy to consult.
+var browserPolicy = browser.DefaultNetworkPolicy()
+
+// pythonScriptArgs packages a generated script as a run_command invocation.
+func pythonScriptArgs(sessionID, script string) map[string]string {
+	return map[string]string{
+		"session_id": sessionID,
+		"command":    "python3",
+		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
+	}
+}
+
+// requireArg fetches a mandatory string argument.
+func requireArg(args map[string]string, name string) (string, error) {
+	v := args[name]
+	if v == "" {
+		return "", fmt.Errorf("%s is required", name)
+	}
+	return v, nil
+}
+
+// browserTimeout reads an optional millisecond timeout.
+//
+// The value is interpolated into the script as a bare Python integer, so it is
+// parsed rather than escaped: a non-numeric argument is a caller error, and
+// accepting one verbatim would put arbitrary text where Python expects an
+// expression.
+func browserTimeout(raw string) (int, error) {
+	if raw == "" {
+		return browser.DefaultBrowserTimeoutMs, nil
+	}
+	ms, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("timeout must be a whole number of milliseconds, got %q", raw)
+	}
+	return browser.ClampTimeout(ms), nil
+}
 
 // Browser tool definitions
 func browserToolDefinitions() []mcpTool {
@@ -27,8 +77,12 @@ func browserToolDefinitions() []mcpTool {
 					},
 					"wait_until": {
 						Type:        "string",
-						Enum:        []string{"load", "domcontentloaded", "networkidle"},
+						Enum:        []string{"load", "domcontentloaded", "networkidle", "commit"},
 						Description: "Wait condition (default: load).",
+					},
+					"timeout": {
+						Type:        "string",
+						Description: "Timeout in milliseconds (default: 30000, max: 120000).",
 					},
 				},
 				Required: []string{"session_id", "url"},
@@ -156,11 +210,11 @@ func browserToolDefinitions() []mcpTool {
 					},
 					"selector": {
 						Type:        "string",
-						Description: "CSS selector to wait for (optional, waits 1s if omitted).",
+						Description: "CSS selector to wait for (optional, waits for the timeout if omitted).",
 					},
 					"timeout": {
 						Type:        "string",
-						Description: "Timeout in milliseconds (default: 30000).",
+						Description: "Timeout in milliseconds (default: 30000, max: 120000).",
 					},
 				},
 				Required: []string{"session_id"},
@@ -182,8 +236,11 @@ func browserToolDefinitions() []mcpTool {
 						Description: "Output path in /workspace (default: /workspace/page.pdf).",
 					},
 					"format": {
-						Type:        "string",
-						Enum:        []string{"A4", "Letter"},
+						Type: "string",
+						Enum: []string{
+							"Letter", "Legal", "Tabloid", "Ledger",
+							"A0", "A1", "A2", "A3", "A4", "A5", "A6",
+						},
 						Description: "Page format (default: A4).",
 					},
 				},
@@ -195,19 +252,30 @@ func browserToolDefinitions() []mcpTool {
 
 // Browser tool implementations
 func (s *server) toolBrowserNavigate(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID := args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	url := args["url"]
-	if url == "" {
-		return mcpToolResult{}, fmt.Errorf("url is required")
+	targetURL, err := requireArg(args, "url")
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	// Refuse the destination before a script exists to run it. A sandbox with
+	// networking enabled can otherwise be pointed at the host's own services or
+	// at the cloud metadata endpoint, which hands back IAM credentials.
+	if err := browserPolicy.ValidateURL(targetURL); err != nil {
+		return mcpToolResult{}, fmt.Errorf("invalid url: %w", err)
 	}
 
-	waitUntil := "load"
-	if wu := args["wait_until"]; wu != "" {
-		waitUntil = wu
+	waitUntil, err := browser.ValidateWaitUntil(args["wait_until"])
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+
+	timeout, err := browserTimeout(args["timeout"])
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	script := fmt.Sprintf(`
@@ -216,18 +284,13 @@ from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
+    page.set_default_timeout(%d)
     page.goto('%s', wait_until='%s')
-    print("Navigated to: %s")
+    print("Navigated")
     browser.close()
-`, escapeString(url), waitUntil, url)
+`, timeout, browser.EscapePythonString(targetURL), waitUntil)
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	result, err := s.toolRunCommand(ctx, cmdArgs)
+	result, err := s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("navigation failed: %w", err)
 	}
@@ -236,18 +299,18 @@ with sync_playwright() as p:
 }
 
 func (s *server) toolBrowserScreenshot(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	path := "/workspace/screenshot.png"
-	if p := args["path"]; p != "" {
-		path = p
+	outPath, err := browser.ValidateWorkspacePath(args["path"], "/workspace/screenshot.png")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	fullPage := "False"
-	if fp := args["full_page"]; fp == "true" {
+	if args["full_page"] == "true" {
 		fullPage = "True"
 	}
 
@@ -260,15 +323,9 @@ with sync_playwright() as p:
     page.screenshot(path='%s', full_page=%s)
     print("Screenshot saved: %s")
     browser.close()
-`, path, fullPage, path)
+`, browser.EscapePythonString(outPath), fullPage, browser.EscapePythonString(outPath))
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	result, err := s.toolRunCommand(ctx, cmdArgs)
+	result, err := s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("screenshot failed: %w", err)
 	}
@@ -277,14 +334,14 @@ with sync_playwright() as p:
 }
 
 func (s *server) toolBrowserClick(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	selector:= args["selector"]
-	if selector == "" {
-		return mcpToolResult{}, fmt.Errorf("selector is required")
+	selector, err := requireArg(args, "selector")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	script := fmt.Sprintf(`
@@ -294,17 +351,11 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
     page.locator('%s').first.click()
-    print("Clicked: %s")
+    print("Clicked")
     browser.close()
-`, escapeString(selector), selector)
+`, browser.EscapePythonString(selector))
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	result, err := s.toolRunCommand(ctx, cmdArgs)
+	result, err := s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("click failed: %w", err)
 	}
@@ -313,19 +364,19 @@ with sync_playwright() as p:
 }
 
 func (s *server) toolBrowserFill(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	selector:= args["selector"]
-	if selector == "" {
-		return mcpToolResult{}, fmt.Errorf("selector is required")
+	selector, err := requireArg(args, "selector")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	value:= args["value"]
-	if value == "" {
-		return mcpToolResult{}, fmt.Errorf("value is required")
+	value, err := requireArg(args, "value")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	script := fmt.Sprintf(`
@@ -335,17 +386,11 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
     page.locator('%s').first.fill('%s')
-    print("Filled: %s")
+    print("Filled")
     browser.close()
-`, escapeString(selector), escapeString(value), selector)
+`, browser.EscapePythonString(selector), browser.EscapePythonString(value))
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	result, err := s.toolRunCommand(ctx, cmdArgs)
+	result, err := s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("fill failed: %w", err)
 	}
@@ -354,30 +399,29 @@ with sync_playwright() as p:
 }
 
 func (s *server) toolBrowserExtract(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	selector := ""
-	if sel := args["selector"]; sel != "" {
-		selector = sel
+	extractType := args["extract"]
+	if extractType == "" {
+		extractType = "text"
 	}
-
-	extractType := "text"
-	if et := args["extract"]; et != "" {
-		extractType = et
+	if extractType != "text" && extractType != "html" {
+		return mcpToolResult{}, fmt.Errorf("invalid extract %q: must be one of text, html", extractType)
 	}
 
 	var extractCode string
-	if selector != "" {
-		if extractType == "html" {
-			extractCode = fmt.Sprintf(`content = page.locator('%s').first.inner_html()`, escapeString(selector))
-		} else {
-			extractCode = fmt.Sprintf(`content = page.locator('%s').first.text_content()`, escapeString(selector))
-		}
-	} else {
+	switch selector := args["selector"]; {
+	case selector == "":
 		extractCode = `content = page.content()`
+	case extractType == "html":
+		extractCode = fmt.Sprintf(`content = page.locator('%s').first.inner_html()`,
+			browser.EscapePythonString(selector))
+	default:
+		extractCode = fmt.Sprintf(`content = page.locator('%s').first.text_content()`,
+			browser.EscapePythonString(selector))
 	}
 
 	script := fmt.Sprintf(`
@@ -391,68 +435,60 @@ with sync_playwright() as p:
     browser.close()
 `, extractCode)
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	return s.toolRunCommand(ctx, cmdArgs)
+	return s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 }
 
 func (s *server) toolBrowserEvaluate(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	jsScript:= args["script"]
-	if jsScript == "" {
-		return mcpToolResult{}, fmt.Errorf("script is required")
+	jsScript, err := requireArg(args, "script")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
+
+	// JavaScript is free-form text that would have to survive both a Python
+	// literal and the shell-free exec boundary. Base64 keeps it out of the
+	// generated source entirely: the script carries only characters from the
+	// base64 alphabet, so no input can terminate the literal that holds it.
+	encoded := base64.StdEncoding.EncodeToString([]byte(jsScript))
 
 	script := fmt.Sprintf(`
 from playwright.sync_api import sync_playwright
+import base64
 import json
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
-    result = page.evaluate('''%s''')
+    js_code = base64.b64decode('%s').decode('utf-8')
+    result = page.evaluate(js_code)
     print(json.dumps(result))
     browser.close()
-`, escapeString(jsScript))
+`, encoded)
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	return s.toolRunCommand(ctx, cmdArgs)
+	return s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 }
 
 func (s *server) toolBrowserWait(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	selector := ""
-	if sel := args["selector"]; sel != "" {
-		selector = sel
-	}
-
-	timeout := "30000"
-	if to := args["timeout"]; to != "" {
-		timeout = to
+	timeout, err := browserTimeout(args["timeout"])
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	var waitCode string
-	if selector != "" {
-		waitCode = fmt.Sprintf(`page.wait_for_selector('%s', timeout=%s)`, escapeString(selector), timeout)
+	if selector := args["selector"]; selector != "" {
+		waitCode = fmt.Sprintf(`page.wait_for_selector('%s', timeout=%d)`,
+			browser.EscapePythonString(selector), timeout)
 	} else {
-		waitCode = `page.wait_for_timeout(1000)`
+		waitCode = fmt.Sprintf(`page.wait_for_timeout(%d)`, timeout)
 	}
 
 	script := fmt.Sprintf(`
@@ -466,29 +502,23 @@ with sync_playwright() as p:
     browser.close()
 `, waitCode)
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	return s.toolRunCommand(ctx, cmdArgs)
+	return s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 }
 
 func (s *server) toolBrowserPDF(ctx context.Context, args map[string]string) (mcpToolResult, error) {
-	sessionID:= args["session_id"]
-	if sessionID == "" {
-		return mcpToolResult{}, fmt.Errorf("session_id is required")
+	sessionID, err := requireArg(args, "session_id")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	path := "/workspace/page.pdf"
-	if p := args["path"]; p != "" {
-		path = p
+	outPath, err := browser.ValidateWorkspacePath(args["path"], "/workspace/page.pdf")
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
-	format := "A4"
-	if f := args["format"]; f != "" {
-		format = f
+	format, err := browser.ValidatePaperFormat(args["format"])
+	if err != nil {
+		return mcpToolResult{}, err
 	}
 
 	script := fmt.Sprintf(`
@@ -500,15 +530,9 @@ with sync_playwright() as p:
     page.pdf(path='%s', format='%s')
     print("PDF saved: %s")
     browser.close()
-`, path, format, path)
+`, browser.EscapePythonString(outPath), format, browser.EscapePythonString(outPath))
 
-	cmdArgs := map[string]string{
-		"session_id": sessionID,
-		"command":    "python3",
-		"args":       fmt.Sprintf(`["-c", %s]`, jsonString(script)),
-	}
-
-	result, err := s.toolRunCommand(ctx, cmdArgs)
+	result, err := s.toolRunCommand(ctx, pythonScriptArgs(sessionID, script))
 	if err != nil {
 		return mcpToolResult{}, fmt.Errorf("PDF generation failed: %w", err)
 	}
@@ -516,24 +540,9 @@ with sync_playwright() as p:
 	return result, nil
 }
 
-// Helper: escape single quotes for Python strings
-func escapeString(s string) string {
-	s = jsonEscape(s)
-	return s
-}
-
-// Helper: escape and quote string as JSON
+// jsonString quotes s as a JSON string, for embedding in the run_command args
+// array.
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
-	return string(b)
-}
-
-// Helper: JSON escape
-func jsonEscape(s string) string {
-	b, _ := json.Marshal(s)
-	// Remove surrounding quotes
-	if len(b) >= 2 {
-		return string(b[1 : len(b)-1])
-	}
 	return string(b)
 }

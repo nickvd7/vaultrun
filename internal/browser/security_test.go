@@ -7,7 +7,7 @@ import (
 )
 
 // newTestManager returns a manager with the secure default policy and no
-// Docker/DB dependencies — validateURL only reads m.policy.
+// Docker/DB dependencies — URL validation only reads m.policy.
 func newTestManager() *PlaywrightManager {
 	return &PlaywrightManager{policy: DefaultNetworkPolicy()}
 }
@@ -61,8 +61,8 @@ func TestSSRFProtection(t *testing.T) {
 
 	for _, tc := range blocked {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := m.validateURL(tc.url); err == nil {
-				t.Errorf("validateURL(%q) = nil, want error — SSRF protection bypassed", tc.url)
+			if err := m.policy.ValidateURL(tc.url); err == nil {
+				t.Errorf("ValidateURL(%q) = nil, want error — SSRF protection bypassed", tc.url)
 			}
 		})
 	}
@@ -84,8 +84,8 @@ func TestSSRFAllowsPublicURLs(t *testing.T) {
 
 	for _, url := range allowed {
 		t.Run(url, func(t *testing.T) {
-			if err := m.validateURL(url); err != nil {
-				t.Errorf("validateURL(%q) = %v, want nil — legitimate URL blocked", url, err)
+			if err := m.policy.ValidateURL(url); err != nil {
+				t.Errorf("ValidateURL(%q) = %v, want nil — legitimate URL blocked", url, err)
 			}
 		})
 	}
@@ -198,7 +198,7 @@ func TestEscapeStringPreventsInjection(t *testing.T) {
 
 	for _, tc := range inputs {
 		t.Run(tc.name, func(t *testing.T) {
-			got := escapeString(tc.input)
+			got := EscapePythonString(tc.input)
 
 			// The output is interpolated into a single-quoted Python literal.
 			// It is safe exactly when every quote, backslash and newline it
@@ -227,20 +227,20 @@ func assertPythonLiteralSafe(t *testing.T, input, escaped string) {
 		// Reaching here means r was not preceded by a backslash.
 		switch r {
 		case '\'':
-			t.Errorf("escapeString(%q) = %q — unescaped single quote at index %d", input, escaped, i)
+			t.Errorf("EscapePythonString(%q) = %q — unescaped single quote at index %d", input, escaped, i)
 		case '\n':
-			t.Errorf("escapeString(%q) = %q — raw newline at index %d", input, escaped, i)
+			t.Errorf("EscapePythonString(%q) = %q — raw newline at index %d", input, escaped, i)
 		case '\r':
-			t.Errorf("escapeString(%q) = %q — raw carriage return at index %d", input, escaped, i)
+			t.Errorf("EscapePythonString(%q) = %q — raw carriage return at index %d", input, escaped, i)
 		case 0:
-			t.Errorf("escapeString(%q) = %q — raw NUL byte at index %d", input, escaped, i)
+			t.Errorf("EscapePythonString(%q) = %q — raw NUL byte at index %d", input, escaped, i)
 		}
 	}
 
 	// A literal backslash in the input must survive as a doubled backslash,
 	// otherwise it would consume the escape of whatever follows it.
 	if strings.Contains(input, `\`) && !strings.Contains(escaped, `\\`) {
-		t.Errorf("escapeString(%q) = %q — backslash not doubled", input, escaped)
+		t.Errorf("EscapePythonString(%q) = %q — backslash not doubled", input, escaped)
 	}
 }
 

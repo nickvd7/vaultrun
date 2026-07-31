@@ -30,8 +30,8 @@ var injectionPayloads = []string{
 // generated script unescaped.
 func TestWaitUntilRejectsInjection(t *testing.T) {
 	for _, payload := range injectionPayloads {
-		if got, err := validateWaitUntil(payload); err == nil {
-			t.Errorf("validateWaitUntil(%q) accepted the value as %q", payload, got)
+		if got, err := ValidateWaitUntil(payload); err == nil {
+			t.Errorf("ValidateWaitUntil(%q) accepted the value as %q", payload, got)
 		}
 	}
 }
@@ -40,16 +40,16 @@ func TestWaitUntilRejectsInjection(t *testing.T) {
 // interpolated both into the script and into the temp file name.
 func TestImageFormatRejectsInjection(t *testing.T) {
 	for _, payload := range injectionPayloads {
-		if got, err := validateImageFormat(payload); err == nil {
-			t.Errorf("validateImageFormat(%q) accepted the value as %q", payload, got)
+		if got, err := ValidateImageFormat(payload); err == nil {
+			t.Errorf("ValidateImageFormat(%q) accepted the value as %q", payload, got)
 		}
 	}
 
 	// Path traversal through the format would relocate the temp file the host
 	// later copies out.
 	for _, payload := range []string{"../../etc/passwd", "png/../../../root/.ssh/id_rsa", "png;rm -rf /"} {
-		if _, err := validateImageFormat(payload); err == nil {
-			t.Errorf("validateImageFormat(%q) accepted a path-shaped format", payload)
+		if _, err := ValidateImageFormat(payload); err == nil {
+			t.Errorf("ValidateImageFormat(%q) accepted a path-shaped format", payload)
 		}
 	}
 }
@@ -57,8 +57,8 @@ func TestImageFormatRejectsInjection(t *testing.T) {
 // TestPaperFormatRejectsInjection covers the PDF paper size.
 func TestPaperFormatRejectsInjection(t *testing.T) {
 	for _, payload := range injectionPayloads {
-		if got, err := validatePaperFormat(payload); err == nil {
-			t.Errorf("validatePaperFormat(%q) accepted the value as %q", payload, got)
+		if got, err := ValidatePaperFormat(payload); err == nil {
+			t.Errorf("ValidatePaperFormat(%q) accepted the value as %q", payload, got)
 		}
 	}
 }
@@ -68,28 +68,28 @@ func TestPaperFormatRejectsInjection(t *testing.T) {
 // fall back to the documented default.
 func TestOptionValidatorsAcceptRealValues(t *testing.T) {
 	for _, v := range validWaitUntil {
-		if got, err := validateWaitUntil(v); err != nil || got != v {
-			t.Errorf("validateWaitUntil(%q) = %q, %v; want the value unchanged", v, got, err)
+		if got, err := ValidateWaitUntil(v); err != nil || got != v {
+			t.Errorf("ValidateWaitUntil(%q) = %q, %v; want the value unchanged", v, got, err)
 		}
 	}
 	for _, v := range validImageFormats {
-		if got, err := validateImageFormat(v); err != nil || got != v {
-			t.Errorf("validateImageFormat(%q) = %q, %v; want the value unchanged", v, got, err)
+		if got, err := ValidateImageFormat(v); err != nil || got != v {
+			t.Errorf("ValidateImageFormat(%q) = %q, %v; want the value unchanged", v, got, err)
 		}
 	}
 	for _, v := range validPaperFormats {
-		if got, err := validatePaperFormat(v); err != nil || got != v {
-			t.Errorf("validatePaperFormat(%q) = %q, %v; want the value unchanged", v, got, err)
+		if got, err := ValidatePaperFormat(v); err != nil || got != v {
+			t.Errorf("ValidatePaperFormat(%q) = %q, %v; want the value unchanged", v, got, err)
 		}
 	}
 
-	if got, err := validateWaitUntil(""); err != nil || got != "load" {
+	if got, err := ValidateWaitUntil(""); err != nil || got != "load" {
 		t.Errorf("empty wait_until = %q, %v; want the default \"load\"", got, err)
 	}
-	if got, err := validateImageFormat(""); err != nil || got != "png" {
+	if got, err := ValidateImageFormat(""); err != nil || got != "png" {
 		t.Errorf("empty format = %q, %v; want the default \"png\"", got, err)
 	}
-	if got, err := validatePaperFormat(""); err != nil || got != "A4" {
+	if got, err := ValidatePaperFormat(""); err != nil || got != "A4" {
 		t.Errorf("empty paper format = %q, %v; want the default \"A4\"", got, err)
 	}
 }
@@ -100,15 +100,15 @@ func TestOptionValidatorsAcceptRealValues(t *testing.T) {
 // inside the container with a confusing error.
 func TestOptionValidatorsAreCaseSensitive(t *testing.T) {
 	for _, v := range []string{"LOAD", "Load", "NetworkIdle"} {
-		if _, err := validateWaitUntil(v); err == nil {
-			t.Errorf("validateWaitUntil(%q) accepted a differently-cased enum", v)
+		if _, err := ValidateWaitUntil(v); err == nil {
+			t.Errorf("ValidateWaitUntil(%q) accepted a differently-cased enum", v)
 		}
 	}
-	if _, err := validateImageFormat("PNG"); err == nil {
-		t.Error(`validateImageFormat("PNG") accepted a differently-cased enum`)
+	if _, err := ValidateImageFormat("PNG"); err == nil {
+		t.Error(`ValidateImageFormat("PNG") accepted a differently-cased enum`)
 	}
-	if _, err := validatePaperFormat("a4"); err == nil {
-		t.Error(`validatePaperFormat("a4") accepted a differently-cased enum`)
+	if _, err := ValidatePaperFormat("a4"); err == nil {
+		t.Error(`ValidatePaperFormat("a4") accepted a differently-cased enum`)
 	}
 }
 
@@ -130,8 +130,8 @@ func TestClampTimeoutBoundsBlockingTime(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := clampTimeout(tc.in); got != tc.want {
-			t.Errorf("clampTimeout(%d) = %d, want %d", tc.in, got, tc.want)
+		if got := ClampTimeout(tc.in); got != tc.want {
+			t.Errorf("ClampTimeout(%d) = %d, want %d", tc.in, got, tc.want)
 		}
 	}
 }

@@ -291,6 +291,22 @@ func (m *Manager) GetActiveAgents(ctx context.Context, sessionID uuid.UUID) ([]A
 	return agents, nil
 }
 
+// IsAgentActive reports whether an agent currently holds a slot in a session.
+//
+// Membership lives in Redis rather than session_agents because that table keeps
+// disconnected agents for the audit trail; only the Redis set answers "who is
+// connected right now".
+func (m *Manager) IsAgentActive(ctx context.Context, sessionID uuid.UUID, agentID string) (bool, error) {
+	if err := ValidateAgentID(agentID); err != nil {
+		return false, err
+	}
+	joined, err := m.redis.SIsMember(ctx, redisKeyActiveAgents(sessionID), agentID).Result()
+	if err != nil {
+		return false, fmt.Errorf("check active agent: %w", err)
+	}
+	return joined, nil
+}
+
 // === Messaging ===
 
 // SendMessage sends a message from one agent to another (or broadcast)
@@ -304,7 +320,7 @@ func (m *Manager) SendMessage(ctx context.Context, sessionID uuid.UUID, from, to
 			return nil, fmt.Errorf("invalid recipient: %w", err)
 		}
 	} else if msgType == MessageTypeDirect {
-		return nil, fmt.Errorf("direct message requires a recipient")
+		return nil, invalid("a direct message requires a recipient")
 	}
 	if err := ValidateMessageBody(body); err != nil {
 		return nil, err

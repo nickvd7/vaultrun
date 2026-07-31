@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
@@ -200,6 +202,42 @@ func main() {
 
 	rnr := runner.New(db, docker, al, policyHook)
 
+	// Replay manager for session checkpoints (uses same key as audit HMAC).
+	replayMgr := replay.New(db, ws, []byte(cfg.Observability.AuditHMACKey))
+
+	// Configure automatic checkpoint creation after command execution.
+	// Only fires for sessions with replay_enabled = true.
+	rnr.SetCheckpointHook(func(ctx context.Context, sessionID, runID uuid.UUID, exitCode int, durationMs int64, stdout, stderr string) error {
+		var replayEnabled bool
+		err := db.GetContext(ctx, &replayEnabled,
+			"SELECT COALESCE(replay_enabled, false) FROM sessions WHERE id = $1", sessionID)
+		if err != nil || !replayEnabled {
+			return nil // Replay disabled, skip checkpoint
+		}
+
+		var cmd string
+		var args []string
+		err = db.QueryRowContext(ctx,
+			"SELECT command, args FROM runs WHERE id = $1", runID).Scan(&cmd, &args)
+		if err != nil {
+			return err
+		}
+
+		durationMsInt := int(durationMs)
+		_, err = replayMgr.CreateCheckpoint(ctx, replay.CreateCheckpointOpts{
+			SessionID:   sessionID,
+			RunID:       &runID,
+			Description: fmt.Sprintf("Auto checkpoint after: %s", cmd),
+			Command:     cmd,
+			Args:        args,
+			ExitCode:    &exitCode,
+			DurationMs:  &durationMsInt,
+			Stdout:      stdout,
+			Stderr:      stderr,
+		})
+		return err
+	})
+
 	// Warm container pool — optional; disabled when WARM_POOL_SIZE=0 or WARM_POOL_IMAGE is empty.
 	var pool *warmpool.Pool
 	poolCtx, poolCancel := context.WithCancel(context.Background())
@@ -312,7 +350,7 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, collabManager, collabHub, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, collabManager, collabHub, replayMgr, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

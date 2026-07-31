@@ -10,23 +10,24 @@ import (
 // Checkpoint represents a point-in-time snapshot of a session.
 // Can be restored or forked to enable time-travel debugging.
 type Checkpoint struct {
-	ID                  uuid.UUID      `json:"id"`
-	SessionID           uuid.UUID      `json:"session_id"`
-	RunID               *uuid.UUID     `json:"run_id,omitempty"`
-	CheckpointNumber    int            `json:"checkpoint_number"`
-	Name                *string        `json:"name,omitempty"`
-	Description         string         `json:"description"`
-	WorkspaceSnapshotID uuid.UUID      `json:"workspace_snapshot_id"`
-	EnvVarsSnapshot     models.JSONB   `json:"env_vars_snapshot,omitempty"`
-	Command             string         `json:"command,omitempty"`
-	Args                models.JSONB   `json:"args,omitempty"`
-	ExitCode            *int           `json:"exit_code,omitempty"`
-	DurationMs          *int           `json:"duration_ms,omitempty"`
-	StdoutPreview       string         `json:"stdout_preview,omitempty"`
-	StderrPreview       string         `json:"stderr_preview,omitempty"`
-	Signature           string         `json:"signature"`
-	CreatedAt           time.Time      `json:"created_at"`
-	SizeBytes           int64          `json:"size_bytes"`
+	ID                  uuid.UUID      `json:"id" db:"id"`
+	SessionID           uuid.UUID      `json:"session_id" db:"session_id"`
+	RunID               *uuid.UUID     `json:"run_id,omitempty" db:"run_id"`
+	CheckpointNumber    int            `json:"checkpoint_number" db:"checkpoint_number"`
+	Name                *string        `json:"name,omitempty" db:"name"`
+	Description         string         `json:"description" db:"description"`
+	WorkspaceSnapshotID uuid.UUID      `json:"workspace_snapshot_id" db:"workspace_snapshot_id"`
+	ArchivePath         string         `json:"-" db:"archive_path"` // Never expose to API
+	EnvVarsSnapshot     models.JSONB   `json:"env_vars_snapshot,omitempty" db:"env_vars_snapshot"`
+	Command             string         `json:"command,omitempty" db:"command"`
+	Args                models.JSONB   `json:"args,omitempty" db:"args"`
+	ExitCode            *int           `json:"exit_code,omitempty" db:"exit_code"`
+	DurationMs          *int           `json:"duration_ms,omitempty" db:"duration_ms"`
+	StdoutPreview       string         `json:"stdout_preview,omitempty" db:"stdout_preview"`
+	StderrPreview       string         `json:"stderr_preview,omitempty" db:"stderr_preview"`
+	Signature           string         `json:"signature" db:"signature"`
+	CreatedAt           time.Time      `json:"created_at" db:"created_at"`
+	SizeBytes           int64          `json:"size_bytes" db:"size_bytes"`
 }
 
 // CreateCheckpointOpts contains options for creating a checkpoint.

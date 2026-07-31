@@ -23,6 +23,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/templates"
@@ -47,6 +48,7 @@ func newRouter(
 	templatesManager *templates.Manager,
 	collabManager *collab.Manager,
 	collabHub *collab.Hub,
+	replayMgr *replay.Manager,
 	ent enterpriseHooks, // zero value when enterprise features are absent
 ) *gin.Engine {
 	r := gin.New()
@@ -277,6 +279,17 @@ func newRouter(
 	authGroup.PUT("/templates/:id", templatesH.UpdateTemplate)
 	authGroup.DELETE("/templates/:id", templatesH.DeleteTemplate)
 	authGroup.POST("/templates/:id/use", templatesH.CreateSessionFromTemplate)
+
+	// Replay endpoints — checkpoint creation, restore, fork (time-travel debugging)
+	if replayMgr != nil {
+		replayH := handlers.NewReplayHandler(hub, replayMgr)
+		authGroup.POST("/sessions/:id/checkpoints", replayH.CreateCheckpoint)
+		authGroup.GET("/sessions/:id/checkpoints", replayH.ListCheckpoints)
+		authGroup.GET("/sessions/:id/checkpoints/:checkpoint_id", replayH.GetCheckpoint)
+		authGroup.POST("/sessions/:id/checkpoints/:checkpoint_id/restore", replayH.RestoreCheckpoint)
+		authGroup.POST("/checkpoints/:checkpoint_id/fork", replayH.ForkCheckpoint)
+		authGroup.DELETE("/sessions/:id/checkpoints/:checkpoint_id", replayH.DeleteCheckpoint)
+	}
 
 	// Multi-agent collaboration endpoints — WebSocket + messaging
 	if collabManager != nil && collabHub != nil {

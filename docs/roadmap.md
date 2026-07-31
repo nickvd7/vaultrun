@@ -1,6 +1,6 @@
 # VaultRun Roadmap
 
-Status as of **v0.2.1** (2026-07-15).
+Status as of **v0.3.1** (2026-07-31).
 
 ## Shipped
 
@@ -33,6 +33,18 @@ Status as of **v0.2.1** (2026-07-15).
 - [x] RBAC (viewer / executor / admin roles on `org_members`; enforced per-endpoint)
 - [x] Session sharing within org (`org_id` on sessions; org members see shared sessions in `GET /sessions`; `GET /orgs/:id/sessions`)
 
+### v0.3.0 — Killer features (6/6)
+Originally proposed under `docs/features/`; all shipped in **v0.3.0**, hardened in **v0.3.1**.
+
+- [x] **Session Replay & Time-Travel Debugging** — checkpoints, restore/fork; `internal/replay`, `/api/v1/sessions/:id/checkpoints*` ([spec](features/session-replay.md))
+- [x] **Browser Automation Layer** — Playwright image + 8 MCP tools (`browser_*`); `internal/browser`, `sdk/mcp/browser.go` ([spec](features/browser-automation.md) · [ops](browser-automation.md))
+- [x] **Live Multi-Agent Collaboration** — WebSocket + Redis presence/messaging; `internal/collab` ([spec](features/multi-agent-collaboration.md))
+- [x] **Natural Language Policy Engine** — LLM → OPA / iptables / limits; `internal/nlpolicy`, `/api/v1/policies/*` ([spec](features/natural-language-policy.md) · [ops](natural-language-policy.md))
+- [x] **Cost Intelligence Dashboard** — metrics, budgets, alerts; `internal/cost`, `/api/v1/costs*` ([spec](features/cost-intelligence.md))
+- [x] **Session Templates Marketplace** — templates CRUD + one-click use; `internal/templates`, `/api/v1/templates*` ([spec](features/session-templates.md))
+
+Security follow-up: [security-testing-report.md](security-testing-report.md). Overview: [features/README.md](features/README.md).
+
 ### v0.4 — Advanced runners (partial)
 - [x] Warm container pool for low-latency startup (`WARM_POOL_SIZE` / `WARM_POOL_IMAGE`)
 - [x] GPU runner support (`DOCKER_GPU_DEVICES`; `gpu_enabled` session flag)
@@ -50,7 +62,7 @@ Status as of **v0.2.1** (2026-07-15).
 - [x] Cross-session artifact sharing
 
 ### v0.7 — MCP & AI integrations
-- [x] MCP server — stdio + HTTP, 53 tools
+- [x] MCP server — stdio + HTTP (sandbox/DB/AWS/ops + browser tools)
 - [x] MCP security (Bearer auth, rate limits, TLS, audit redaction)
 - [x] CI Runner (`cmd/ci-runner/`)
 - [x] Database MCP tools (SQLite, PostgreSQL, MongoDB)
@@ -58,7 +70,7 @@ Status as of **v0.2.1** (2026-07-15).
 - [x] Agent SDK examples (LangChain + AutoGen)
 
 ### v0.8 — Dashboard
-- [x] Next.js dashboard (`/dashboard`, sessions, audit, proxy)
+- [x] Next.js dashboard (`/dashboard`, sessions, audit, costs, proxy)
 
 ### Enterprise (VaultRun Enterprise edition)
 - [x] SSO — OIDC (PKCE) + SAML 2.0 (ships in private Enterprise overlay; `go build -tags enterprise`)
@@ -85,42 +97,3 @@ These remain intentional non-goals until there is clear demand and infrastructur
 - Redis-backed sliding-window rate limiting (beyond in-memory)
 - Richer dashboard Session UX and org switcher
 - Optional public “starting from” commercial packaging once pricing is finalized
-
-## Killer Features (proposed)
-
-Comprehensive feature specifications available in `docs/features/`:
-
-**Priority 1 (Highest Impact):**
-- [ ] **Session Replay & Time-Travel Debugging** — [spec](features/session-replay.md)
-  - Checkpoint every command execution for debugging
-  - Restore/fork from any point in session history
-  - Effort: 2-3 weeks
-
-- [ ] **Browser Automation Layer** — [spec](features/browser-automation.md)
-  - Headless browser with Playwright/Puppeteer
-  - 8 new MCP tools for web scraping and E2E testing
-  - Effort: 1-2 weeks
-
-**Priority 2 (Strong Value):**
-- [ ] **Live Multi-Agent Collaboration** — [spec](features/multi-agent-collaboration.md)
-  - Multiple agents working in same sandbox with real-time sync
-  - Agent-to-agent messaging and presence awareness
-  - Effort: 4-6 weeks
-
-- [ ] **Natural Language Policy Engine** — [spec](features/natural-language-policy.md)
-  - LLM-powered policy generation from plain English
-  - Makes security accessible for non-DevOps users
-  - Effort: 2-3 weeks
-
-- [ ] **Cost Intelligence Dashboard** — [spec](features/cost-intelligence.md)
-  - Real-time cost tracking and optimization recommendations
-  - Idle session detection and budget management
-  - Effort: 2-3 weeks
-
-**Priority 3 (Nice-to-Have):**
-- [ ] **Session Templates Marketplace** — [spec](features/session-templates.md)
-  - Pre-configured environments (Python DS, Node.js API, etc.)
-  - Community contributions and ratings
-  - Effort: 2-3 weeks
-
-See [docs/features/README.md](features/README.md) for full overview and implementation guidance.

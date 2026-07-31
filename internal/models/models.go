@@ -134,6 +134,24 @@ type Session struct {
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
 	StoppedAt       *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`
 	OrgID           *uuid.UUID  `db:"org_id"           json:"org_id,omitempty"`
+
+	// Session Replay (migration 011). Checkpoints are only recorded when
+	// ReplayEnabled is true.
+	ReplayEnabled          bool       `db:"replay_enabled"             json:"replay_enabled"`
+	ForkedFromCheckpointID *uuid.UUID `db:"forked_from_checkpoint_id"  json:"forked_from_checkpoint_id,omitempty"`
+
+	// Cost Intelligence (migration 012). Running totals maintained by the
+	// tracker; the authoritative per-period records live in cost_metrics.
+	TotalCost      *float64   `db:"total_cost"       json:"total_cost,omitempty"`
+	LastCostUpdate *time.Time `db:"last_cost_update" json:"last_cost_update,omitempty"`
+
+	// Session Templates (migration 013). Set when the session was created from
+	// a marketplace template.
+	TemplateID *uuid.UUID `db:"template_id" json:"template_id,omitempty"`
+
+	// Multi-Agent Collaboration (migration 014).
+	MaxAgents          *int  `db:"max_agents"          json:"max_agents,omitempty"`
+	AllowCollaboration *bool `db:"allow_collaboration" json:"allow_collaboration,omitempty"`
 }
 
 type Run struct {

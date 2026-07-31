@@ -102,7 +102,18 @@ func (j *JSONB) Scan(src interface{}) error {
 // "pq: malformed array literal" errors at INSERT time.
 type StringArray []string
 
+// Value serialises the slice, mapping a nil slice to an empty array rather than
+// NULL.
+//
+// pq returns NULL for a nil slice, but every column this type is bound to
+// (sessions.allowed_hosts, runs.args) is NOT NULL DEFAULT '{}'. A nil slice is
+// the normal state — a run without arguments, a template without an allowed-host
+// list — so passing NULL turned those ordinary requests into constraint
+// violations.
 func (a StringArray) Value() (driver.Value, error) {
+	if a == nil {
+		return pq.StringArray{}.Value()
+	}
 	return pq.StringArray(a).Value()
 }
 

@@ -30,8 +30,9 @@ func New(db *sqlx.DB) *Manager {
 	return &Manager{db: db}
 }
 
-// Create creates a new template
-func (m *Manager) Create(ctx context.Context, orgID uuid.UUID, req CreateTemplateRequest) (*Template, error) {
+// Create creates a new template owned by orgID, or unowned when orgID is nil
+// (a template created with the master key, like the built-ins).
+func (m *Manager) Create(ctx context.Context, orgID *uuid.UUID, req CreateTemplateRequest) (*Template, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func (m *Manager) Create(ctx context.Context, orgID uuid.UUID, req CreateTemplat
 		Tags:        req.Tags,
 		Image:       req.Image,
 		Author:      "Custom",
-		AuthorOrg:   &orgID,
+		AuthorOrg:   orgID,
 		Version:     version,
 		Published:   false,
 		Featured:    false,
@@ -516,8 +517,9 @@ func (m *Manager) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// RecordUsage records that a template was used for a session
-func (m *Manager) RecordUsage(ctx context.Context, templateID, sessionID, orgID uuid.UUID) error {
+// RecordUsage records that a template was used for a session. orgID is nil for
+// a session that does not belong to an org.
+func (m *Manager) RecordUsage(ctx context.Context, templateID, sessionID uuid.UUID, orgID *uuid.UUID) error {
 	_, err := m.db.ExecContext(ctx,
 		"INSERT INTO template_usage (template_id, session_id, org_id) VALUES ($1, $2, $3)",
 		templateID, sessionID, orgID,

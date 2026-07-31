@@ -119,13 +119,18 @@ type OrgCostSummary struct {
 	SessionCount int       `db:"session_count" json:"session_count"`
 }
 
-// CostBreakdown provides detailed cost analysis
+// CostBreakdown provides detailed cost analysis.
+//
+// The cost fields carry db tags because the totals are scanned straight into
+// this struct; without them sqlx maps `compute_cost` to no field and the whole
+// query fails with "missing destination name". Period, TopSessions and
+// AlertCount are filled in separately and are explicitly ignored by the mapper.
 type CostBreakdown struct {
-	Period       string               `json:"period"` // YYYY-MM or YYYY-MM-DD
-	ComputeCost  float64              `json:"compute_cost"`
-	StorageCost  float64              `json:"storage_cost"`
-	NetworkCost  float64              `json:"network_cost"`
-	TotalCost    float64              `json:"total_cost"`
-	TopSessions  []SessionCostSummary `json:"top_sessions"`
-	AlertCount   int                  `json:"alert_count"`
+	Period       string               `db:"-" json:"period"` // YYYY-MM or YYYY-MM-DD
+	ComputeCost  float64              `db:"compute_cost" json:"compute_cost"`
+	StorageCost  float64              `db:"storage_cost" json:"storage_cost"`
+	NetworkCost  float64              `db:"network_cost" json:"network_cost"`
+	TotalCost    float64              `db:"total_cost"   json:"total_cost"`
+	TopSessions  []SessionCostSummary `db:"-" json:"top_sessions"`
+	AlertCount   int                  `db:"-" json:"alert_count"`
 }

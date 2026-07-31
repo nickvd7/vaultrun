@@ -121,8 +121,10 @@ func TestRedactEnvVars(t *testing.T) {
 				"API_KEY":               "key123",
 			},
 			expected: map[string]interface{}{
-				"PATH":                  "/usr/bin",
-				"AWS_ACCESS_KEY_ID":     "AKIA1234567890", // Not in sensitive list
+				"PATH": "/usr/bin",
+				// An access key ID identifies the account and is half of a
+				// credential pair, so it is redacted along with the secret.
+				"AWS_ACCESS_KEY_ID":     "[REDACTED]",
 				"AWS_SECRET_ACCESS_KEY": "[REDACTED]",
 				"DATABASE_PASSWORD":     "[REDACTED]",
 				"API_KEY":               "[REDACTED]",

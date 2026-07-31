@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -278,23 +279,91 @@ func (t *Tracker) calculateNetworkCost(m *CostMetric, rate *CostRate) float64 {
 	return m.EgressGB * rate.EgressGBRate
 }
 
+// checksum computes a SHA-256 digest over every field that determines a cost
+// metric's meaning.
+//
+// The digest must cover the raw usage counters, not just the derived totals:
+// omitting them would let the usage that justifies a charge be rewritten while
+// the totals — and therefore the digest — stayed valid. It also covers RateID,
+// so a metric cannot be re-attributed to a cheaper rate card.
+//
+// Floats are formatted with strconv.FormatFloat('g', -1) rather than %f: %f
+// truncates at six decimals, so two sub-microdollar amounts would collide.
+// Fields are NUL-separated to prevent boundary confusion.
 func (t *Tracker) checksum(m *CostMetric) string {
-	data := fmt.Sprintf("%s:%s:%s:%f:%f:%f",
-		m.SessionID.String(),
-		m.PeriodStart.Format(time.RFC3339),
-		m.PeriodEnd.Format(time.RFC3339),
-		m.TotalCost,
-		m.ComputeCost,
-		m.StorageCost,
-	)
 	h := sha256.New()
-	h.Write([]byte(data))
+
+	writeField := func(s string) {
+		h.Write([]byte(s))
+		h.Write([]byte{0})
+	}
+	writeFloat := func(f float64) {
+		writeField(strconv.FormatFloat(f, 'g', -1, 64))
+	}
+
+	writeField(m.SessionID.String())
+	writeField(m.PeriodStart.UTC().Format(time.RFC3339Nano))
+	writeField(m.PeriodEnd.UTC().Format(time.RFC3339Nano))
+
+	// Raw usage counters — these justify the charge.
+	writeFloat(m.CPUCoreHours)
+	writeFloat(m.MemoryGBHours)
+	writeFloat(m.GPUHours)
+	writeFloat(m.WorkspaceGBDays)
+	writeFloat(m.SnapshotGBDays)
+	writeFloat(m.ArtifactGBDays)
+	writeFloat(m.EgressGB)
+	writeFloat(m.IngressGB)
+
+	// Derived costs.
+	writeFloat(m.ComputeCost)
+	writeFloat(m.StorageCost)
+	writeFloat(m.NetworkCost)
+	writeFloat(m.TotalCost)
+
+	// The rate card the costs were computed against.
+	if m.RateID != nil {
+		writeField(m.RateID.String())
+	} else {
+		writeField("")
+	}
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// sign computes the HMAC over the checksum. Signing the digest rather than the
+// fields again keeps the two in lockstep: any field change alters the checksum,
+// which alters the signature.
 func (t *Tracker) sign(m *CostMetric) string {
-	data := m.Checksum
+	if len(t.signingKey) == 0 {
+		return ""
+	}
+
 	h := hmac.New(sha256.New, t.signingKey)
-	h.Write([]byte(data))
+	h.Write([]byte(m.Checksum))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// VerifyMetric reports whether a metric's stored checksum and signature match
+// its contents. Returns false when signing is not configured so that an
+// unkeyed deployment cannot treat every metric as authentic.
+func (t *Tracker) VerifyMetric(m *CostMetric) bool {
+	if len(t.signingKey) == 0 || m.Signature == "" || m.Checksum == "" {
+		return false
+	}
+
+	if t.checksum(m) != m.Checksum {
+		return false
+	}
+
+	got, err := hex.DecodeString(m.Signature)
+	if err != nil {
+		return false
+	}
+	want, err := hex.DecodeString(t.sign(m))
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal(got, want)
 }

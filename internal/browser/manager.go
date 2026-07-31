@@ -43,15 +43,12 @@ func (m *PlaywrightManager) Navigate(ctx context.Context, sessionID uuid.UUID, t
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	waitUntil := opts.WaitUntil
-	if waitUntil == "" {
-		waitUntil = "load"
+	waitUntil, err := validateWaitUntil(opts.WaitUntil)
+	if err != nil {
+		return err
 	}
 
-	timeout := opts.Timeout
-	if timeout == 0 {
-		timeout = 30000 // 30 seconds
-	}
+	timeout := clampTimeout(opts.Timeout)
 
 	script := fmt.Sprintf(`
 from playwright.sync_api import sync_playwright
@@ -70,9 +67,9 @@ except Exception as e:
     sys.exit(1)
 `, timeout, escapeString(targetURL), waitUntil)
 
-	containerID, err := m.getContainerID(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to get container: %w", err)
+	containerID, cerr := m.getContainerID(ctx, sessionID)
+	if cerr != nil {
+		return fmt.Errorf("failed to get container: %w", cerr)
 	}
 
 	_, stderr, err := m.docker.ExecSimple(ctx, containerID, []string{"python3", "-c", script})
@@ -85,9 +82,9 @@ except Exception as e:
 
 // Screenshot captures a screenshot
 func (m *PlaywrightManager) Screenshot(ctx context.Context, sessionID uuid.UUID, opts ScreenshotOpts) (*ScreenshotResult, error) {
-	format := opts.Format
-	if format == "" {
-		format = "png"
+	format, err := validateImageFormat(opts.Format)
+	if err != nil {
+		return nil, err
 	}
 
 	fullPageFlag := "False"
@@ -131,16 +128,15 @@ except Exception as e:
 		return nil, fmt.Errorf("failed to get container: %w", err)
 	}
 
-	stdout, stderr, err := m.docker.ExecSimple(ctx, containerID, []string{"python3", "-c", script})
-	if err != nil {
+	if _, stderr, err := m.docker.ExecSimple(ctx, containerID, []string{"python3", "-c", script}); err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w: %s", err, stderr)
 	}
 
-	// Extract screenshot path from stdout
-	screenshotPath := strings.TrimSpace(stdout)
-
-	// Copy screenshot from container to host and store as artifact
-	result, err := m.captureArtifact(ctx, containerID, sessionID, screenshotPath, fmt.Sprintf("screenshot.%s", format))
+	// Capture the path this host chose, not the one the container printed. The
+	// sandbox is the untrusted side of this boundary: a compromised container
+	// that echoed "/etc/shadow" would otherwise have the host copy that file out
+	// and store it as a downloadable artifact.
+	result, err := m.captureArtifact(ctx, containerID, sessionID, tmpPath, fmt.Sprintf("screenshot.%s", format))
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture screenshot: %w", err)
 	}
@@ -324,10 +320,7 @@ func (m *PlaywrightManager) Wait(ctx context.Context, sessionID uuid.UUID, opts 
 		return fmt.Errorf("failed to get container: %w", err)
 	}
 
-	timeout := opts.Timeout
-	if timeout == 0 {
-		timeout = 30000 // 30 seconds
-	}
+	timeout := clampTimeout(opts.Timeout)
 
 	var waitCode string
 	if opts.Selector != "" {
@@ -367,9 +360,9 @@ func (m *PlaywrightManager) PDF(ctx context.Context, sessionID uuid.UUID, opts P
 		return nil, fmt.Errorf("failed to get container: %w", err)
 	}
 
-	format := opts.Format
-	if format == "" {
-		format = "A4"
+	format, err := validatePaperFormat(opts.Format)
+	if err != nil {
+		return nil, err
 	}
 
 	tmpPath := fmt.Sprintf("/tmp/page_%s.pdf", uuid.New().String()[:8])
@@ -390,15 +383,13 @@ except Exception as e:
     sys.exit(1)
 `, tmpPath, format, tmpPath)
 
-	stdout, stderr, err := m.docker.ExecSimple(ctx, containerID, []string{"python3", "-c", script})
-	if err != nil {
+	if _, stderr, err := m.docker.ExecSimple(ctx, containerID, []string{"python3", "-c", script}); err != nil {
 		return nil, fmt.Errorf("PDF generation failed: %w: %s", err, stderr)
 	}
 
-	pdfPath := strings.TrimSpace(stdout)
-
-	// Capture PDF as artifact
-	result, err := m.captureArtifact(ctx, containerID, sessionID, pdfPath, "page.pdf")
+	// As with screenshots, the host-chosen path is used rather than whatever the
+	// container echoed back.
+	result, err := m.captureArtifact(ctx, containerID, sessionID, tmpPath, "page.pdf")
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture PDF: %w", err)
 	}
@@ -584,6 +575,62 @@ func isMetadataIP(ip net.IP) bool {
 	}
 
 	return false
+}
+
+// Bounds and accepted values for the option fields that end up inside the
+// generated Python.
+//
+// These are allowlists rather than escapes on purpose: each one is an enum in
+// the Playwright API, so anything outside the set is a caller error and there is
+// no legitimate value that needs quoting. Escaping would also work, but an
+// allowlist keeps the generated script free of caller-controlled text entirely.
+var (
+	validWaitUntil    = []string{"load", "domcontentloaded", "networkidle", "commit"}
+	validImageFormats = []string{"png", "jpeg"}
+	validPaperFormats = []string{
+		"Letter", "Legal", "Tabloid", "Ledger",
+		"A0", "A1", "A2", "A3", "A4", "A5", "A6",
+	}
+)
+
+// MaxBrowserTimeoutMs bounds how long a single browser operation may block a
+// worker. Playwright treats 0 as "no timeout", which would pin a container and
+// an API goroutine indefinitely.
+const MaxBrowserTimeoutMs = 120000
+
+func oneOf(value, fallback string, allowed []string, field string) (string, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	for _, a := range allowed {
+		if value == a {
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("invalid %s %q: must be one of %s", field, value, strings.Join(allowed, ", "))
+}
+
+func validateWaitUntil(v string) (string, error) {
+	return oneOf(v, "load", validWaitUntil, "wait_until")
+}
+
+func validateImageFormat(v string) (string, error) {
+	return oneOf(v, "png", validImageFormats, "format")
+}
+
+func validatePaperFormat(v string) (string, error) {
+	return oneOf(v, "A4", validPaperFormats, "format")
+}
+
+// clampTimeout keeps a caller-supplied timeout inside a usable range.
+func clampTimeout(ms int) int {
+	if ms <= 0 {
+		return 30000
+	}
+	if ms > MaxBrowserTimeoutMs {
+		return MaxBrowserTimeoutMs
+	}
+	return ms
 }
 
 // escapeString renders s safe for interpolation into a single-quoted Python

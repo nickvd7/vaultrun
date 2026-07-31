@@ -51,6 +51,8 @@ export const api = {
       cpu_limit?: number;
       memory_limit_mb?: number;
       timeout_seconds?: number;
+      org_id?: string;
+      replay_enabled?: boolean;
     }) => request<Session>("/sessions", { method: "POST", body: JSON.stringify(body) }),
 
     delete: (id: string) =>
@@ -275,6 +277,11 @@ export const api = {
 
     resolveAlert: (alertId: string) =>
       request<{ status: string }>(`/costs/alerts/${alertId}/resolve`, { method: "POST" }),
+  },
+
+  orgs: {
+    mine: () =>
+      request<{ orgs: { id: string; name: string; slug: string; role: string }[] }>("/me/orgs"),
   },
 };
 

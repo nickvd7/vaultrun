@@ -1,6 +1,6 @@
 # VaultRun Roadmap
 
-Status as of **v0.3.1** (2026-07-31).
+Status as of **v0.3.2** (2026-07-31).
 
 ## Shipped
 
@@ -21,8 +21,9 @@ Status as of **v0.3.1** (2026-07-31).
 - [x] Seccomp profiles for containers
 - [x] Image allowlist in policy hook
 - [x] Per-session network policies (allowlist specific hosts)
-- [x] TLS termination (HTTPS via TLS_CERT_FILE/TLS_KEY_FILE; Let's Encrypt/ACME planned)
-- [x] Rate limiting (IP + per-actor; Redis-backed sliding window planned)
+- [x] TLS termination (HTTPS via TLS_CERT_FILE/TLS_KEY_FILE)
+- [x] ACME / Let's Encrypt helpers (`ACME_DOMAIN`, `ACME_EMAIL`, `ACME_CACHE_DIR`; HTTP-01 + autocert)
+- [x] Rate limiting (IP + per-actor; Redis-backed fixed 1-minute buckets when `REDIS_ADDR` is set)
 - [x] Session idle timeout cleanup (background goroutine)
 - [x] Streaming run output via SSE
 - [x] Run artifacts: automatic detection of new files post-run
@@ -93,7 +94,7 @@ These remain intentional non-goals until there is clear demand and infrastructur
 
 ## Near-term (backlog hints)
 
-- Let's Encrypt / ACME helpers for API TLS
-- Redis-backed sliding-window rate limiting (beyond in-memory)
-- Richer dashboard Session UX and org switcher
-- Optional public “starting from” commercial packaging once pricing is finalized
+- [x] Let's Encrypt / ACME helpers for API TLS (`ACME_*` + compose cache volume)
+- [x] Redis-backed rate limiting when `REDIS_ADDR` is set (fixed 1-minute buckets; true ZSET sliding window optional later)
+- [x] Richer dashboard Session UX and org switcher (`GET /me/orgs`, sidebar switcher, session links, `replay_enabled` on create)
+- [ ] Optional public “starting from” commercial packaging — **blocked on pricing**; scaffold in [commercial.md](commercial.md)

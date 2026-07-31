@@ -215,6 +215,9 @@ func newRouter(
 	// All remaining routes — rate-limited + any valid API key
 	authGroup := api.Group("/", buildMW()...)
 
+	// Orgs visible to the current actor (switcher / session create).
+	authGroup.GET("/me/orgs", orgH.ListMine)
+
 	sessH := handlers.NewSessionHandler(hub)
 	authGroup.POST("/sessions", sessH.Create)
 	authGroup.GET("/sessions", sessH.List)

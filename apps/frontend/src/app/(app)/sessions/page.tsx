@@ -1,29 +1,52 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Plus, Trash2, RefreshCw, Terminal } from "lucide-react";
 import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { relativeTime } from "@/lib/utils";
+import { useOrg } from "@/components/OrgContext";
 import type { Session } from "@/types";
 
 const DEFAULT_IMAGE = "python:3.12-slim";
 
 export default function SessionsPage() {
+  const { orgs, orgId } = useOrg();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", image: DEFAULT_IMAGE, network_enabled: false, cpu_limit: "1", memory_limit_mb: "512", timeout_seconds: "300" });
+  const [form, setForm] = useState({
+    name: "",
+    image: DEFAULT_IMAGE,
+    network_enabled: false,
+    cpu_limit: "1",
+    memory_limit_mb: "512",
+    timeout_seconds: "300",
+    org_id: "",
+    replay_enabled: false,
+  });
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
-    api.sessions.list(1, 50).then(({ sessions }) => setSessions(sessions)).catch(() => {}).finally(() => setLoading(false));
+    api.sessions
+      .list(1, 50)
+      .then(({ sessions: list }) => {
+        if (orgId) setSessions(list.filter((s) => s.org_id === orgId));
+        else setSessions(list);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [orgId]);
+
+  useEffect(() => {
+    if (orgId) setForm((f) => ({ ...f, org_id: orgId }));
+  }, [orgId]);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -36,9 +59,20 @@ export default function SessionsPage() {
         cpu_limit: parseFloat(form.cpu_limit) || 1,
         memory_limit_mb: parseInt(form.memory_limit_mb) || 512,
         timeout_seconds: parseInt(form.timeout_seconds) || 300,
+        org_id: form.org_id || undefined,
+        replay_enabled: form.replay_enabled,
       });
       setShowForm(false);
-      setForm({ name: "", image: DEFAULT_IMAGE, network_enabled: false, cpu_limit: "1", memory_limit_mb: "512", timeout_seconds: "300" });
+      setForm({
+        name: "",
+        image: DEFAULT_IMAGE,
+        network_enabled: false,
+        cpu_limit: "1",
+        memory_limit_mb: "512",
+        timeout_seconds: "300",
+        org_id: orgId ?? "",
+        replay_enabled: false,
+      });
       load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create session");
@@ -62,7 +96,10 @@ export default function SessionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Sessions</h1>
-          <p className="text-slate-500 text-sm mt-1">{sessions.length} session{sessions.length !== 1 ? "s" : ""}</p>
+          <p className="text-slate-500 text-sm mt-1">
+            {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+            {orgId ? " in selected org" : ""}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={load} className="p-2 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors" title="Refresh">
@@ -77,7 +114,6 @@ export default function SessionsPage() {
         </div>
       </div>
 
-      {/* Create form */}
       {showForm && (
         <div className="bg-[#0f0f1a] border border-slate-700 rounded-xl p-6 space-y-4">
           <h2 className="text-sm font-medium text-slate-200">New Session</h2>
@@ -97,10 +133,32 @@ export default function SessionsPage() {
             <Field label="Timeout (seconds)">
               <input value={form.timeout_seconds} onChange={(e) => setForm({ ...form, timeout_seconds: e.target.value })} placeholder="300" className={input} />
             </Field>
+            {orgs.length > 0 && (
+              <Field label="Organization">
+                <select
+                  value={form.org_id}
+                  onChange={(e) => setForm({ ...form, org_id: e.target.value })}
+                  className={input}
+                >
+                  <option value="">Personal (no org)</option>
+                  {orgs.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Field label="Network">
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={form.network_enabled} onChange={(e) => setForm({ ...form, network_enabled: e.target.checked })} className="accent-indigo-500" />
                 <span className="text-slate-300 text-sm">Enable network access</span>
+              </label>
+            </Field>
+            <Field label="Replay">
+              <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                <input type="checkbox" checked={form.replay_enabled} onChange={(e) => setForm({ ...form, replay_enabled: e.target.checked })} className="accent-indigo-500" />
+                <span className="text-slate-300 text-sm">Enable session replay checkpoints</span>
               </label>
             </Field>
           </div>
@@ -116,7 +174,6 @@ export default function SessionsPage() {
         </div>
       )}
 
-      {/* Sessions table */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-slate-600 text-sm">Loading…</div>
@@ -129,7 +186,7 @@ export default function SessionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
-                <th className="px-4 py-3 text-left">ID</th>
+                <th className="px-4 py-3 text-left">Session</th>
                 <th className="px-4 py-3 text-left">Image</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Resources</th>
@@ -140,7 +197,14 @@ export default function SessionsPage() {
             <tbody className="divide-y divide-slate-800/50">
               {sessions.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-800/20 transition-colors">
-                  <td className="px-4 py-3 font-mono text-indigo-400 text-xs">{s.id.slice(0, 12)}…</td>
+                  <td className="px-4 py-3">
+                    <Link href={`/sessions/${s.id}`} className="font-mono text-indigo-400 text-xs hover:underline">
+                      {s.name || `${s.id.slice(0, 12)}…`}
+                    </Link>
+                    {s.replay_enabled && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-600">replay</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-300 font-mono text-xs">{s.image}</td>
                   <td className="px-4 py-3"><StatusBadge status={s.status} /></td>
                   <td className="px-4 py-3 text-xs text-slate-500">{s.cpu_limit}CPU · {s.memory_limit_mb}MB</td>

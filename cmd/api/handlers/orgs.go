@@ -112,6 +112,31 @@ func (oh *OrgHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"orgs": orgs, "pagination": pg.response(total)})
 }
 
+// GET /api/v1/me/orgs — organizations visible to the authenticated actor.
+// Master key sees every org (role=admin). Other keys see memberships only.
+func (oh *OrgHandler) ListMine(c *gin.Context) {
+	actor := middleware.Actor(c)
+	if actor == "master" {
+		orgs, err := dbpkg.ListOrgs(c.Request.Context(), oh.h.db, 200, 0)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
+			return
+		}
+		out := make([]dbpkg.OrgWithRole, 0, len(orgs))
+		for _, o := range orgs {
+			out = append(out, dbpkg.OrgWithRole{Organization: *o, Role: models.OrgRoleAdmin})
+		}
+		c.JSON(http.StatusOK, gin.H{"orgs": out})
+		return
+	}
+	orgs, err := dbpkg.ListOrgsForActor(c.Request.Context(), oh.h.db, actor)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"orgs": orgs})
+}
+
 // GET /api/v1/orgs/:id  (master key or any org member)
 func (oh *OrgHandler) Get(c *gin.Context) {
 	orgID, ok := parseUUID(c, "id")

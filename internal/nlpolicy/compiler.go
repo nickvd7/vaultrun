@@ -15,6 +15,12 @@ func NewCompiler() *Compiler {
 
 // CompileToOPA converts Policy to OPA Rego policy
 func (c *Compiler) CompileToOPA(policy *Policy) (string, error) {
+	// A Policy comes from an LLM, so every field is untrusted: a
+	// prompt-injection attack lands directly in the values interpolated below.
+	if err := policy.Validate(); err != nil {
+		return "", err
+	}
+
 	var rego strings.Builder
 
 	rego.WriteString("package vaultrun\n\n")
@@ -94,6 +100,10 @@ func (c *Compiler) CompileToOPA(policy *Policy) (string, error) {
 
 // CompileToDockerConfig converts Policy to Docker container constraints
 func (c *Compiler) CompileToDockerConfig(policy *Policy) (*DockerConfig, error) {
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+
 	config := &DockerConfig{
 		CPULimit:      policy.ResourceLimits.CPULimit,
 		MemoryLimitMB: policy.ResourceLimits.MemoryLimitMB,
@@ -117,6 +127,12 @@ func (c *Compiler) CompileToDockerConfig(policy *Policy) (*DockerConfig, error) 
 
 // CompileToNetworkRules converts Policy to iptables/network rules
 func (c *Compiler) CompileToNetworkRules(policy *Policy) (*NetworkRules, error) {
+	// Allowed hosts are interpolated into iptables command lines below, so an
+	// unvalidated value could append its own rule and reverse the default drop.
+	if err := policy.Validate(); err != nil {
+		return nil, err
+	}
+
 	rules := &NetworkRules{
 		Enabled:      policy.NetworkPolicy.Enabled,
 		AllowedHosts: policy.NetworkPolicy.AllowedHosts,

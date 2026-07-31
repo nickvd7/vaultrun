@@ -32,6 +32,10 @@ func New(db *sqlx.DB) *Manager {
 
 // Create creates a new template
 func (m *Manager) Create(ctx context.Context, orgID uuid.UUID, req CreateTemplateRequest) (*Template, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Validate slug uniqueness
 	var exists bool
 	err := m.db.GetContext(ctx, &exists, "SELECT EXISTS(SELECT 1 FROM session_templates WHERE slug = $1)", req.Slug)
@@ -350,6 +354,10 @@ func (m *Manager) List(ctx context.Context, filter TemplateFilter) ([]Template, 
 
 // Update updates a template
 func (m *Manager) Update(ctx context.Context, id uuid.UUID, req UpdateTemplateRequest) (*Template, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
 	tmpl, err := m.Get(ctx, id)
 	if err != nil {
 		return nil, err

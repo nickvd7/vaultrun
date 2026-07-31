@@ -36,6 +36,13 @@ func New(db *sqlx.DB, redisClient *redis.Client) *Manager {
 
 // JoinSession registers an agent as active in a session
 func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID, agentName string) (*Agent, error) {
+	if err := ValidateAgentID(agentID); err != nil {
+		return nil, err
+	}
+	if err := ValidateAgentName(agentName); err != nil {
+		return nil, err
+	}
+
 	// Check if session allows collaboration
 	var allowCollab bool
 	var maxAgents int
@@ -114,6 +121,10 @@ func (m *Manager) JoinSession(ctx context.Context, sessionID uuid.UUID, agentID,
 
 // LeaveSession removes an agent from a session
 func (m *Manager) LeaveSession(ctx context.Context, sessionID uuid.UUID, agentID string) error {
+	if err := ValidateAgentID(agentID); err != nil {
+		return err
+	}
+
 	// Remove from Redis
 	pipe := m.redis.Pipeline()
 	pipe.SRem(ctx, redisKeyActiveAgents(sessionID), agentID)
@@ -147,6 +158,16 @@ func (m *Manager) LeaveSession(ctx context.Context, sessionID uuid.UUID, agentID
 
 // UpdatePresence updates an agent's presence (current file, status)
 func (m *Manager) UpdatePresence(ctx context.Context, sessionID uuid.UUID, agentID string, currentFile string, status string) error {
+	if err := ValidateAgentID(agentID); err != nil {
+		return err
+	}
+	if err := ValidateFilePath(currentFile); err != nil {
+		return err
+	}
+	if err := ValidateAgentStatus(status); err != nil {
+		return err
+	}
+
 	// Get current agent
 	agentJSON, err := m.redis.Get(ctx, redisKeyAgent(sessionID, agentID)).Result()
 	if err == redis.Nil {
@@ -237,6 +258,24 @@ func (m *Manager) GetActiveAgents(ctx context.Context, sessionID uuid.UUID) ([]A
 
 // SendMessage sends a message from one agent to another (or broadcast)
 func (m *Manager) SendMessage(ctx context.Context, sessionID uuid.UUID, from, to, body string, msgType string) (*Message, error) {
+	if err := ValidateAgentID(from); err != nil {
+		return nil, fmt.Errorf("invalid sender: %w", err)
+	}
+	// A broadcast has no recipient; a direct message must name one.
+	if to != "" {
+		if err := ValidateAgentID(to); err != nil {
+			return nil, fmt.Errorf("invalid recipient: %w", err)
+		}
+	} else if msgType == MessageTypeDirect {
+		return nil, fmt.Errorf("direct message requires a recipient")
+	}
+	if err := ValidateMessageBody(body); err != nil {
+		return nil, err
+	}
+	if err := ValidateMessageType(msgType); err != nil {
+		return nil, err
+	}
+
 	msg := &Message{
 		ID:        uuid.New(),
 		SessionID: sessionID,

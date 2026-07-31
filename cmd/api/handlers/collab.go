@@ -49,14 +49,18 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 	}
 
 	agentID := c.Query("agent_id")
-	if agentID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "agent_id is required"})
+	if err := collab.ValidateAgentID(agentID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	agentName := c.Query("agent_name")
 	if agentName == "" {
 		agentName = agentID
+	}
+	if err := collab.ValidateAgentName(agentName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Check session access
@@ -75,28 +79,26 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 		return
 	}
 
-	// Upgrade to WebSocket
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "websocket upgrade failed"})
+	// Join the session before upgrading: once the connection is hijacked we can
+	// no longer write an HTTP error response, so every rejection must happen here.
+	agent, err := h.manager.JoinSession(c.Request.Context(), sessionID, agentID, agentName)
+	switch {
+	case err == collab.ErrMaxAgentsReached:
+		c.JSON(http.StatusConflict, gin.H{"error": "maximum agents reached for this session"})
+		return
+	case err == collab.ErrSessionNotCollab:
+		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled"})
+		return
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Join session
-	agent, err := h.manager.JoinSession(c.Request.Context(), sessionID, agentID, agentName)
-	if err == collab.ErrMaxAgentsReached {
-		conn.Close()
-		c.JSON(http.StatusForbidden, gin.H{"error": "maximum agents reached"})
-		return
-	}
-	if err == collab.ErrSessionNotCollab {
-		conn.Close()
-		c.JSON(http.StatusForbidden, gin.H{"error": "collaboration not enabled"})
-		return
-	}
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		conn.Close()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// Upgrade already wrote an HTTP error. Release the slot we just took,
+		// otherwise a client that fails to upgrade leaks it until the TTL expires.
+		_ = h.manager.LeaveSession(c.Request.Context(), sessionID, agentID)
 		return
 	}
 
@@ -255,8 +257,12 @@ func (h *CollabHandler) EnableCollaboration(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	maxAgents := req.MaxAgents
-	if maxAgents <= 0 {
-		maxAgents = 4
+	if maxAgents == 0 {
+		maxAgents = 4 // sensible default when the caller omits the field
+	}
+	if err := collab.ValidateMaxAgents(maxAgents); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	_, err = h.baseHub.db.ExecContext(c.Request.Context(),

@@ -53,6 +53,22 @@ const (
 	// Artifact actions
 	ActionArtifactCreated = "artifact.created"
 	ActionArtifactDeleted = "artifact.deleted"
+
+	// Session replay actions
+	ActionCheckpointCreated  = "checkpoint.created"
+	ActionCheckpointRestored = "checkpoint.restored"
+	ActionCheckpointForked   = "checkpoint.forked"
+	ActionCheckpointDeleted  = "checkpoint.deleted"
+
+	// Session template actions
+	ActionTemplateCreated       = "template.created"
+	ActionTemplateUpdated       = "template.updated"
+	ActionTemplateDeleted       = "template.deleted"
+	ActionSessionFromTemplate   = "session.created_from_template"
+
+	// Multi-agent collaboration actions
+	ActionAgentJoined            = "agent.joined"
+	ActionCollaborationEnabled   = "collaboration.enabled"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.

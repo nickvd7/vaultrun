@@ -129,7 +129,7 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 	// Audit log
 	h.hub.audit.Log(c.Request.Context(), audit.Event{
 		Actor:  actor,
-		Action: "template.created",
+		Action: models.ActionTemplateCreated,
 		Metadata: map[string]interface{}{
 			"template_id": tmpl.ID.String(),
 			"slug":        tmpl.Slug,
@@ -177,7 +177,7 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 	// Audit log
 	h.hub.audit.Log(c.Request.Context(), audit.Event{
 		Actor:  actor,
-		Action: "template.updated",
+		Action: models.ActionTemplateUpdated,
 		Metadata: map[string]interface{}{
 			"template_id": id.String(),
 		},
@@ -213,7 +213,7 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 	// Audit log
 	h.hub.audit.Log(c.Request.Context(), audit.Event{
 		Actor:  actor,
-		Action: "template.deleted",
+		Action: models.ActionTemplateDeleted,
 		Metadata: map[string]interface{}{
 			"template_id": id.String(),
 		},
@@ -320,7 +320,7 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 	h.hub.audit.Log(c.Request.Context(), audit.Event{
 		Actor:     actor,
 		SessionID: &sessionIDPtr,
-		Action:    "session.created_from_template",
+		Action:    models.ActionSessionFromTemplate,
 		Metadata: map[string]interface{}{
 			"session_id":    session.ID.String(),
 			"template_id":   templateID.String(),

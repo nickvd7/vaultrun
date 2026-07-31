@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
+	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/replay"
 )
 
@@ -124,6 +126,20 @@ func (rh *ReplayHandler) CreateCheckpoint(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "checkpoint too large"})
 		return
 	}
+	if err == replay.ErrReplayDisabled {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "replay is not enabled for this session; set replay_enabled when creating it",
+		})
+		return
+	}
+	if err == replay.ErrSessionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+	if errors.Is(err, replay.ErrInvalidCheckpoint) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err == replay.ErrOrgStorageLimitExceeded {
 		c.JSON(http.StatusPaymentRequired, gin.H{"error": "organization storage limit exceeded"})
 		return
@@ -136,7 +152,7 @@ func (rh *ReplayHandler) CreateCheckpoint(c *gin.Context) {
 
 	// Audit log
 	rh.h.audit.Log(c.Request.Context(), audit.Event{
-		Action:    "checkpoint.create",
+		Action:    models.ActionCheckpointCreated,
 		Actor:     actor,
 		SessionID: &sessionID,
 		Metadata: map[string]interface{}{
@@ -346,7 +362,7 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 
 	// Audit log
 	rh.h.audit.Log(c.Request.Context(), audit.Event{
-		Action:    "checkpoint.restore",
+		Action:    models.ActionCheckpointRestored,
 		Actor:     actor,
 		SessionID: &sessionID,
 		Metadata: map[string]interface{}{
@@ -428,7 +444,7 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 
 	// Audit log
 	rh.h.audit.Log(c.Request.Context(), audit.Event{
-		Action: "checkpoint.fork",
+		Action: models.ActionCheckpointForked,
 		Actor:  actor,
 		Metadata: map[string]interface{}{
 			"checkpoint_id":  checkpointID.String(),
@@ -504,7 +520,7 @@ func (rh *ReplayHandler) DeleteCheckpoint(c *gin.Context) {
 
 	// Audit log
 	rh.h.audit.Log(c.Request.Context(), audit.Event{
-		Action:    "checkpoint.delete",
+		Action:    models.ActionCheckpointDeleted,
 		Actor:     actor,
 		SessionID: &sessionID,
 		Metadata: map[string]interface{}{

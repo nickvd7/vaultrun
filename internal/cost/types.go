@@ -94,26 +94,29 @@ const (
 )
 
 // SessionCostSummary aggregates all costs for a session
+// FirstMetric and LastMetric are pointers because the query left-joins
+// cost_metrics: a session that has not been billed yet has no metrics, and
+// MIN/MAX over zero rows returns NULL.
 type SessionCostSummary struct {
-	SessionID    uuid.UUID `json:"session_id"`
-	SessionName  string    `json:"session_name"`
-	ComputeCost  float64   `json:"compute_cost"`
-	StorageCost  float64   `json:"storage_cost"`
-	NetworkCost  float64   `json:"network_cost"`
-	TotalCost    float64   `json:"total_cost"`
-	FirstMetric  time.Time `json:"first_metric"`
-	LastMetric   time.Time `json:"last_metric"`
+	SessionID   uuid.UUID  `db:"session_id"   json:"session_id"`
+	SessionName string     `db:"session_name" json:"session_name"`
+	ComputeCost float64    `db:"compute_cost" json:"compute_cost"`
+	StorageCost float64    `db:"storage_cost" json:"storage_cost"`
+	NetworkCost float64    `db:"network_cost" json:"network_cost"`
+	TotalCost   float64    `db:"total_cost"   json:"total_cost"`
+	FirstMetric *time.Time `db:"first_metric" json:"first_metric,omitempty"`
+	LastMetric  *time.Time `db:"last_metric"  json:"last_metric,omitempty"`
 }
 
 // OrgCostSummary aggregates all costs for an organization
 type OrgCostSummary struct {
-	OrgID        uuid.UUID `json:"org_id"`
-	OrgName      string    `json:"org_name"`
-	ComputeCost  float64   `json:"compute_cost"`
-	StorageCost  float64   `json:"storage_cost"`
-	NetworkCost  float64   `json:"network_cost"`
-	TotalCost    float64   `json:"total_cost"`
-	SessionCount int       `json:"session_count"`
+	OrgID        uuid.UUID `db:"org_id"        json:"org_id"`
+	OrgName      string    `db:"org_name"      json:"org_name"`
+	ComputeCost  float64   `db:"compute_cost"  json:"compute_cost"`
+	StorageCost  float64   `db:"storage_cost"  json:"storage_cost"`
+	NetworkCost  float64   `db:"network_cost"  json:"network_cost"`
+	TotalCost    float64   `db:"total_cost"    json:"total_cost"`
+	SessionCount int       `db:"session_count" json:"session_count"`
 }
 
 // CostBreakdown provides detailed cost analysis

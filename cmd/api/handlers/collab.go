@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -11,28 +12,57 @@ import (
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/collab"
+	"github.com/nickvd7/vaultrun/internal/models"
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// TODO: Check origin against allowed origins
-		return true
-	},
-}
 
 // CollabHandler handles collaboration-related HTTP requests
 type CollabHandler struct {
-	manager *collab.Manager
-	hub     *collab.Hub
-	baseHub *Hub
+	manager  *collab.Manager
+	hub      *collab.Hub
+	baseHub  *Hub
+	upgrader websocket.Upgrader
+}
+
+// newUpgrader builds a WebSocket upgrader that only accepts the origins the
+// deployment configured through CORS_ALLOWED_ORIGINS.
+//
+// The default CheckOrigin already rejects cross-origin requests, but it does so
+// by comparing against the Host header, which is unreliable behind a proxy.
+// Accepting every origin — the previous behaviour — makes the endpoint reachable
+// from any page a user visits: the browser attaches their cookies, so a
+// malicious site could drive a session on their behalf.
+//
+// A request without an Origin header is allowed: non-browser clients (the SDK,
+// an agent) do not send one, and they are the primary consumers here. Browsers
+// always send it for WebSocket handshakes, so this does not weaken the check
+// for the case it exists to defend.
+func newUpgrader(allowedOrigins []string) websocket.Upgrader {
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		allowed[strings.ToLower(strings.TrimSpace(origin))] = true
+	}
+
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // non-browser client
+			}
+			if allowed["*"] {
+				return true
+			}
+			return allowed[strings.ToLower(origin)]
+		},
+	}
 }
 
 // NewCollabHandler creates a new collaboration handler
 func NewCollabHandler(manager *collab.Manager, hub *collab.Hub, baseHub *Hub) *CollabHandler {
 	return &CollabHandler{
-		manager: manager,
+		upgrader: newUpgrader(baseHub.cfg.Server.CORSOrigins),
+		manager:  manager,
 		hub:     hub,
 		baseHub: baseHub,
 	}
@@ -94,7 +124,7 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// Upgrade already wrote an HTTP error. Release the slot we just took,
 		// otherwise a client that fails to upgrade leaks it until the TTL expires.
@@ -110,7 +140,7 @@ func (h *CollabHandler) WebSocket(c *gin.Context) {
 	h.baseHub.audit.Log(c.Request.Context(), audit.Event{
 		Actor:     actor,
 		SessionID: &sessionID,
-		Action:    "agent.joined",
+		Action:    models.ActionAgentJoined,
 		Metadata: map[string]interface{}{
 			"agent_id":   agentID,
 			"agent_name": agentName,

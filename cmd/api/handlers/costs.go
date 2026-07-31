@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/cost"
@@ -66,7 +66,7 @@ func (ch *CostHandler) GetCostBreakdown(c *gin.Context) {
 		return
 	}
 
-	breakdown, err := ch.tracker.GetCostBreakdown(c.Request.Context(), period)
+	breakdown, err := ch.tracker.GetCostBreakdown(c.Request.Context(), period, callerScope(c))
 	if err != nil {
 		slog.Error("get cost breakdown", "err", err, "period", period)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get breakdown"})
@@ -74,6 +74,16 @@ func (ch *CostHandler) GetCostBreakdown(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, breakdown)
+}
+
+// callerScope restricts cost aggregates to what the calling principal may see.
+// Only the master key gets the deployment-wide view.
+func callerScope(c *gin.Context) cost.Scope {
+	actor := middleware.Actor(c)
+	if actor == "master" {
+		return cost.DeploymentScope()
+	}
+	return cost.ActorScope(actor)
 }
 
 // GET /api/v1/orgs/:id/costs?month=YYYY-MM
@@ -100,20 +110,21 @@ func (ch *CostHandler) GetOrgCosts(c *gin.Context) {
 	}
 
 	summary, err := ch.tracker.GetOrgSummary(c.Request.Context(), orgID, month)
+	if errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "organization not found"})
+		return
+	}
 	if err != nil {
 		slog.Error("get org costs", "err", err, "org_id", orgID, "month", month)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get org costs"})
 		return
 	}
 
-	// Get budget if exists
-	var budget *cost.CostBudget
-	err = ch.h.db.GetContext(c.Request.Context(), &budget, `
-		SELECT * FROM cost_budgets 
-		WHERE org_id = $1 AND current_month = $2
-	`, orgID, month)
-	if err != nil && err != sql.ErrNoRows {
-		slog.Error("get budget", "err", err)
+	budget, err := ch.tracker.GetBudget(c.Request.Context(), orgID, month)
+	if err != nil {
+		slog.Error("get budget", "err", err, "org_id", orgID, "month", month)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get budget"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -126,7 +137,7 @@ func (ch *CostHandler) GetOrgCosts(c *gin.Context) {
 func (ch *CostHandler) GetAlerts(c *gin.Context) {
 	resolved := c.DefaultQuery("resolved", "false") == "true"
 
-	alerts, err := ch.tracker.GetAlerts(c.Request.Context(), resolved)
+	alerts, err := ch.tracker.GetAlerts(c.Request.Context(), resolved, callerScope(c))
 	if err != nil {
 		slog.Error("get alerts", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get alerts"})
@@ -144,7 +155,11 @@ func (ch *CostHandler) ResolveAlert(c *gin.Context) {
 	}
 
 	actor := middleware.Actor(c)
-	err := ch.tracker.ResolveAlert(c.Request.Context(), alertID, actor)
+	err := ch.tracker.ResolveAlert(c.Request.Context(), alertID, actor, callerScope(c))
+	if errors.Is(err, cost.ErrAlertNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "alert not found"})
+		return
+	}
 	if err != nil {
 		slog.Error("resolve alert", "err", err, "alert_id", alertID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve alert"})
@@ -174,6 +189,7 @@ func (ch *CostHandler) SetBudget(c *gin.Context) {
 	var req struct {
 		MonthlyLimit   float64 `json:"monthly_limit" binding:"required"`
 		AlertThreshold float64 `json:"alert_threshold"`
+		Month          string  `json:"month"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -183,19 +199,19 @@ func (ch *CostHandler) SetBudget(c *gin.Context) {
 	if req.AlertThreshold == 0 {
 		req.AlertThreshold = 0.8 // Default 80%
 	}
+	if req.Month == "" {
+		req.Month = time.Now().Format("2006-01")
+	}
 
-	month := time.Now().Format("2006-01")
-
-	_, err := ch.h.db.ExecContext(c.Request.Context(), `
-		INSERT INTO cost_budgets (id, org_id, monthly_limit, alert_threshold, current_month)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (org_id, current_month)
-		DO UPDATE SET 
-			monthly_limit = EXCLUDED.monthly_limit,
-			alert_threshold = EXCLUDED.alert_threshold,
-			updated_at = NOW()
-	`, uuid.New(), orgID, req.MonthlyLimit, req.AlertThreshold, month)
-
+	err := ch.tracker.SetBudget(c.Request.Context(), orgID, cost.BudgetOpts{
+		MonthlyLimit:   req.MonthlyLimit,
+		AlertThreshold: req.AlertThreshold,
+		Month:          req.Month,
+	})
+	if errors.Is(err, cost.ErrInvalidBudget) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		slog.Error("set budget", "err", err, "org_id", orgID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set budget"})

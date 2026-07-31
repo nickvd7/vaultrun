@@ -37,6 +37,7 @@ type ServerConfig struct {
 	// Takes precedence over TLS_CERT_FILE/TLS_KEY_FILE when set.
 	ACMEDomain   string // ACME_DOMAIN  — hostname to obtain a cert for (e.g. "api.example.com")
 	ACMECacheDir string // ACME_CACHE_DIR — directory to persist ACME account keys + certs (default: /data/acme-cache)
+	ACMEEmail    string // ACME_EMAIL — contact email registered with Let's Encrypt (optional but recommended)
 }
 
 type DatabaseConfig struct {
@@ -192,6 +193,7 @@ func Load() (*Config, error) {
 			TLSKeyFile:      getEnv("TLS_KEY_FILE", ""),
 			ACMEDomain:      getEnv("ACME_DOMAIN", ""),
 			ACMECacheDir:    getEnv("ACME_CACHE_DIR", "/data/acme-cache"),
+			ACMEEmail:       getEnv("ACME_EMAIL", ""),
 		},
 		Database: DatabaseConfig{
 			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=prefer"),

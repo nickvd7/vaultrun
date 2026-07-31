@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound, LogOut, ShieldCheck, Archive, Package, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiKey } from "@/components/ApiKeyGate";
+import { useOrg } from "@/components/OrgContext";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -25,6 +26,7 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { apiKey, clearApiKey } = useApiKey();
+  const { orgs, orgId, setOrgId } = useOrg();
 
   return (
     <aside
@@ -35,14 +37,30 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
         mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       )}
     >
-      {/* Logo — hidden on mobile (shown in AppShell header) */}
       <div className="hidden lg:flex items-center gap-2 px-4 py-5 border-b border-slate-800">
         <Shield className="w-5 h-5 text-indigo-400" />
         <span className="font-semibold text-slate-100 tracking-tight">VaultRun</span>
       </div>
       <div className="lg:hidden h-3 shrink-0" aria-hidden="true" />
 
-      {/* Nav */}
+      {orgs.length > 0 && (
+        <div className="px-3 py-3 border-b border-slate-800">
+          <label className="block text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Organization</label>
+          <select
+            value={orgId ?? ""}
+            onChange={(e) => setOrgId(e.target.value || null)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">Personal / all</option>
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name} ({o.role})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link
@@ -62,7 +80,6 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="px-2 py-3 border-t border-slate-800 space-y-1">
         {apiKey && (
           <div className="px-3 py-1.5 text-xs text-slate-600 font-mono truncate">
@@ -81,7 +98,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
         </button>
         <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-700">
           <FileText className="w-3 h-3" />
-          <span>v0.2.1</span>
+          <span>v0.3.2</span>
         </div>
       </div>
     </aside>

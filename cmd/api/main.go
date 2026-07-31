@@ -372,6 +372,7 @@ func main() {
 				Prompt:     autocert.AcceptTOS,
 				HostPolicy: autocert.HostWhitelist(cfg.Server.ACMEDomain),
 				Cache:      autocert.DirCache(cfg.Server.ACMECacheDir),
+				Email:      cfg.Server.ACMEEmail,
 			}
 			// HTTP-01 challenge listener on :80 (background goroutine).
 			go func() {

@@ -46,6 +46,8 @@ type createSessionRequest struct {
 	SnapshotID *string `json:"snapshot_id"`
 	// GPUEnabled requests GPU device passthrough when the server has GPUs configured.
 	GPUEnabled bool    `json:"gpu_enabled"`
+	// ReplayEnabled opts the session into checkpoint recording (session replay).
+	ReplayEnabled bool `json:"replay_enabled"`
 }
 
 // POST /api/v1/sessions
@@ -200,6 +202,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		AllowedHosts:   allowedHosts,
 		CreatedBy:      actor,
 		OrgID:          orgID,
+		ReplayEnabled:  req.ReplayEnabled,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}

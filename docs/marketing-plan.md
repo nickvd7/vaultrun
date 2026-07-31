@@ -44,6 +44,7 @@ VaultRun is the **self-hosted secure runtime** for AI agents — isolated Docker
 - [launch-post.md](launch-post.md) — LinkedIn short/long, HN draft
 - [demo-video-script.md](demo-video-script.md) — 2–3 min walkthrough
 - [enterprise.html](../site/enterprise.html) — procurement one-pager
+- [commercial.md](commercial.md) — packaging scaffold (pricing blocked)
 - [use-cases.html](../site/use-cases.html) — reference patterns (no customer logos)
 - [llms.txt](../site/llms.txt) — AI agent grounding
 

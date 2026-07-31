@@ -51,9 +51,12 @@ services:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
       # Auth / policy
       - OPA_POLICY_FILE=${OPA_POLICY_FILE:-}
-      # TLS (set both to enable HTTPS on the API server)
+      # TLS — static files OR ACME (ACME_DOMAIN takes precedence)
       - TLS_CERT_FILE=${TLS_CERT_FILE:-}
       - TLS_KEY_FILE=${TLS_KEY_FILE:-}
+      - ACME_DOMAIN=${ACME_DOMAIN:-}
+      - ACME_EMAIL=${ACME_EMAIL:-}
+      - ACME_CACHE_DIR=${ACME_CACHE_DIR:-/data/acme-cache}
       - DOCKER_IMAGE_ALLOWLIST=${DOCKER_IMAGE_ALLOWLIST:-}
       # Seccomp + cosign (optional but recommended in production)
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
@@ -70,6 +73,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspace_data:/data/workspaces
+      - acme_cache:/data/acme-cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,3 +138,4 @@ volumes:
   postgres_data:
   redis_data:
   workspace_data:
+  acme_cache:

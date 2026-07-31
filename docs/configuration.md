@@ -19,6 +19,9 @@ openssl rand -hex 32
 | `GIN_MODE` | `release` | Gin mode: `debug` \| `release` (debug logs request bodies) |
 | `TLS_CERT_FILE` | | Path to PEM TLS certificate chain. Both this and `TLS_KEY_FILE` must be set to enable HTTPS. |
 | `TLS_KEY_FILE` | | Path to PEM TLS private key |
+| `ACME_DOMAIN` | | Public hostname for Let's Encrypt (e.g. `api.example.com`). When set, the API listens on `:443` and serves HTTP-01 on `:80`. Takes precedence over static `TLS_*` files. |
+| `ACME_EMAIL` | | Contact email registered with Let's Encrypt (optional, recommended for expiry notices). |
+| `ACME_CACHE_DIR` | `/data/acme-cache` | Directory for ACME account keys and certificates (persist across restarts). |
 
 ## Rate Limiting
 
@@ -27,6 +30,8 @@ openssl rand -hex 32
 | `RATE_LIMIT_PER_MIN` | `120` | Max requests per minute per client IP on authenticated routes. `0` = disabled. |
 | `ACTOR_RATE_LIMIT_PER_MIN` | `0` | Max requests per minute per API key actor. `0` = inherit `RATE_LIMIT_PER_MIN`; `-1` = disabled. |
 | `CORS_ALLOWED_ORIGINS` | | Comma-separated list of allowed CORS origins. Empty = block all cross-origin requests (recommended for API-only use). |
+
+When `REDIS_ADDR` is set, IP and actor limits use **Redis-backed fixed 1-minute buckets** (shared across API replicas; fail closed to in-memory on Redis errors). Without Redis, limits are process-local token buckets.
 
 ---
 

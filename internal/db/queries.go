@@ -17,10 +17,10 @@ func CreateSession(ctx context.Context, db *sqlx.DB, s *models.Session) error {
 	q := `
 		INSERT INTO sessions (id, name, image, status, network_enabled, cpu_limit,
 		    memory_limit_mb, timeout_seconds, workspace_path, labels, allowed_hosts,
-		    created_by, org_id, created_at, updated_at)
+		    created_by, org_id, replay_enabled, created_at, updated_at)
 		VALUES (:id, :name, :image, :status, :network_enabled, :cpu_limit,
 		    :memory_limit_mb, :timeout_seconds, :workspace_path, :labels, :allowed_hosts,
-		    :created_by, :org_id, :created_at, :updated_at)
+		    :created_by, :org_id, :replay_enabled, :created_at, :updated_at)
 	`
 	_, err := db.NamedExecContext(ctx, q, s)
 	return err
@@ -564,6 +564,25 @@ func GetActorOrgs(ctx context.Context, db *sqlx.DB, principal string) ([]*models
 		principal,
 	)
 	return members, err
+}
+
+// OrgWithRole is an organization plus the caller's membership role.
+type OrgWithRole struct {
+	models.Organization
+	Role string `db:"role" json:"role"`
+}
+
+// ListOrgsForActor returns organizations the principal belongs to, with role.
+func ListOrgsForActor(ctx context.Context, db *sqlx.DB, principal string) ([]OrgWithRole, error) {
+	out := make([]OrgWithRole, 0)
+	err := db.SelectContext(ctx, &out, `
+		SELECT o.id, o.name, o.slug, o.created_at, o.updated_at, m.role
+		FROM organizations o
+		INNER JOIN org_members m ON m.org_id = o.id
+		WHERE m.principal = $1
+		ORDER BY o.name ASC
+	`, principal)
+	return out, err
 }
 
 // ListOrgSessions returns active sessions belonging to the given org.

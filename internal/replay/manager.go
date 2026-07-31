@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,11 +45,23 @@ var (
 		"**/credentials", "**/secrets.yaml", "**/secret.*",
 	}
 	
-	// SensitiveEnvVars are redacted from checkpoint env snapshots
+	// SensitiveEnvVars are substrings that mark an environment variable as
+	// secret; a matching variable is replaced with [REDACTED] in checkpoint
+	// snapshots. Matching is substring-based and case-insensitive, so short
+	// generic fragments cover many concrete names: "KEY" covers
+	// AWS_ACCESS_KEY_ID, SSH_KEY and API_KEY alike.
+	//
+	// Erring toward over-redaction is deliberate: a redacted non-secret is a
+	// minor annoyance during debugging, a leaked credential is not.
 	SensitiveEnvVars = []string{
-		"AWS_SECRET_ACCESS_KEY", "DATABASE_PASSWORD",
-		"API_KEY", "SECRET_KEY", "PRIVATE_KEY",
-		"PASSWORD", "TOKEN", "SECRET",
+		"PASSWORD", "PASSWD", "PWD",
+		"SECRET", "TOKEN", "KEY",
+		"CREDENTIAL", "AUTH",
+		"SALT", "PASSPHRASE", "CIPHER",
+		"SESSION", "COOKIE",
+		"CERT", "SIGNATURE", "SIGNING",
+		"PRIVATE", "APIKEY",
+		"DSN", "CONNECTION_STRING",
 	}
 )
 
@@ -293,24 +307,85 @@ func (m *Manager) DeleteCheckpoint(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// signCheckpoint creates an HMAC signature for a checkpoint
+// signCheckpoint computes the HMAC-SHA256 over every immutable field of a
+// checkpoint.
+//
+// The signature must cover the execution context, not just the identity fields:
+// a signature over only the IDs would let anyone with database access rewrite
+// the recorded command, exit code or captured output while the checkpoint still
+// verified — which defeats the purpose of signing it.
+//
+// Fields are separated by NUL bytes so that moving a delimiter character
+// between two adjacent fields changes the digest (boundary confusion), matching
+// the scheme used by the audit logger.
 func (m *Manager) signCheckpoint(cp *Checkpoint) string {
-	data := fmt.Sprintf("%s:%s:%d:%d",
-		cp.SessionID.String(),
-		cp.WorkspaceSnapshotID.String(),
-		cp.CheckpointNumber,
-		cp.CreatedAt.Unix(),
-	)
-	
 	h := hmac.New(sha256.New, m.signingKey)
-	h.Write([]byte(data))
+
+	writeField := func(s string) {
+		h.Write([]byte(s))
+		h.Write([]byte{0})
+	}
+
+	writeField(cp.SessionID.String())
+	writeField(cp.WorkspaceSnapshotID.String())
+	writeField(strconv.Itoa(cp.CheckpointNumber))
+	writeField(strconv.FormatInt(cp.CreatedAt.Unix(), 10))
+	writeField(cp.ArchivePath)
+	writeField(cp.Command)
+	writeField(cp.StdoutPreview)
+	writeField(cp.StderrPreview)
+	writeField(strconv.FormatInt(cp.SizeBytes, 10))
+
+	// Optional fields contribute a stable placeholder when unset so that
+	// "absent" and "empty" cannot be swapped.
+	if cp.RunID != nil {
+		writeField(cp.RunID.String())
+	} else {
+		writeField("")
+	}
+	if cp.ExitCode != nil {
+		writeField(strconv.Itoa(*cp.ExitCode))
+	} else {
+		writeField("")
+	}
+	if cp.DurationMs != nil {
+		writeField(strconv.Itoa(*cp.DurationMs))
+	} else {
+		writeField("")
+	}
+
+	// Args and the redacted env snapshot are JSON-encoded. Both are stored as
+	// JSONB, so marshalling here matches what the database round-trips.
+	argsJSON, _ := json.Marshal(cp.Args)
+	writeField(string(argsJSON))
+	envJSON, _ := json.Marshal(cp.EnvVarsSnapshot)
+	writeField(string(envJSON))
+
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// verifyCheckpoint verifies a checkpoint's HMAC signature
+// verifyCheckpoint reports whether a checkpoint's stored signature matches a
+// freshly computed one. Returns false when signing is not configured, so a
+// deployment without a key cannot silently accept unsigned checkpoints.
 func (m *Manager) verifyCheckpoint(cp *Checkpoint) bool {
-	expectedSig := m.signCheckpoint(cp)
-	return hmac.Equal([]byte(cp.Signature), []byte(expectedSig))
+	if len(m.signingKey) == 0 || cp.Signature == "" {
+		return false
+	}
+
+	expected := m.signCheckpoint(cp)
+
+	// Compare the decoded bytes: hmac.Equal on hex strings of differing length
+	// short-circuits, and comparing raw digests is the conventional form.
+	got, err := hex.DecodeString(cp.Signature)
+	if err != nil {
+		return false
+	}
+	want, err := hex.DecodeString(expected)
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal(got, want)
 }
 
 // redactEnvVars redacts sensitive environment variables

@@ -384,8 +384,18 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 
 // enforceForkLimits bounds the resource overrides on a fork request and applies
 // the per-actor session quota. It writes the error response itself.
-func (rh *ReplayHandler) enforceForkLimits(c *gin.Context, actor string, req forkCheckpointRequest) error {
+func (rh *ReplayHandler) enforceForkLimits(c *gin.Context, actor string, src *models.Session, req forkCheckpointRequest) error {
 	limits := rh.h.cfg.SessionLimits()
+
+	// A fork reruns the source session's image. That image was allowed when the
+	// session was created, but the allowlist is the deployment's current answer
+	// to "what may run here" — an image withdrawn since then (a known-vulnerable
+	// base, say) must not come back through a fork.
+	if !rh.h.cfg.ImageAllowed(src.Image) {
+		err := errors.New("source session image is no longer permitted")
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return err
+	}
 
 	if req.CPULimit != nil {
 		if *req.CPULimit <= 0 {
@@ -480,7 +490,7 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 	// The fork inherits the source session's limits unless the caller overrides
 	// them, and an override is a new session request: it passes the same bounds
 	// and quota as POST /sessions.
-	if err := rh.enforceForkLimits(c, actor, req); err != nil {
+	if err := rh.enforceForkLimits(c, actor, session, req); err != nil {
 		return
 	}
 
@@ -488,6 +498,7 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 	newSessionID, err := rh.mgr.ForkFromCheckpoint(c.Request.Context(), replay.ForkOpts{
 		CheckpointID:  checkpointID,
 		Name:          req.Name,
+		Actor:         actor,
 		CPULimit:      req.CPULimit,
 		MemoryLimitMB: req.MemoryLimitMB,
 	})

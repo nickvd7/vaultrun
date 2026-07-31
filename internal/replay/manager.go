@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -118,6 +119,8 @@ func (o CreateCheckpointOpts) validate() error {
 
 // WorkspaceManager defines the interface for workspace operations
 type WorkspaceManager interface {
+	Create(sessionID uuid.UUID) (path string, err error)
+	Delete(sessionID uuid.UUID) error
 	CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath string, sizeBytes int64, err error)
 	RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 	DeleteSnapshot(archivePath string) error
@@ -278,38 +281,132 @@ func (m *Manager) RestoreCheckpoint(ctx context.Context, opts RestoreOpts) error
 	return nil
 }
 
-// ForkFromCheckpoint creates a new session from a checkpoint
+// ForkFromCheckpoint creates a new session whose workspace is the checkpoint's
+// snapshot, leaving the original session untouched.
+//
+// The new session inherits the source session's image, network configuration and
+// org, because a fork is meant to reproduce the recorded state — running it
+// against a different image would not reproduce anything. CPU and memory may be
+// raised or lowered by the caller; the caller is responsible for bounding those
+// against the deployment's limits before calling.
 func (m *Manager) ForkFromCheckpoint(ctx context.Context, opts ForkOpts) (*uuid.UUID, error) {
-	// 1. Get checkpoint
 	checkpoint, err := m.GetCheckpoint(ctx, opts.CheckpointID)
 	if err != nil {
 		return nil, err
 	}
-	
-	// 2. Verify signature
+
+	// A fork copies recorded state into a live session, so the recording has to
+	// be trustworthy first.
 	if !m.verifyCheckpoint(checkpoint) {
 		return nil, ErrCheckpointTampered
 	}
-	
-	// 3. Get original session config
-	// TODO: Get session from database
-	// For now, return placeholder
+
+	var src models.Session
+	err = m.db.GetContext(ctx, &src,
+		`SELECT * FROM sessions WHERE id = $1`, checkpoint.SessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load source session: %w", err)
+	}
+
 	newSessionID := uuid.New()
-	
-	// 4. Create new session with same config
-	// TODO: Call session manager to create session
-	
-	// 5. Restore checkpoint to new session
-	// TODO: Restore workspace snapshot to new session
-	
+	wsPath, err := m.ws.Create(newSessionID)
+	if err != nil {
+		return nil, fmt.Errorf("create fork workspace: %w", err)
+	}
+
+	if err := m.ws.RestoreSnapshot(newSessionID, checkpoint.ArchivePath); err != nil {
+		_ = m.ws.Delete(newSessionID)
+		return nil, fmt.Errorf("restore snapshot into fork: %w", err)
+	}
+
+	name := opts.Name
+	if name == "" {
+		name = fmt.Sprintf("fork of checkpoint %d", checkpoint.CheckpointNumber)
+	}
+	if len(name) > MaxCheckpointNameLength {
+		_ = m.ws.Delete(newSessionID)
+		return nil, fmt.Errorf("%w: name is %d characters, maximum is %d",
+			ErrInvalidCheckpoint, len(name), MaxCheckpointNameLength)
+	}
+
+	cpuLimit := src.CPULimit
+	if opts.CPULimit != nil {
+		cpuLimit = *opts.CPULimit
+	}
+	memoryLimit := src.MemoryLimitMB
+	if opts.MemoryLimitMB != nil {
+		memoryLimit = *opts.MemoryLimitMB
+	}
+
+	now := time.Now().UTC()
+	fork := &models.Session{
+		ID:                     newSessionID,
+		Name:                   &name,
+		Image:                  src.Image,
+		Status:                 models.SessionStatusCreated,
+		NetworkEnabled:         src.NetworkEnabled,
+		CPULimit:               cpuLimit,
+		MemoryLimitMB:          memoryLimit,
+		TimeoutSeconds:         src.TimeoutSeconds,
+		WorkspacePath:          wsPath,
+		Labels:                 models.JSONB{},
+		AllowedHosts:           src.AllowedHosts,
+		CreatedBy:              src.CreatedBy,
+		OrgID:                  src.OrgID,
+		ReplayEnabled:          src.ReplayEnabled,
+		ForkedFromCheckpointID: &checkpoint.ID,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+
+	if err := m.insertForkedSession(ctx, fork); err != nil {
+		_ = m.ws.Delete(newSessionID)
+		return nil, fmt.Errorf("persist forked session: %w", err)
+	}
+
 	return &newSessionID, nil
 }
 
-// ListCheckpoints lists checkpoints for a session
+// insertForkedSession writes the forked session row.
+//
+// The session insert lives here rather than reusing db.CreateSession because a
+// fork also records forked_from_checkpoint_id, which the generic helper does
+// not set.
+func (m *Manager) insertForkedSession(ctx context.Context, s *models.Session) error {
+	_, err := m.db.NamedExecContext(ctx, `
+		INSERT INTO sessions (
+			id, name, image, status, network_enabled, cpu_limit, memory_limit_mb,
+			timeout_seconds, workspace_path, labels, allowed_hosts, created_by,
+			org_id, replay_enabled, forked_from_checkpoint_id, created_at, updated_at
+		) VALUES (
+			:id, :name, :image, :status, :network_enabled, :cpu_limit, :memory_limit_mb,
+			:timeout_seconds, :workspace_path, :labels, :allowed_hosts, :created_by,
+			:org_id, :replay_enabled, :forked_from_checkpoint_id, :created_at, :updated_at
+		)
+	`, s)
+	return err
+}
+
+// ListCheckpoints lists checkpoints for a session.
+//
+// Limit and offset are clamped here rather than trusted from the caller: in
+// Postgres a negative LIMIT means "no limit", so passing limit=-1 would return
+// every checkpoint and a negative OFFSET is an outright query error.
 func (m *Manager) ListCheckpoints(ctx context.Context, opts ListOpts) ([]*Checkpoint, error) {
 	limit := opts.Limit
-	if limit == 0 {
+	if limit <= 0 {
 		limit = DefaultCheckpointLimit
+	}
+	if limit > MaxCheckpointListLimit {
+		limit = MaxCheckpointListLimit
+	}
+
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
 	}
 	
 	checkpoints := make([]*Checkpoint, 0)
@@ -318,7 +415,7 @@ func (m *Manager) ListCheckpoints(ctx context.Context, opts ListOpts) ([]*Checkp
 		WHERE session_id = $1
 		ORDER BY checkpoint_number DESC
 		LIMIT $2 OFFSET $3
-	`, opts.SessionID, limit, opts.Offset)
+	`, opts.SessionID, limit, offset)
 	
 	if err != nil {
 		return nil, fmt.Errorf("list checkpoints: %w", err)
@@ -640,11 +737,30 @@ func (m *Manager) getActiveRuns(ctx context.Context, sessionID uuid.UUID) ([]uui
 
 // Helper functions
 
+// truncate shortens s to at most maxLen bytes without splitting a UTF-8
+// character.
+//
+// Cutting at a byte offset can land in the middle of a multi-byte rune, and
+// Postgres rejects the resulting invalid byte sequence for a text column — so a
+// command that printed non-ASCII output used to fail checkpoint creation
+// outright. Any trailing partial rune is dropped.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
+
+	cut := maxLen
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+
+	// A rune boundary was found, but the rune starting there may itself be
+	// truncated; validate and step back once more if so.
+	out := s[:cut]
+	for len(out) > 0 && !utf8.ValidString(out) {
+		out = out[:len(out)-1]
+	}
+	return out
 }
 
 func argsToJSON(args []string) models.JSONB {

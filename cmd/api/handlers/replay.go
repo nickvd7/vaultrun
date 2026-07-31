@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
+	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/replay"
 )
@@ -200,19 +202,25 @@ func (rh *ReplayHandler) ListCheckpoints(c *gin.Context) {
 		}
 	}
 
-	// Parse pagination
-	limit := 50
+	// Parse pagination. Values outside the accepted range are clamped rather
+	// than rejected, matching the rest of the API; the manager clamps again so
+	// no caller can smuggle a negative LIMIT through to Postgres.
+	limit := replay.DefaultCheckpointLimit
 	offset := 0
-	if limitStr := c.Query("limit"); limitStr != "" {
-		fmt.Sscanf(limitStr, "%d", &limit)
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil {
+		limit = v
 	}
-	if offsetStr := c.Query("offset"); offsetStr != "" {
-		fmt.Sscanf(offsetStr, "%d", &offset)
+	if v, err := strconv.Atoi(c.Query("offset")); err == nil {
+		offset = v
 	}
-
-	// Enforce max limit
-	if limit > 100 {
-		limit = 100
+	if limit <= 0 {
+		limit = replay.DefaultCheckpointLimit
+	}
+	if limit > replay.MaxCheckpointListLimit {
+		limit = replay.MaxCheckpointListLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 
 	checkpoints, err := rh.mgr.ListCheckpoints(c.Request.Context(), replay.ListOpts{
@@ -374,6 +382,53 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "restored"})
 }
 
+// enforceForkLimits bounds the resource overrides on a fork request and applies
+// the per-actor session quota. It writes the error response itself.
+func (rh *ReplayHandler) enforceForkLimits(c *gin.Context, actor string, req forkCheckpointRequest) error {
+	limits := rh.h.cfg.SessionLimits()
+
+	if req.CPULimit != nil {
+		if *req.CPULimit <= 0 {
+			err := errors.New("cpu_limit must be greater than 0")
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return err
+		}
+		if *req.CPULimit > limits.MaxCPU {
+			err := fmt.Errorf("cpu_limit exceeds maximum of %.1f", limits.MaxCPU)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return err
+		}
+	}
+
+	if req.MemoryLimitMB != nil {
+		if *req.MemoryLimitMB <= 0 {
+			err := errors.New("memory_limit_mb must be greater than 0")
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return err
+		}
+		if *req.MemoryLimitMB > limits.MaxMemoryMB {
+			err := fmt.Errorf("memory_limit_mb exceeds maximum of %d", limits.MaxMemoryMB)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return err
+		}
+	}
+
+	if limits.MaxSessionsPerActor > 0 && actor != "master" {
+		count, err := dbpkg.CountActiveSessionsByActor(c.Request.Context(), rh.h.db, actor)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
+			return err
+		}
+		if count >= limits.MaxSessionsPerActor {
+			qerr := fmt.Errorf("active session limit of %d reached", limits.MaxSessionsPerActor)
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": qerr.Error()})
+			return qerr
+		}
+	}
+
+	return nil
+}
+
 // POST /api/v1/checkpoints/:checkpoint_id/fork
 func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 	checkpointID, err := uuid.Parse(c.Param("checkpoint_id"))
@@ -406,18 +461,27 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 		return
 	}
 
+	// A fork creates a running session, which is an executor-level action —
+	// unlike reading a checkpoint, which a viewer may do.
 	actor := middleware.Actor(c)
 	if actor != "master" && session.CreatedBy != actor {
 		if session.OrgID != nil {
 			orgAccess, _ := rh.h.orgManager.GetUserOrgRole(c.Request.Context(), actor, *session.OrgID)
-			if orgAccess == nil {
-				c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+			if orgAccess == nil || !models.RoleAtLeast(orgAccess.Role, models.OrgRoleExecutor) {
+				c.JSON(http.StatusForbidden, gin.H{"error": "access denied - requires admin or executor role"})
 				return
 			}
 		} else {
 			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 			return
 		}
+	}
+
+	// The fork inherits the source session's limits unless the caller overrides
+	// them, and an override is a new session request: it passes the same bounds
+	// and quota as POST /sessions.
+	if err := rh.enforceForkLimits(c, actor, req); err != nil {
+		return
 	}
 
 	// Fork checkpoint
@@ -432,8 +496,16 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkpoint not found"})
 		return
 	}
+	if err == replay.ErrSessionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
 	if err == replay.ErrCheckpointTampered {
 		c.JSON(http.StatusConflict, gin.H{"error": "checkpoint signature invalid"})
+		return
+	}
+	if errors.Is(err, replay.ErrInvalidCheckpoint) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {

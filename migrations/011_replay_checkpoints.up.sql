@@ -7,7 +7,7 @@ CREATE TABLE replay_checkpoints (
     run_id UUID REFERENCES runs(id) ON DELETE SET NULL,
     
     -- Checkpoint metadata
-    checkpoint_number INT NOT NULL,  -- 0, 1, 2, ... within session
+    checkpoint_number INT NOT NULL,  -- 1, 2, 3, ... within session
     name VARCHAR(255),                -- Optional user label
     description TEXT,                 -- Auto-generated or user-provided
     

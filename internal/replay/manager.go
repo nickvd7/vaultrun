@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -37,6 +38,16 @@ var (
 	
 	// ErrActiveCommandsRunning is returned when trying to restore with active commands
 	ErrActiveCommandsRunning = errors.New("cannot restore: active commands running")
+
+	// ErrSessionNotFound is returned when the session a checkpoint refers to
+	// does not exist
+	ErrSessionNotFound = errors.New("session not found")
+
+	// ErrReplayDisabled is returned when a session has not opted into replay
+	ErrReplayDisabled = errors.New("replay is not enabled for this session")
+
+	// ErrInvalidCheckpoint is returned when checkpoint input fails validation
+	ErrInvalidCheckpoint = errors.New("invalid checkpoint")
 	
 	// SensitivePathPatterns are excluded from checkpoints for security
 	SensitivePathPatterns = []string{
@@ -65,6 +76,46 @@ var (
 	}
 )
 
+// Bounds on caller-supplied checkpoint metadata. Stdout and stderr are
+// truncated rather than rejected because a caller cannot control how much a
+// command printed, but the fields it does choose are bounded so one checkpoint
+// cannot carry megabytes of metadata.
+const (
+	MaxCheckpointNameLength        = 200
+	MaxCheckpointDescriptionLength = 2000
+	MaxCheckpointCommandLength     = 4096
+	MaxCheckpointArgs              = 1000
+	MaxCheckpointEnvVars           = 500
+)
+
+// validate bounds the caller-supplied fields of a checkpoint request.
+func (o CreateCheckpointOpts) validate() error {
+	if o.SessionID == uuid.Nil {
+		return fmt.Errorf("%w: session_id is required", ErrInvalidCheckpoint)
+	}
+	if o.Name != nil && len(*o.Name) > MaxCheckpointNameLength {
+		return fmt.Errorf("%w: name is %d characters, maximum is %d",
+			ErrInvalidCheckpoint, len(*o.Name), MaxCheckpointNameLength)
+	}
+	if len(o.Description) > MaxCheckpointDescriptionLength {
+		return fmt.Errorf("%w: description is %d characters, maximum is %d",
+			ErrInvalidCheckpoint, len(o.Description), MaxCheckpointDescriptionLength)
+	}
+	if len(o.Command) > MaxCheckpointCommandLength {
+		return fmt.Errorf("%w: command is %d characters, maximum is %d",
+			ErrInvalidCheckpoint, len(o.Command), MaxCheckpointCommandLength)
+	}
+	if len(o.Args) > MaxCheckpointArgs {
+		return fmt.Errorf("%w: args has %d entries, maximum is %d",
+			ErrInvalidCheckpoint, len(o.Args), MaxCheckpointArgs)
+	}
+	if len(o.EnvVars) > MaxCheckpointEnvVars {
+		return fmt.Errorf("%w: env_vars has %d entries, maximum is %d",
+			ErrInvalidCheckpoint, len(o.EnvVars), MaxCheckpointEnvVars)
+	}
+	return nil
+}
+
 // WorkspaceManager defines the interface for workspace operations
 type WorkspaceManager interface {
 	CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath string, sizeBytes int64, err error)
@@ -91,6 +142,28 @@ func New(db *sqlx.DB, ws WorkspaceManager, signingKey []byte) *Manager {
 // CreateCheckpoint creates a new checkpoint for a session.
 // This should be called after command execution with the run results.
 func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpts) (*Checkpoint, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+
+	// 0. Refuse sessions that have not opted into replay. Checked here rather
+	// than in each caller so neither the API handler nor the runner hook can
+	// bypass it: a checkpoint captures the workspace and environment, so
+	// recording one for a session that did not ask for it is a data-retention
+	// problem, not just a wasted snapshot.
+	var replayEnabled bool
+	err := m.db.GetContext(ctx, &replayEnabled,
+		`SELECT COALESCE(replay_enabled, false) FROM sessions WHERE id = $1`, opts.SessionID)
+	if err == sql.ErrNoRows {
+		return nil, ErrSessionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("check replay enabled: %w", err)
+	}
+	if !replayEnabled {
+		return nil, ErrReplayDisabled
+	}
+
 	// 1. Check session limits
 	count, err := m.countCheckpoints(ctx, opts.SessionID)
 	if err != nil {
@@ -104,13 +177,7 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		}
 	}
 	
-	// 2. Get next checkpoint number (atomic)
-	number, err := m.getNextCheckpointNumber(ctx, opts.SessionID)
-	if err != nil {
-		return nil, fmt.Errorf("get checkpoint number: %w", err)
-	}
-	
-	// 3. Create workspace snapshot
+	// 2. Create workspace snapshot
 	snapshotID := uuid.New()
 	archivePath, sizeBytes, err := m.ws.CreateSnapshot(opts.SessionID, snapshotID)
 	if err != nil {
@@ -124,26 +191,27 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		return nil, ErrCheckpointTooLarge
 	}
 	
-	// 4. Check org storage limit
+	// 3. Check org storage limit
 	if err := m.checkOrgStorageLimit(ctx, opts.SessionID, sizeBytes); err != nil {
 		// Clean up snapshot on storage limit violation
 		_ = m.ws.DeleteSnapshot(archivePath)
 		return nil, err
 	}
 	
-	// 5. Redact sensitive environment variables
+	// 4. Redact sensitive environment variables
 	sanitizedEnv := m.redactEnvVars(opts.EnvVars)
 	
-	// 6. Truncate output previews
+	// 5. Truncate output previews
 	stdoutPreview := truncate(opts.Stdout, 500)
 	stderrPreview := truncate(opts.Stderr, 500)
 	
-	// 7. Create checkpoint record
+	// 6. Create checkpoint record. CheckpointNumber and Signature are assigned
+	// by insertCheckpoint, which needs a transaction to allocate the number
+	// atomically and must sign the record after the number is known.
 	checkpoint := &Checkpoint{
 		ID:                  uuid.New(),
 		SessionID:           opts.SessionID,
 		RunID:               opts.RunID,
-		CheckpointNumber:    number,
 		Name:                opts.Name,
 		Description:         opts.Description,
 		WorkspaceSnapshotID: snapshotID,
@@ -155,14 +223,11 @@ func (m *Manager) CreateCheckpoint(ctx context.Context, opts CreateCheckpointOpt
 		DurationMs:          opts.DurationMs,
 		StdoutPreview:       stdoutPreview,
 		StderrPreview:       stderrPreview,
-		CreatedAt:           time.Now(),
+		CreatedAt:           time.Now().UTC(),
 		SizeBytes:           sizeBytes,
 	}
 	
-	// 8. Sign checkpoint
-	checkpoint.Signature = m.signCheckpoint(checkpoint)
-	
-	// 9. Insert into database
+	// 7. Assign the checkpoint number, sign and insert — all in one transaction
 	if err := m.insertCheckpoint(ctx, checkpoint); err != nil {
 		// Clean up snapshot on DB failure
 		_ = m.ws.DeleteSnapshot(archivePath)
@@ -425,38 +490,13 @@ func (m *Manager) countCheckpoints(ctx context.Context, sessionID uuid.UUID) (in
 	return count, err
 }
 
-// getNextCheckpointNumber gets the next checkpoint number atomically
-func (m *Manager) getNextCheckpointNumber(ctx context.Context, sessionID uuid.UUID) (int, error) {
-	tx, err := m.db.BeginTxx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelSerializable,
-	})
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	
-	var maxNum sql.NullInt64
-	err = tx.QueryRowContext(ctx, `
-		SELECT MAX(checkpoint_number) 
-		FROM replay_checkpoints 
-		WHERE session_id = $1
-		FOR UPDATE
-	`, sessionID).Scan(&maxNum)
-	
-	if err != nil && err != sql.ErrNoRows {
-		return 0, err
-	}
-	
-	nextNum := 0
-	if maxNum.Valid {
-		nextNum = int(maxNum.Int64) + 1
-	}
-	
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	
-	return nextNum, nil
+// sessionLockKey derives a stable 64-bit advisory-lock key from a session ID.
+// Advisory locks are keyed by integer, so the UUID's first eight bytes are
+// reinterpreted; collisions between different sessions only cost concurrency,
+// never correctness, because the unique constraint on
+// (session_id, checkpoint_number) is the real guarantee.
+func sessionLockKey(sessionID uuid.UUID) int64 {
+	return int64(binary.BigEndian.Uint64(sessionID[:8]))
 }
 
 // pruneOldestCheckpoint deletes the oldest checkpoint for a session
@@ -496,8 +536,46 @@ func (m *Manager) pruneOldestCheckpoint(ctx context.Context, sessionID uuid.UUID
 }
 
 // insertCheckpoint inserts a checkpoint into the database
+// insertCheckpoint allocates the next checkpoint number for the session, signs
+// the record and writes it — all inside one transaction.
+//
+// The number cannot be allocated in a separate step: between reading MAX and
+// inserting, a concurrent checkpoint on the same session would read the same
+// value and one of the two inserts would violate the unique constraint on
+// (session_id, checkpoint_number). A transaction-scoped advisory lock serialises
+// the read-modify-write per session and is released on commit or rollback.
+//
+// A row lock is not usable here: Postgres rejects FOR UPDATE on a query with an
+// aggregate, and there is no row to lock for the first checkpoint anyway.
 func (m *Manager) insertCheckpoint(ctx context.Context, cp *Checkpoint) error {
-	_, err := m.db.NamedExecContext(ctx, `
+	tx, err := m.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`SELECT pg_advisory_xact_lock($1)`, sessionLockKey(cp.SessionID)); err != nil {
+		return fmt.Errorf("acquire checkpoint lock: %w", err)
+	}
+
+	var maxNum sql.NullInt64
+	err = tx.QueryRowContext(ctx,
+		`SELECT MAX(checkpoint_number) FROM replay_checkpoints WHERE session_id = $1`,
+		cp.SessionID).Scan(&maxNum)
+	if err != nil {
+		return fmt.Errorf("read highest checkpoint number: %w", err)
+	}
+
+	cp.CheckpointNumber = 1
+	if maxNum.Valid {
+		cp.CheckpointNumber = int(maxNum.Int64) + 1
+	}
+
+	// Sign only now: the checkpoint number is part of the signed payload.
+	cp.Signature = m.signCheckpoint(cp)
+
+	if _, err := tx.NamedExecContext(ctx, `
 		INSERT INTO replay_checkpoints (
 			id, session_id, run_id, checkpoint_number, name, description,
 			workspace_snapshot_id, archive_path, env_vars_snapshot, command, args,
@@ -509,9 +587,11 @@ func (m *Manager) insertCheckpoint(ctx context.Context, cp *Checkpoint) error {
 			:exit_code, :duration_ms, :stdout_preview, :stderr_preview,
 			:signature, :created_at, :size_bytes
 		)
-	`, cp)
-	
-	return err
+	`, cp); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // checkOrgStorageLimit checks if adding sizeBytes would exceed the org storage limit

@@ -7,6 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **MCP Tasks hardening** — `tasks/update` (progress/message), TTL cleanup via
+  `MCP_TASK_TTL_SECONDS` (default 30m), cancel race safety, and `async` stripped
+  from tool handler args. Dead custom HTTP header-validation path removed now
+  that the official SDK owns Streamable HTTP.
+- **MCP Tasks security caps** — max in-flight tasks (`MCP_TASK_MAX_INFLIGHT`),
+  working-task max age (`MCP_TASK_MAX_AGE_SECONDS`), message/result size limits,
+  owner binding from OAuth `UserID`, and no TTL refresh on terminal no-ops.
+  Async mode requires an explicit `async` flag (extension advertise alone is not enough).
+
 ### Changed
 
 - **MCP server now uses the official Go SDK** (`github.com/modelcontextprotocol/go-sdk` v1.7.0)
@@ -14,7 +25,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   are bridged into the SDK; `session_id` remains an explicit tool argument.
 - **Tasks extension** (`io.modelcontextprotocol/tasks`) — set `async=true` on
   long-running tools (e.g. `run_command`) to get a `taskId`; poll with `tasks/get`,
-  cancel with `tasks/cancel`.
+  update with `tasks/update`, cancel with `tasks/cancel`.
 - **MCP Apps** — ships `ui://vaultrun/session-panel` and attaches UI meta on
   session tools (`MCP_APPS_ENABLED=false` to disable).
 - **OAuth / EMA server surface** — optional Protected Resource Metadata via

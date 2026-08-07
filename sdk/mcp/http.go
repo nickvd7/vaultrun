@@ -468,101 +468,10 @@ func clientIPFromRequest(r *http.Request) string {
 	return host
 }
 
-// ---------------------------------------------------------------------------
-// MCP 2026-07-28 Streamable HTTP header validation
-// ---------------------------------------------------------------------------
-
-// isModernHTTPRequest reports whether the client is speaking the post-session
-// protocol (MCP-Protocol-Version header present, or _meta protocol version set
-// to a known modern version). Legacy clients that omit the header stay on the
-// old 200-OK-with-JSON-RPC-error behaviour.
-func isModernHTTPRequest(h http.Header, req *jsonRPCRequest) bool {
-	if h.Get("MCP-Protocol-Version") != "" {
-		return true
-	}
-	meta := parseRequestMeta(req.Params)
-	return meta.ProtocolVersion == protocolVersionCurrent
-}
-
-// validateMCPHTTPHeaders enforces Streamable HTTP request metadata headers
-// when the client is on the modern protocol. Returns (status, response) on
-// failure, or (0, nil) when the request may proceed.
-//
-// Legacy clients (no MCP-Protocol-Version header and no modern _meta) skip
-// validation entirely so existing Claude Desktop / stdio-style HTTP callers
-// keep working.
-func validateMCPHTTPHeaders(h http.Header, req *jsonRPCRequest) (int, *jsonRPCResponse) {
-	headerVersion := strings.TrimSpace(h.Get("MCP-Protocol-Version"))
-	meta := parseRequestMeta(req.Params)
-
-	// Pure legacy path: no version header → no mandatory routing headers.
-	if headerVersion == "" {
-		// If the body claims a modern version without the matching header,
-		// treat that as a mismatch (modern clients MUST send the header).
-		if meta.ProtocolVersion == protocolVersionCurrent {
-			return http.StatusBadRequest, headerMismatchResponse(req.ID, "MCP-Protocol-Version header required for protocol "+protocolVersionCurrent)
-		}
-		return 0, nil
-	}
-
-	if !isSupportedProtocolVersion(headerVersion) {
-		return http.StatusBadRequest, unsupportedVersionError(req.ID, headerVersion)
-	}
-
-	if meta.ProtocolVersion == "" {
-		return http.StatusBadRequest, headerMismatchResponse(req.ID, "params._meta."+metaKeyProtocolVersion+" must match MCP-Protocol-Version header")
-	}
-	if meta.ProtocolVersion != headerVersion {
-		return http.StatusBadRequest, headerMismatchResponse(req.ID, "MCP-Protocol-Version header does not match params._meta protocol version")
-	}
-
-	methodHeader := strings.TrimSpace(h.Get("Mcp-Method"))
-	if methodHeader == "" {
-		return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Method header is required")
-	}
-	if methodHeader != req.Method {
-		return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Method header does not match JSON-RPC method")
-	}
-
-	// Mcp-Name is required for tools/call (and would be for resources/read,
-	// prompts/get — we only implement tools).
-	if req.Method == "tools/call" {
-		nameHeader, err := decodeMCPHeaderValue(h.Get("Mcp-Name"))
-		if err != nil {
-			return http.StatusBadRequest, headerMismatchResponse(req.ID, "invalid Mcp-Name header encoding: "+err.Error())
-		}
-		if nameHeader == "" {
-			return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Name header is required for tools/call")
-		}
-		var params mcpToolCallParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return http.StatusBadRequest, &jsonRPCResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Error:   &jsonRPCError{Code: errInvalidParams, Message: "invalid params: " + err.Error()},
-			}
-		}
-		if nameHeader != params.Name {
-			return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Name header does not match params.name")
-		}
-	}
-
-	return 0, nil
-}
-
-func headerMismatchResponse(id *json.RawMessage, msg string) *jsonRPCResponse {
-	return &jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &jsonRPCError{
-			Code:    errHeaderMismatch,
-			Message: msg,
-		},
-	}
-}
-
 // decodeMCPHeaderValue handles the optional =?base64?...?= sentinel used when
-// an Mcp-Name (or Mcp-Param-*) value is not plain ASCII.
+// an Mcp-Name (or Mcp-Param-*) value is not plain ASCII. Kept for Streamable
+// HTTP gateway compatibility helpers and unit tests; the official SDK performs
+// its own header validation on the wire.
 func decodeMCPHeaderValue(v string) (string, error) {
 	v = strings.TrimSpace(v)
 	const prefix = "=?base64?"

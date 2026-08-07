@@ -185,15 +185,32 @@ func TestAppsResourceRegistered(t *testing.T) {
 	}
 	defer session.Close()
 
-	res, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: sessionPanelURI})
-	if err != nil {
-		t.Fatal(err)
+	for _, uri := range []string{sessionPanelURI, runPanelURI, artifactsPanelURI} {
+		res, err := session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: uri})
+		if err != nil {
+			t.Fatalf("%s: %v", uri, err)
+		}
+		if len(res.Contents) == 0 || res.Contents[0].Text == "" {
+			t.Fatalf("%s: expected HTML content", uri)
+		}
+		if !strings.Contains(res.Contents[0].Text, "VaultRun") {
+			t.Fatalf("%s: unexpected content: %s", uri, res.Contents[0].Text[:80])
+		}
 	}
-	if len(res.Contents) == 0 || res.Contents[0].Text == "" {
-		t.Fatal("expected HTML content")
+}
+
+func TestToolUIMetaPanels(t *testing.T) {
+	if toolUIMeta("run_command")["ui"].(map[string]any)["resourceUri"] != runPanelURI {
+		t.Fatal("run_command meta")
 	}
-	if !strings.Contains(res.Contents[0].Text, "VaultRun") {
-		t.Fatalf("unexpected content: %s", res.Contents[0].Text[:80])
+	if toolUIMeta("list_artifacts")["ui"].(map[string]any)["resourceUri"] != artifactsPanelURI {
+		t.Fatal("list_artifacts meta")
+	}
+	if toolUIMeta("create_session")["ui"].(map[string]any)["resourceUri"] != sessionPanelURI {
+		t.Fatal("create_session meta")
+	}
+	if toolUIMeta("ping") != nil {
+		t.Fatal("unknown tool should have no UI meta")
 	}
 }
 

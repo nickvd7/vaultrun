@@ -11,12 +11,18 @@ and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for ol
 | Feature | Status |
 |---|---|
 | Official Go SDK transport | stdio + HTTP (`Stateless`, JSON responses) |
-| Tasks extension | `async=true` on long tools → `taskId`; `tasks/get` / `tasks/cancel` |
+| Tasks extension | `async=true` on long tools → `taskId`; `tasks/get` / `tasks/update` / `tasks/cancel` |
 | MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
 | OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |
 
 Application state (sandbox sessions) is **not** protocol state: tools return an
 explicit `session_id` that clients pass on later calls.
+
+### Tasks env
+
+| Variable | Purpose |
+|---|---|
+| `MCP_TASK_TTL_SECONDS` | How long completed/failed/cancelled tasks stay in memory (default `1800`) |
 
 ### OAuth / EMA env (HTTP)
 

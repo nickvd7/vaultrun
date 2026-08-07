@@ -24,6 +24,7 @@ func buildMCPServer(srv *server, tasks *taskStore, appsEnabled bool) *mcpsdk.Ser
 	caps.AddExtension(extTasks, map[string]any{
 		"list":   false,
 		"cancel": true,
+		"update": true,
 	})
 	if appsEnabled {
 		caps.AddExtension(extApps, map[string]any{
@@ -126,11 +127,19 @@ func inputSchemaToAny(s inputSchema) (any, error) {
 }
 
 func wantsAsyncTask(req *mcpsdk.CallToolRequest, args json.RawMessage) bool {
-	var m map[string]string
 	if len(args) > 0 {
-		_ = json.Unmarshal(args, &m)
-		if m["async"] == "true" || m["async"] == "1" {
-			return true
+		var m map[string]any
+		if err := json.Unmarshal(args, &m); err == nil {
+			switch v := m["async"].(type) {
+			case bool:
+				if v {
+					return true
+				}
+			case string:
+				if v == "true" || v == "1" {
+					return true
+				}
+			}
 		}
 	}
 	if req == nil {

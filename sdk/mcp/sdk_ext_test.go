@@ -109,7 +109,9 @@ func TestTasksAsyncRunCommand(t *testing.T) {
 
 	// Extract task id and poll via custom method.
 	var payload struct {
-		TaskID string `json:"taskId"`
+		Task struct {
+			TaskID string `json:"taskId"`
+		} `json:"task"`
 	}
 	start := strings.Index(text, "{")
 	if start < 0 {
@@ -118,10 +120,13 @@ func TestTasksAsyncRunCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(text[start:]), &payload); err != nil {
 		t.Fatal(err)
 	}
+	if payload.Task.TaskID == "" {
+		t.Fatalf("missing taskId in %q", text)
+	}
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		rec, ok := store.get(payload.TaskID)
+		rec, ok := store.get(payload.Task.TaskID)
 		if !ok {
 			t.Fatal("task missing from store")
 		}
@@ -187,5 +192,121 @@ func TestAppsResourceRegistered(t *testing.T) {
 	}
 	if !strings.Contains(res.Contents[0].Text, "VaultRun") {
 		t.Fatalf("unexpected content: %s", res.Contents[0].Text[:80])
+	}
+}
+
+func TestTasksUpdateAndCancel(t *testing.T) {
+	store := newTaskStore()
+	id := "task_test_1"
+	store.put(&taskRecord{
+		ID:        id,
+		Status:    taskWorking,
+		Tool:      "run_command",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Message:   "started",
+	})
+
+	ok := store.update(id, func(t *taskRecord) {
+		if t.terminal() {
+			return
+		}
+		t.Progress = 0.5
+		t.Message = "halfway"
+	})
+	if !ok {
+		t.Fatal("update missed")
+	}
+	got, found := store.get(id)
+	if !found || got.Progress != 0.5 || got.Message != "halfway" || got.Status != taskWorking {
+		t.Fatalf("unexpected after update: %#v", got)
+	}
+
+	var cancelFn context.CancelFunc
+	store.update(id, func(t *taskRecord) {
+		if t.terminal() {
+			return
+		}
+		cancelFn = t.cancel
+		t.Status = taskCancelled
+		t.Message = "cancellation requested"
+		t.Progress = 1
+	})
+	if cancelFn != nil {
+		cancelFn()
+	}
+	got, _ = store.get(id)
+	if got.Status != taskCancelled {
+		t.Fatalf("status=%s", got.Status)
+	}
+
+	// Progress must not change after cancel (terminal guard).
+	store.update(id, func(t *taskRecord) {
+		if t.terminal() {
+			return
+		}
+		t.Progress = 0.9
+		t.Message = "too late"
+	})
+	got, _ = store.get(id)
+	if got.Progress != 1 || got.Message != "cancellation requested" {
+		t.Fatalf("terminal task mutated: %#v", got)
+	}
+}
+
+func TestTaskTTLExpire(t *testing.T) {
+	store := &taskStore{tasks: make(map[string]*taskRecord), ttl: time.Millisecond}
+	old := time.Now().UTC().Add(-time.Hour)
+	store.put(&taskRecord{
+		ID:        "old",
+		Status:    taskCompleted,
+		UpdatedAt: old,
+		CreatedAt: old,
+	})
+	store.put(&taskRecord{
+		ID:        "live",
+		Status:    taskWorking,
+		UpdatedAt: old,
+		CreatedAt: old,
+	})
+	store.expire()
+	if _, ok := store.get("old"); ok {
+		t.Fatal("completed task should expire")
+	}
+	if _, ok := store.get("live"); !ok {
+		t.Fatal("working task must not expire")
+	}
+}
+
+func TestStripAsyncFlag(t *testing.T) {
+	in := json.RawMessage(`{"image":"alpine","async":true,"name":"x"}`)
+	out := stripAsyncFlag(in)
+	var m map[string]any
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["async"]; ok {
+		t.Fatal("async should be stripped")
+	}
+	if m["image"] != "alpine" || m["name"] != "x" {
+		t.Fatalf("unexpected: %#v", m)
+	}
+	if !strings.Contains(string(in), `"async"`) {
+		t.Fatal("original raw message should be unchanged")
+	}
+}
+
+func TestWantsAsyncTask(t *testing.T) {
+	if !wantsAsyncTask(nil, json.RawMessage(`{"async":true}`)) {
+		t.Fatal("bool true")
+	}
+	if !wantsAsyncTask(nil, json.RawMessage(`{"async":"true"}`)) {
+		t.Fatal("string true")
+	}
+	if wantsAsyncTask(nil, json.RawMessage(`{"async":false}`)) {
+		t.Fatal("bool false")
+	}
+	if wantsAsyncTask(nil, json.RawMessage(`{}`)) {
+		t.Fatal("missing async")
 	}
 }

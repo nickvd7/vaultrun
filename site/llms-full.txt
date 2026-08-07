@@ -29,7 +29,9 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 
 **stdio (Claude Desktop / Claude Code):** configure `vaultrun-mcp` with `VAULTRUN_BASE_URL` and `VAULTRUN_API_KEY`.
 
-**HTTP (OpenAI, OpenRouter, custom agents):** `MCP_TRANSPORT=http`, `MCP_AUTH_TOKEN=…`, then `POST /mcp` with Bearer auth (JSON-RPC 2.0).
+**HTTP (OpenAI, OpenRouter, custom agents):** `MCP_TRANSPORT=http`, `MCP_AUTH_TOKEN=…`, then `POST /mcp` with Bearer auth (JSON-RPC 2.0). Optional OAuth PRM via `MCP_OAUTH_ISSUERS`.
+
+The server uses the official Go MCP SDK and supports the Tasks extension (`async=true` → `tasks/get` / `tasks/update` / `tasks/cancel`, TTL via `MCP_TASK_TTL_SECONDS`) and MCP Apps (`ui://vaultrun/session-panel`).
 
 Tool groups include sandbox session/file/run tools, SQLite/Postgres/MongoDB, AWS (S3, SSM, Secrets Manager, Lambda), scoped host filesystem tools, GitHub helpers, snapshots, artifacts, audit listing, and optional Flowd workflow tools (`MCP_FLOWD_ENABLED=true`).
 

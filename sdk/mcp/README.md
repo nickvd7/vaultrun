@@ -63,8 +63,10 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 ## Protocol
 
-- **Current:** MCP `2026-07-28` (stateless; `server/discover`; cache hints on `tools/list`)
-- **Legacy:** MCP `2024-11-05` `initialize` / `initialized` still accepted
+- **SDK:** official [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) v1.7.0+
+- **Current:** MCP `2026-07-28` (stateless Streamable HTTP)
+- **Extensions:** Tasks (`async=true` → `tasks/get`), MCP Apps (`ui://vaultrun/session-panel`)
+- **Auth (HTTP):** static `MCP_AUTH_TOKEN`; optional OAuth PRM via `MCP_OAUTH_ISSUERS` (+ introspection)
 - Details: [docs/mcp.md](../../docs/mcp.md)
 
 ## Environment variables

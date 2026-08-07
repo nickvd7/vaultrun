@@ -322,11 +322,11 @@ func TestIntegrationGetSessionStats(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"cpu_percent":         12.5,
-			"memory_bytes":        134217728,
-			"memory_limit_bytes":  536870912,
-			"network_rx_bytes":    1024,
-			"network_tx_bytes":    512,
+			"cpu_percent":        12.5,
+			"memory_bytes":       134217728,
+			"memory_limit_bytes": 536870912,
+			"network_rx_bytes":   1024,
+			"network_tx_bytes":   512,
 		})
 	})
 	defer ts.Close()

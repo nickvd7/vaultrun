@@ -32,6 +32,9 @@ func newVaultRunClient(baseURL, apiKey string) *vaultRunClient {
 }
 
 func (c *vaultRunClient) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	if c == nil {
+		return nil, fmt.Errorf("VaultRun API client not configured")
+	}
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)

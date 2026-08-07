@@ -68,6 +68,8 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -137,8 +139,10 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		slog.Info("vaultrun-mcp: starting stdio transport", "base_url", baseURL)
-		if err := srv.serve(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF {
+		slog.Info("vaultrun-mcp: starting stdio transport (official Go SDK)", "base_url", baseURL)
+		appsEnabled := os.Getenv("MCP_APPS_ENABLED") != "false"
+		sdkServer := buildMCPServer(srv, newTaskStore(), appsEnabled)
+		if err := sdkServer.Run(ctx, &mcpsdk.StdioTransport{}); err != nil && err != io.EOF {
 			slog.Error("vaultrun-mcp: fatal", "err", err)
 			os.Exit(1)
 		}

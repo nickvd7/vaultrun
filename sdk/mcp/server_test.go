@@ -71,6 +71,91 @@ func TestProtocolInitialize(t *testing.T) {
 	}
 }
 
+func TestProtocolInitializeNegotiatesModern(t *testing.T) {
+	srv := newTestServer()
+	id := json.RawMessage(`1`)
+	req := mustJSON(jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  "initialize",
+		Params:  json.RawMessage(`{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"test","version":"0"}}`),
+	})
+	resp := runMCPRequest(t, srv, req)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	var initResult mcpInitializeResult
+	b, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(b, &initResult); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if initResult.ProtocolVersion != protocolVersionCurrent {
+		t.Errorf("expected %s, got %q", protocolVersionCurrent, initResult.ProtocolVersion)
+	}
+}
+
+func TestProtocolServerDiscover(t *testing.T) {
+	srv := newTestServer()
+	id := json.RawMessage(`10`)
+	req := mustJSON(jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  "server/discover",
+		Params:  json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"test","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}`),
+	})
+	resp := runMCPRequest(t, srv, req)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %+v", resp.Error)
+	}
+	var disc mcpDiscoverResult
+	b, _ := json.Marshal(resp.Result)
+	if err := json.Unmarshal(b, &disc); err != nil {
+		t.Fatalf("unmarshal discover: %v", err)
+	}
+	if disc.ResultType != "complete" {
+		t.Errorf("resultType: got %q", disc.ResultType)
+	}
+	if disc.TTLMs <= 0 || disc.CacheScope != "public" {
+		t.Errorf("cache hints missing: ttl=%d scope=%q", disc.TTLMs, disc.CacheScope)
+	}
+	foundCurrent, foundLegacy := false, false
+	for _, v := range disc.SupportedVersions {
+		if v == protocolVersionCurrent {
+			foundCurrent = true
+		}
+		if v == protocolVersionLegacy {
+			foundLegacy = true
+		}
+	}
+	if !foundCurrent || !foundLegacy {
+		t.Errorf("supportedVersions=%v, want both current and legacy", disc.SupportedVersions)
+	}
+	if disc.Capabilities.Tools == nil {
+		t.Error("tools capability missing")
+	}
+	if disc.Meta == nil || disc.Meta[metaKeyServerInfo] == nil {
+		t.Error("serverInfo _meta missing")
+	}
+}
+
+func TestProtocolUnsupportedVersionInMeta(t *testing.T) {
+	srv := newTestServer()
+	id := json.RawMessage(`11`)
+	req := mustJSON(jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      &id,
+		Method:  "tools/list",
+		Params:  json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientCapabilities":{}}}`),
+	})
+	resp := runMCPRequest(t, srv, req)
+	if resp.Error == nil {
+		t.Fatal("expected unsupported protocol version error")
+	}
+	if resp.Error.Code != errUnsupportedProtocolVersion {
+		t.Errorf("code: got %d want %d", resp.Error.Code, errUnsupportedProtocolVersion)
+	}
+}
+
 func TestProtocolToolsList(t *testing.T) {
 	srv := newTestServer()
 	id := json.RawMessage(`2`)
@@ -91,6 +176,15 @@ func TestProtocolToolsList(t *testing.T) {
 	b, _ := json.Marshal(resp.Result)
 	if err := json.Unmarshal(b, &listResult); err != nil {
 		t.Fatalf("unmarshal tools list: %v", err)
+	}
+	if listResult.ResultType != "complete" {
+		t.Errorf("expected resultType=complete, got %q", listResult.ResultType)
+	}
+	if listResult.TTLMs != toolsListTTLMs {
+		t.Errorf("ttlMs: got %d want %d", listResult.TTLMs, toolsListTTLMs)
+	}
+	if listResult.CacheScope != "public" {
+		t.Errorf("cacheScope: got %q", listResult.CacheScope)
 	}
 
 	wantTools := []string{
@@ -322,5 +416,138 @@ func TestHTTPRateLimit(t *testing.T) {
 	// Third request exceeds the limit.
 	if code := doReq(); code != http.StatusTooManyRequests {
 		t.Errorf("expected 429 after rate limit, got %d", code)
+	}
+}
+
+func modernMeta(version string) string {
+	return `{"_meta":{"io.modelcontextprotocol/protocolVersion":"` + version + `","io.modelcontextprotocol/clientInfo":{"name":"test","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}`
+}
+
+func TestHTTPModernHeadersOK(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":` + modernMeta(protocolVersionCurrent) + `}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
+	req.Header.Set("Mcp-Method", "tools/list")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var rpcResp jsonRPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		t.Fatal(err)
+	}
+	if rpcResp.Error != nil {
+		t.Fatalf("unexpected error: %+v", rpcResp.Error)
+	}
+}
+
+func TestHTTPHeaderMismatchMethod(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":` + modernMeta(protocolVersionCurrent) + `}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
+	req.Header.Set("Mcp-Method", "ping") // mismatch
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var rpcResp jsonRPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		t.Fatal(err)
+	}
+	if rpcResp.Error == nil || rpcResp.Error.Code != errHeaderMismatch {
+		t.Fatalf("expected header mismatch error, got %+v", rpcResp.Error)
+	}
+}
+
+func TestHTTPToolsCallNameHeaderRequired(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	params := `{"name":"list_sessions","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}`
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + params + `}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
+	req.Header.Set("Mcp-Method", "tools/call")
+	// Missing Mcp-Name
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPModernMethodNotFoundIs404(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"bogus/method","params":` + modernMeta(protocolVersionCurrent) + `}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
+	req.Header.Set("Mcp-Method", "bogus/method")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestHTTPLegacyStillWorksWithoutHeaders(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("legacy client expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestDecodeMCPHeaderValueBase64(t *testing.T) {
+	got, err := decodeMCPHeaderValue("=?base64?bGlzdF9zZXNzaW9ucw==?=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "list_sessions" {
+		t.Errorf("got %q", got)
 	}
 }

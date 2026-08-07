@@ -3,6 +3,22 @@
 This guide covers everything needed to run the VaultRun MCP server in production:
 transport selection, TLS, authentication, rate limiting, and per-tool examples.
 
+## Protocol versions
+
+VaultRun MCP speaks **MCP `2026-07-28`** (stateless Streamable HTTP) and keeps
+backward compatibility with **`2024-11-05`** (legacy `initialize` handshake).
+
+| Client style | How it works |
+|---|---|
+| **Modern** (`2026-07-28`) | Optional `server/discover`; every request carries `_meta` + HTTP headers `MCP-Protocol-Version`, `Mcp-Method`, and (for `tools/call`) `Mcp-Name`. No protocol session. |
+| **Legacy** (`2024-11-05`) | `initialize` / `initialized` handshake still accepted (stdio + HTTP without the new headers). |
+
+Application state (sandbox sessions) is **not** protocol state: tools return an
+explicit `session_id` that clients pass on later calls — the pattern the 2026
+spec recommends for stateful apps on a stateless transport.
+
+---
+
 ## Transport selection
 
 | Transport | Use case |
@@ -27,6 +43,9 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 The server reads newline-delimited JSON-RPC 2.0 requests from stdin and writes responses to stdout.
 One request per line, one response per line.
+
+Modern clients may probe with `server/discover` first; legacy clients may still
+send `initialize` / `initialized`. Both are supported.
 
 ### Claude Desktop
 
@@ -90,9 +109,9 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/mcp` | JSON-RPC 2.0 request/response |
-| `GET` | `/sse` | Server-Sent Events (future: streaming results) |
-| `GET` | `/` | Server info JSON |
+| `POST` | `/mcp` | JSON-RPC 2.0 request/response (Streamable HTTP) |
+| `GET` | `/sse` | Legacy HTTP+SSE stub (deprecated in MCP 2026-07-28; prefer `POST /mcp`) |
+| `GET` | `/` | Server info JSON (includes `supported_versions`) |
 | `GET` | `/healthz` | Health check — returns `{"ok":true}` |
 
 ### Authentication
@@ -105,10 +124,24 @@ Authorization: Bearer your-secret-token
 
 Missing or wrong token → `401 Unauthorized`.
 
+### Modern (2026-07-28) request headers
+
+When speaking `2026-07-28`, clients **must** send:
+
+| Header | Value |
+|---|---|
+| `MCP-Protocol-Version` | `2026-07-28` (must match `params._meta["io.modelcontextprotocol/protocolVersion"]`) |
+| `Mcp-Method` | JSON-RPC `method` (e.g. `tools/list`, `tools/call`) |
+| `Mcp-Name` | Required for `tools/call` — must match `params.name` |
+
+Header mismatches → `400` with JSON-RPC error `-32020`. Unknown methods on the
+modern path → `404` with `-32601`. Legacy clients that omit these headers keep
+working (HTTP `200` + JSON-RPC body as before).
+
 ### Test with curl
 
 ```bash
-# tools/list
+# Legacy tools/list (still supported)
 curl -s -X POST http://localhost:8090/mcp \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
@@ -116,13 +149,37 @@ curl -s -X POST http://localhost:8090/mcp \
   | jq '.result.tools | length'
 # → 53 (59 with MCP_FLOWD_ENABLED=true)
 
-# tools/call
+# Modern server/discover
 curl -s -X POST http://localhost:8090/mcp \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: server/discover" \
+  -d '{
+    "jsonrpc":"2.0","id":1,"method":"server/discover",
+    "params":{"_meta":{
+      "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+      "io.modelcontextprotocol/clientInfo":{"name":"curl","version":"0"},
+      "io.modelcontextprotocol/clientCapabilities":{}
+    }}
+  }' | jq '.result.supportedVersions'
+
+# Modern tools/call
+curl -s -X POST http://localhost:8090/mcp \
+  -H "Authorization: Bearer your-secret-token" \
+  -H "Content-Type: application/json" \
+  -H "MCP-Protocol-Version: 2026-07-28" \
+  -H "Mcp-Method: tools/call" \
+  -H "Mcp-Name: list_sessions" \
   -d '{
     "jsonrpc":"2.0","id":2,"method":"tools/call",
-    "params":{"name":"list_sessions","arguments":{}}
+    "params":{
+      "name":"list_sessions","arguments":{},
+      "_meta":{
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities":{}
+      }
+    }
   }' | jq .
 ```
 

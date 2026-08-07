@@ -7,15 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Changed
-- Document MCP Tasks vs official Go SDK v1.7.0 (no first-class Tasks yet) and add a registration/migration seam in `tasks_sdk_compat.go`
-
-### Added
-- MCP Tasks Prometheus metrics (`vaultrun_mcp_tasks_*`) and structured task lifecycle logs; HTTP `GET /metrics` on the MCP server
-- Migrate core MCP protocol unit tests onto the official Go SDK in-memory transport; keep `protocol_legacy.go` only for edge-case coverage
-
 ### Added
 
+- **MCP Tasks Prometheus metrics** — `vaultrun_mcp_tasks_*` counters/gauges and
+  structured lifecycle logs; HTTP `GET /metrics` on the MCP server
+  (`MCP_METRICS_TOKEN` / `METRICS_TOKEN` optional).
 - **MCP Tasks hardening** — `tasks/update` (progress/message), TTL cleanup via
   `MCP_TASK_TTL_SECONDS` (default 30m), cancel race safety, and `async` stripped
   from tool handler args. Dead custom HTTP header-validation path removed now
@@ -46,12 +42,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   are bridged into the SDK; `session_id` remains an explicit tool argument.
 - **Tasks extension** (`io.modelcontextprotocol/tasks`) — set `async=true` on
   long-running tools (e.g. `run_command`) to get a `taskId`; poll with `tasks/get`,
-  update with `tasks/update`, cancel with `tasks/cancel`.
+  update with `tasks/update`, cancel with `tasks/cancel`. go-sdk v1.7.0 has no
+  first-class Tasks helpers yet — VaultRun registers custom methods; see
+  `tasks_sdk_compat.go` for the migration seam.
 - **MCP Apps** — ships `ui://vaultrun/session-panel` and attaches UI meta on
   session tools (`MCP_APPS_ENABLED=false` to disable).
 - **OAuth / EMA server surface** — optional Protected Resource Metadata via
   `MCP_OAUTH_ISSUERS` (+ optional RFC 7662 introspection). Static `MCP_AUTH_TOKEN`
   remains supported.
+- **MCP protocol unit tests** — core coverage runs on the official SDK in-memory
+  transport (`sdk_protocol_test.go`); `protocol_legacy.go` kept for edge cases only.
 
 ### Changed (earlier)
 

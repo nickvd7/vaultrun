@@ -11,7 +11,7 @@ func TestMemoryPathForKey(t *testing.T) {
 	if err != nil || got != ".vaultrun/memory/team/notes" {
 		t.Fatalf("got %q %v", got, err)
 	}
-	for _, bad := range []string{"", "../x", "/abs", "a..b/../c", "bad key", "ends/"} {
+	for _, bad := range []string{"", "../x", "/abs", "a..b/../c", "bad key", "ends/", "team//notes", "team/./notes", "./x"} {
 		if _, err := memoryPathForKey(bad); err == nil {
 			t.Fatalf("expected error for %q", bad)
 		}
@@ -29,5 +29,8 @@ func TestMemoryKeyFromPath(t *testing.T) {
 	}
 	if _, ok := memoryKeyFromPath("/workspace/other"); ok {
 		t.Fatal("should not match")
+	}
+	if _, ok := memoryKeyFromPath(".vaultrun/memory/team/./notes"); ok {
+		t.Fatal("aliased path must not list")
 	}
 }

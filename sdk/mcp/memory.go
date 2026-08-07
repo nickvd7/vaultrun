@@ -11,6 +11,7 @@ import (
 )
 
 const memoryRoot = ".vaultrun/memory"
+const memoryMaxValueBytes = 256 * 1024
 
 var memoryKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,198}[a-zA-Z0-9]$|^[a-zA-Z0-9]$`)
 
@@ -26,9 +27,9 @@ func memoryToolDefinitions() []mcpTool {
 					"session_id": {Type: "string", Description: "Sandbox session ID."},
 					"key": {
 						Type:        "string",
-						Description: "Memory key (letters, digits, . _ / -; max 200 chars).",
+						Description: "Memory key (letters, digits, . _ / -; max 200 chars; no '.' components).",
 					},
-					"value": {Type: "string", Description: "Text value to store."},
+					"value": {Type: "string", Description: "Text value to store (max 256 KiB)."},
 				},
 				Required: []string{"session_id", "key", "value"},
 			},
@@ -79,11 +80,14 @@ func memoryPathForKey(key string) (string, error) {
 	if strings.Contains(key, "..") || strings.HasPrefix(key, "/") || strings.HasSuffix(key, "/") {
 		return "", fmt.Errorf("invalid memory key %q", key)
 	}
+	if strings.Contains(key, "//") || strings.Contains(key, "/./") || strings.HasPrefix(key, "./") {
+		return "", fmt.Errorf("invalid memory key %q", key)
+	}
 	if !memoryKeyPattern.MatchString(key) {
 		return "", fmt.Errorf("invalid memory key %q (use letters, digits, . _ / -)", key)
 	}
 	clean := path.Clean(key)
-	if clean == "." || strings.HasPrefix(clean, "..") {
+	if clean != key || clean == "." || strings.HasPrefix(clean, "..") {
 		return "", fmt.Errorf("invalid memory key %q", key)
 	}
 	return memoryRoot + "/" + clean, nil
@@ -95,7 +99,11 @@ func memoryKeyFromPath(p string) (string, bool) {
 	if !strings.HasPrefix(p, prefix) {
 		return "", false
 	}
-	return strings.TrimPrefix(p, prefix), true
+	key := strings.TrimPrefix(p, prefix)
+	if _, err := memoryPathForKey(key); err != nil {
+		return "", false
+	}
+	return key, true
 }
 
 func (s *server) toolMemorySet(ctx context.Context, args map[string]string) (mcpToolResult, error) {
@@ -109,6 +117,9 @@ func (s *server) toolMemorySet(ctx context.Context, args map[string]string) (mcp
 	}
 	if err := sanitizePath(mpath); err != nil {
 		return mcpToolResult{}, err
+	}
+	if len(args["value"]) > memoryMaxValueBytes {
+		return mcpToolResult{}, fmt.Errorf("value exceeds maximum size of %d bytes", memoryMaxValueBytes)
 	}
 	f, err := s.client.UploadFile(ctx, sessionID, mpath, args["value"])
 	if err != nil {

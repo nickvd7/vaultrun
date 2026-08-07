@@ -1,9 +1,10 @@
 // Legacy custom JSON-RPC serve loop.
 //
 // Production transports use the official Go MCP SDK (see bridge.go, main.go,
-// http.go). This file keeps the pre-SDK stdio loop and handleRequest dispatcher
-// for unit tests that exercise protocol edge cases (oversized messages,
-// version negotiation, discover) without spinning up the full SDK stack.
+// http.go). This file remains only for a small set of edge-case unit tests
+// (server/discover, unsupported protocolVersion in _meta, notifications,
+// oversized messages). Core protocol coverage lives in sdk_protocol_test.go
+// on the official SDK in-memory transport.
 package main
 
 import (

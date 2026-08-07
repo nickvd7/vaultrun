@@ -12,6 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - MCP Tasks Prometheus metrics (`vaultrun_mcp_tasks_*`) and structured task lifecycle logs; HTTP `GET /metrics` on the MCP server
+- Migrate core MCP protocol unit tests onto the official Go SDK in-memory transport; keep `protocol_legacy.go` only for edge-case coverage
 
 ### Added
 

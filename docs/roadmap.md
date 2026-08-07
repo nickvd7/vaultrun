@@ -98,4 +98,5 @@ These remain intentional non-goals until there is clear demand and infrastructur
 - [x] Redis-backed rate limiting when `REDIS_ADDR` is set (fixed 1-minute buckets; true ZSET sliding window optional later)
 - [x] Richer dashboard Session UX and org switcher (`GET /me/orgs`, sidebar switcher, session links, `replay_enabled` on create)
 - [x] Missions foundation (reusable tool sequences API)
+- [x] Verify checkpoints (`POST /api/v1/verify`, MCP `verify_checkpoint`)
 - [ ] Optional public “starting from” commercial packaging — **blocked on pricing**; scaffold in [commercial.md](commercial.md)

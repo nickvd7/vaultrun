@@ -720,6 +720,9 @@ func toolDefinitions() []mcpTool {
 	// Tasks poll/update/cancel as ordinary tools (hosts that lack custom methods).
 	tools = append(tools, taskToolDefinitions()...)
 
+	// Post-run verification checkpoints.
+	tools = append(tools, verifyToolDefinitions()...)
+
 	// Browser automation tools (always enabled)
 	tools = append(tools, browserToolDefinitions()...)
 
@@ -855,6 +858,9 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolFlowdStats(ctx)
 	case "flowd_undo_run":
 		return s.toolFlowdUndoRun(ctx, args)
+
+	case "verify_checkpoint":
+		return s.toolVerifyCheckpoint(ctx, args)
 
 	// Browser automation tools
 	case "browser_navigate":

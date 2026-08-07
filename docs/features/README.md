@@ -14,9 +14,9 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 | Natural Language Policy | ✅ Shipped | `internal/nlpolicy` |
 | Cost Intelligence | ✅ Shipped | `internal/cost`, dashboard costs page |
 | Session Templates | ✅ Shipped | `internal/templates` |
-| Missions (tool sequences) | 🚧 Foundation | `internal/missions` |
+| Verify checkpoints | ✅ Shipped | `internal/verify`, MCP `verify_checkpoint` |
 
-**Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1.
+**Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1. Verify checkpoints added later as workflow foundation.
 
 ---
 
@@ -28,7 +28,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 4. **[natural-language-policy.md](natural-language-policy.md)** — LLM → OPA/iptables · also [../natural-language-policy.md](../natural-language-policy.md)
 5. **[cost-intelligence.md](cost-intelligence.md)** — metrics, budgets, alerts
 6. **[session-templates.md](session-templates.md)** — template marketplace API
-7. **[missions.md](missions.md)** — reusable verified tool sequences
+7. **[verify-checkpoints.md](verify-checkpoints.md)** — post-run assertions for missions / MCP
 
 ## Supporting documentation
 

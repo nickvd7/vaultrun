@@ -9,6 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **Missions foundation** — reusable tool-sequence storage + API (`/api/v1/missions`, `mission_runs`); see `docs/features/missions.md`
+- **Verify checkpoints** — post-run assertions (`exit_code_zero`, `stdout_contains`, `file_exists`) via `POST /api/v1/verify`, session history, and MCP `verify_checkpoint`; see `docs/features/verify-checkpoints.md`
 
 ### Fixed
 - MCP tool dispatch accepts typed JSON arguments (bools, numbers, nested objects/arrays) via shared `coerceToolArgs` — hosts no longer need all-string maps

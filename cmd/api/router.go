@@ -28,6 +28,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/templates"
+	"github.com/nickvd7/vaultrun/internal/verify"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -264,6 +265,12 @@ func newRouter(
 	authGroup.GET("/orgs/:id/costs", costH.GetOrgCosts)
 	authGroup.POST("/orgs/:id/budget", costH.SetBudget)
 	authGroup.GET("/costs/rates", costH.GetRates)
+
+	// Verify checkpoints — post-run / post-step assertions
+	verifyStore := verify.NewStore(db)
+	verifyH := handlers.NewVerifyHandler(hub, verifyStore)
+	authGroup.POST("/verify", verifyH.Evaluate)
+	authGroup.GET("/sessions/:id/verifications", verifyH.ListBySession)
 
 	// Natural Language Policy endpoints — LLM-powered policy generation
 	nlPolicyH := handlers.NewNLPolicyHandler(hub)

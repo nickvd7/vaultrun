@@ -13,7 +13,7 @@
 
 **Self-hosted secure runtime for AI agents.** — [vaultrun.dev](https://vaultrun.dev) · [llms.txt](https://vaultrun.dev/llms.txt) · [PyPI](https://pypi.org/project/vaultrun-sdk/) · [Brand kit](site/brand/README.md)
 
-VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network.
+VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network. Local-first: treat successful agent plans as **workflow assets** you own (missions, verify checkpoints, sandbox memory, swarm graph, cost-aware replay).
 
 > **Latest v0.3.2:** A second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
 >

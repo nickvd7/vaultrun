@@ -348,6 +348,7 @@
     <a href="#demo">demo</a>
     <a href="#quickstart">quickstart</a>
     <a href="#features">features</a>
+    <a href="#workflows">workflows</a>
     <a href="#mcp">mcp</a>
     <a href="#sdk">sdk</a>
     <a href="#flowd">flowd</a>
@@ -373,7 +374,7 @@
     <p class="tagline cursor">Self-hosted secure runtime for AI agents.</p>
     <p class="sub">Your agent asks for a tool. VaultRun runs it in an isolated Docker sandbox on
     <em>your</em> infra — with policy, limits, and a signed audit trail.
-    No SaaS. No telemetry. No data leaving your network.</p>
+    Local-first: workflows stay assets you own. No SaaS. No telemetry.</p>
     <div class="badges">
       <span>license <b>apache-2.0 core</b></span>
       <span>lang <b>go 1.25</b></span>
@@ -514,6 +515,24 @@
       <div class="cell"><span class="idx">07 / enterprise</span><h3>Enterprise SSO</h3><p>OIDC (PKCE) + SAML 2.0 with org-aware RBAC. Okta, Azure AD, Google, Keycloak. <em>VaultRun Enterprise.</em></p></div>
       <div class="cell"><span class="idx">08 / internal/audit</span><h3>Audit trail</h3><p>Every action HMAC-signed and queryable. Tamper-evident by design.</p></div>
       <div class="cell"><span class="idx">09 / internal/policy</span><h3>Policy hook</h3><p>Pluggable policy layer, OPA-ready. Decide what agents may run, centrally.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="workflows">
+  <div class="wrap">
+    <h2>workflow as asset</h2>
+    <p class="h2-big">Save the plan. Replay it. Own the trail.</p>
+    <p class="sub">Successful agent work should not evaporate into chat history. VaultRun treats
+    reusable tool sequences as first-class <em>missions</em> on your infra — with verify checkpoints,
+    session memory, multi-agent swarm topology, and cost attribution when you replay.</p>
+    <div class="grid">
+      <div class="cell"><span class="idx">01 / missions</span><h3>Named sequences</h3><p>Versioned tool steps you can inspect, share in an org, and re-run against a fresh sandbox.</p></div>
+      <div class="cell"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files after a run — fail closed before the next step.</p></div>
+      <div class="cell"><span class="idx">03 / memory</span><h3>Sandbox notes</h3><p>Persist agent scratch under <code>.vaultrun/memory/</code>; snapshots carry it forward.</p></div>
+      <div class="cell"><span class="idx">04 / swarm</span><h3>Agent graph</h3><p>Directed edges between agents (lead / review / handoff) on collaborative sessions.</p></div>
+      <div class="cell"><span class="idx">05 / cost</span><h3>Replay spend</h3><p>Attribute session cost metrics to a mission run without mutating immutable billing rows.</p></div>
+      <div class="cell"><span class="idx">06 / local-first</span><h3>Your network</h3><p>No VaultRun cloud. Data, audit HMAC, and workflow assets stay where you deploy.</p></div>
     </div>
   </div>
 </section>

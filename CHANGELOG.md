@@ -21,14 +21,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   task metadata is durable and shared across MCP instances (atomic inflight cap,
   CAS updates, cancel pub/sub). Falls back to in-memory if Redis is down.
   Task IDs are strictly `task_<uuid>` to block key injection.
-<<<<<<< HEAD
 - **MCP Tasks `input_required`** — `tasks/get` returns `inputRequests`;
   `tasks/update` accepts `inputResponses` (SEP-2663). `run_command` supports
   `async=true&confirm=true` to pause for elicitation approval before execution.
-=======
 - **Legacy MCP JSON-RPC loop isolated** — `serve`/`handleRequest` moved to
   `protocol_legacy.go` (unit tests only); production uses the official Go SDK.
->>>>>>> 01c81bb (Isolate legacy MCP JSON-RPC loop from the production SDK path.)
+- **MCP Apps docs** — document `ui://vaultrun/session-panel`, tool UI meta,
+  `MCP_APPS_ENABLED`, and the EMA client/server split in `docs/mcp.md`.
 
 ### Changed
 

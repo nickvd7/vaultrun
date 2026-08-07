@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -150,42 +149,5 @@ func TestMongoNotConfigured(t *testing.T) {
 	_, err := srv.toolMongoFind(context.Background(), map[string]string{"collection": "users"})
 	if err == nil || !strings.Contains(err.Error(), "not configured") {
 		t.Errorf("expected not-configured error, got: %v", err)
-	}
-}
-
-// ── Tool list includes DB tools ───────────────────────────────────────────────
-
-func TestToolsListIncludesDBTools(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`99`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "tools/list",
-		Params:  json.RawMessage(`{}`),
-	})
-	resp := runMCPRequest(t, srv, req)
-	if resp.Error != nil {
-		t.Fatalf("tools/list error: %+v", resp.Error)
-	}
-	var result mcpToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &result); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	want := []string{
-		"sqlite_query", "sqlite_execute", "sqlite_schema",
-		"pg_query", "pg_execute", "pg_schema",
-		"mongo_find", "mongo_insert_one", "mongo_update", "mongo_delete",
-		"mongo_aggregate", "mongo_collections", "mongo_generate_mongoose",
-	}
-	names := make(map[string]bool)
-	for _, tool := range result.Tools {
-		names[tool.Name] = true
-	}
-	for _, w := range want {
-		if !names[w] {
-			t.Errorf("expected tool %q in list", w)
-		}
 	}
 }

@@ -99,7 +99,7 @@ func main() {
 
 	// Graceful shutdown: cancel ctx on SIGINT or SIGTERM. The HTTP transport
 	// listens on ctx.Done() and drains in-flight requests before exiting.
-	// The stdio transport's serve() loop exits naturally when stdin closes.
+	// The stdio transport exits when the SDK session ends (stdin closes).
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

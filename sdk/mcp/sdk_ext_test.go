@@ -328,13 +328,17 @@ func TestTaskMaxInflight(t *testing.T) {
 		maxAge:      time.Hour,
 		maxInflight: 1,
 	}
-	srv := newTestServer()
-	first := store.startToolTask(context.Background(), srv, "run_command",
-		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
-	if first.IsError {
-		t.Fatalf("first task should start: %+v", first.Content)
+	id := "task_" + uuid.NewString()
+	if err := store.put(&taskRecord{
+		ID:        id,
+		Status:    taskWorking,
+		Tool:      "run_command",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	second := store.startToolTask(context.Background(), srv, "run_command",
+	second := store.startToolTask(context.Background(), newTestServer(), "run_command",
 		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
 	if !second.IsError {
 		t.Fatal("expected inflight cap error")

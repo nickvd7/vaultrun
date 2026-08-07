@@ -153,6 +153,7 @@ func newTaskStore() *taskStore {
 			DialTimeout:  200 * time.Millisecond,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
+			MaxRetries:   1,
 		})
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		err := rdb.Ping(ctx).Err()

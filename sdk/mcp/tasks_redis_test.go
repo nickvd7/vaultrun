@@ -258,6 +258,7 @@ func TestRedisMaxAgeSweepsInflight(t *testing.T) {
 func TestRedisFallbackWhenUnreachable(t *testing.T) {
 	t.Setenv("MCP_REDIS_ADDR", "127.0.0.1:1")
 	t.Setenv("REDIS_ADDR", "")
+	t.Setenv("REDIS_PASSWORD", "")
 	store := newTaskStore()
 	if store.redisEnabled() {
 		t.Fatal("expected memory fallback when Redis unreachable")

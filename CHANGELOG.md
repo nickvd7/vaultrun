@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Missions foundation** — reusable tool-sequence storage + API (`/api/v1/missions`, `mission_runs`); see `docs/features/missions.md`
 - **Agent swarm graph** — directed edges (`reports_to` / `reviews` / `handoff` / `peer`) on collaborative sessions; `GET/POST/DELETE …/graph`; see `docs/features/agent-swarm-graph.md`
 - **Verify checkpoints** — post-run assertions (`exit_code_zero`, `stdout_contains`, `file_exists`) via `POST /api/v1/verify`, session history, and MCP `verify_checkpoint`; see `docs/features/verify-checkpoints.md`
+- **Agent memory MCP tools** — `memory_set` / `memory_get` / `memory_list` / `memory_delete` persist notes under `.vaultrun/memory/` in the session workspace; see `docs/features/agent-memory.md`
 
 ### Fixed
 - MCP tool dispatch accepts typed JSON arguments (bools, numbers, nested objects/arrays) via shared `coerceToolArgs` — hosts no longer need all-string maps

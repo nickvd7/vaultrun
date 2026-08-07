@@ -85,6 +85,7 @@ func TestSDKProtocolToolsListCatalog(t *testing.T) {
 		"mongo_aggregate", "mongo_collections", "mongo_generate_mongoose",
 		"get_task", "update_task", "cancel_task",
 		"verify_checkpoint",
+		"memory_set", "memory_get", "memory_list", "memory_delete",
 	}
 	toolNames := make(map[string]bool, len(tools.Tools))
 	for _, tool := range tools.Tools {

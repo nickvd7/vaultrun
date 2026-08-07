@@ -722,6 +722,8 @@ func toolDefinitions() []mcpTool {
 
 	// Post-run verification checkpoints.
 	tools = append(tools, verifyToolDefinitions()...)
+	// Persistent agent memory in sandbox workspace.
+	tools = append(tools, memoryToolDefinitions()...)
 
 	// Browser automation tools (always enabled)
 	tools = append(tools, browserToolDefinitions()...)
@@ -861,6 +863,14 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 
 	case "verify_checkpoint":
 		return s.toolVerifyCheckpoint(ctx, args)
+	case "memory_set":
+		return s.toolMemorySet(ctx, args)
+	case "memory_get":
+		return s.toolMemoryGet(ctx, args)
+	case "memory_list":
+		return s.toolMemoryList(ctx, args)
+	case "memory_delete":
+		return s.toolMemoryDelete(ctx, args)
 
 	// Browser automation tools
 	case "browser_navigate":

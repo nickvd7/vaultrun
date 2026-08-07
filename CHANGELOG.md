@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- MCP task tools accept typed JSON args (`approve` bool, `progress` number, object `input_responses`) instead of requiring all-string maps
+
 ### Added
 - **MCP Tasks tool wrappers** — `get_task`, `update_task`, `cancel_task` so tools-only hosts (Cursor, Claude) can poll/cancel async work without custom JSON-RPC methods
 

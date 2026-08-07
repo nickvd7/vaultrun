@@ -11,7 +11,7 @@ and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for ol
 | Feature | Status |
 |---|---|
 | Official Go SDK transport | stdio + HTTP (`Stateless`, JSON responses) |
-| Tasks extension | `async=true` → `taskId`; `tasks/get` / `tasks/update` / `tasks/cancel`; `input_required` via `inputRequests`/`inputResponses`; optional `confirm=true` |
+| Tasks extension | `async=true` → `taskId`; poll/update/cancel via tools `get_task` / `update_task` / `cancel_task` (also custom methods `tasks/*`); `input_required` via `inputRequests`/`inputResponses`; optional `confirm=true` |
 | MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
 | OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |
 
@@ -60,6 +60,7 @@ Until upstream ships Tasks:
 
 - Capability advertisement: `io.modelcontextprotocol/tasks` via `ServerCapabilities.AddExtension`
 - Wire methods: registered with `AddReceivingCustomMethod` (`tasks/get`, `tasks/update`, `tasks/cancel`)
+- **Tool wrappers (recommended for Cursor / Claude / tools-only hosts):** `get_task`, `update_task`, `cancel_task`
 - Async opt-in: VaultRun `async=true` on taskable tools (plus optional `confirm=true` → `input_required`)
 - Persistence / caps: VaultRun `taskStore` (memory or Redis) — unchanged when migrating
 

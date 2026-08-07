@@ -107,13 +107,13 @@ func toolDefinitions() []mcpTool {
 					"async": {
 						Type: "string",
 						Description: "Set to 'true' to run as a Tasks-extension background job and return a taskId " +
-							"immediately. Poll with tasks/get. Default false (synchronous).",
+							"immediately. Poll with get_task (or tasks/get). Default false (synchronous).",
 						Enum: []string{"true", "false"},
 					},
 					"confirm": {
 						Type: "string",
 						Description: "When async=true, set to 'true' to pause the task in input_required until the " +
-							"client approves via tasks/update inputResponses (elicitation form). Default false.",
+							"client approves via update_task (approve=true) or tasks/update. Default false.",
 						Enum: []string{"true", "false"},
 					},
 				},
@@ -716,6 +716,9 @@ func toolDefinitions() []mcpTool {
 	if flowdEnabled() {
 		tools = append(tools, flowdToolDefinitions()...)
 	}
+
+	// Tasks poll/update/cancel as ordinary tools (hosts that lack custom methods).
+	tools = append(tools, taskToolDefinitions()...)
 
 	// Browser automation tools (always enabled)
 	tools = append(tools, browserToolDefinitions()...)

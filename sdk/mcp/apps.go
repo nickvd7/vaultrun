@@ -52,7 +52,7 @@ const runPanelHTML = `<!DOCTYPE html>
   <p>Execute work with <code>run_command</code> (optionally <code>async=true</code> / <code>confirm=true</code>), then inspect results with <code>get_run</code>.</p>
   <ul>
     <li>Keep the returned <code>session_id</code> for follow-up commands.</li>
-    <li>For long jobs poll <code>tasks/get</code>; handle <code>input_required</code> via <code>tasks/update</code>.</li>
+    <li>For long jobs poll <code>get_task</code>; handle <code>input_required</code> via <code>update_task</code> (<code>approve=true/false</code>).</li>
   </ul>
   <div class="hint">MCP Apps surface <code>ui://vaultrun/run-panel</code>.</div>
 </body>

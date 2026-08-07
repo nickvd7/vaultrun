@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -198,15 +199,17 @@ func TestAppsResourceRegistered(t *testing.T) {
 
 func TestTasksUpdateAndCancel(t *testing.T) {
 	store := newTaskStore()
-	id := "task_test_1"
-	store.put(&taskRecord{
+	id := "task_" + uuid.NewString()
+	if err := store.put(&taskRecord{
 		ID:        id,
 		Status:    taskWorking,
 		Tool:      "run_command",
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 		Message:   "started",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	ok := store.update(id, func(t *taskRecord) bool {
 		if t.terminal() {
@@ -261,29 +264,32 @@ func TestTasksUpdateAndCancel(t *testing.T) {
 func TestTaskTTLExpire(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
+		cancels:     make(map[string]context.CancelFunc),
 		ttl:         time.Millisecond,
 		maxAge:      time.Hour,
 		maxInflight: 64,
 	}
 	old := time.Now().UTC().Add(-time.Hour)
-	store.put(&taskRecord{
-		ID:         "old",
+	oldID := "task_" + uuid.NewString()
+	liveID := "task_" + uuid.NewString()
+	store.tasks[oldID] = &taskRecord{
+		ID:         oldID,
 		Status:     taskCompleted,
 		UpdatedAt:  old,
 		CreatedAt:  old,
 		FinishedAt: old,
-	})
-	store.put(&taskRecord{
-		ID:        "live",
+	}
+	store.tasks[liveID] = &taskRecord{
+		ID:        liveID,
 		Status:    taskWorking,
 		UpdatedAt: old,
 		CreatedAt: time.Now().UTC(),
-	})
+	}
 	store.expire()
-	if _, ok := store.get("old"); ok {
+	if _, ok := store.get(oldID); ok {
 		t.Fatal("completed task should expire")
 	}
-	if _, ok := store.get("live"); !ok {
+	if _, ok := store.get(liveID); !ok {
 		t.Fatal("working task must not expire via TTL alone")
 	}
 }
@@ -291,19 +297,21 @@ func TestTaskTTLExpire(t *testing.T) {
 func TestTaskMaxAgeCancelsStaleWorking(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
+		cancels:     make(map[string]context.CancelFunc),
 		ttl:         time.Hour,
 		maxAge:      time.Millisecond,
 		maxInflight: 64,
 	}
 	old := time.Now().UTC().Add(-time.Hour)
-	store.put(&taskRecord{
-		ID:        "stale",
+	id := "task_" + uuid.NewString()
+	store.tasks[id] = &taskRecord{
+		ID:        id,
 		Status:    taskWorking,
 		CreatedAt: old,
 		UpdatedAt: old,
-	})
+	}
 	store.expire()
-	got, ok := store.get("stale")
+	got, ok := store.get(id)
 	if !ok {
 		t.Fatal("expected timed-out task retained until TTL")
 	}
@@ -315,17 +323,22 @@ func TestTaskMaxAgeCancelsStaleWorking(t *testing.T) {
 func TestTaskMaxInflight(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
+		cancels:     make(map[string]context.CancelFunc),
 		ttl:         time.Hour,
 		maxAge:      time.Hour,
 		maxInflight: 1,
 	}
-	srv := newTestServer()
-	first := store.startToolTask(context.Background(), srv, "run_command",
-		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
-	if first.IsError {
-		t.Fatalf("first task should start: %+v", first.Content)
+	id := "task_" + uuid.NewString()
+	if err := store.put(&taskRecord{
+		ID:        id,
+		Status:    taskWorking,
+		Tool:      "run_command",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
 	}
-	second := store.startToolTask(context.Background(), srv, "run_command",
+	second := store.startToolTask(context.Background(), newTestServer(), "run_command",
 		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
 	if !second.IsError {
 		t.Fatal("expected inflight cap error")

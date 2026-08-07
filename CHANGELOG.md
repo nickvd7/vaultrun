@@ -17,6 +17,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   working-task max age (`MCP_TASK_MAX_AGE_SECONDS`), message/result size limits,
   owner binding from OAuth `UserID`, and no TTL refresh on terminal no-ops.
   Async mode requires an explicit `async` flag (extension advertise alone is not enough).
+- **Redis-backed MCP Tasks** — when `MCP_REDIS_ADDR` or `REDIS_ADDR` is reachable,
+  task metadata is durable and shared across MCP instances (atomic inflight cap,
+  CAS updates, cancel pub/sub). Falls back to in-memory if Redis is down.
+  Task IDs are strictly `task_<uuid>` to block key injection.
 
 ### Changed
 

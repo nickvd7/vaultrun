@@ -45,9 +45,9 @@ code {
 .desktop-only { display: block; }
 
 .hero-mark {
-  display: none;
-  width: 56px;
-  height: 56px;
+  display: block;
+  width: clamp(48px, 12vw, 64px);
+  height: auto;
   margin: 0 0 20px;
 }
 

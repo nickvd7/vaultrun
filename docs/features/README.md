@@ -32,7 +32,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 6. **[session-templates.md](session-templates.md)** — template marketplace API
 7. **[verify-checkpoints.md](verify-checkpoints.md)** — post-run assertions for missions / MCP
 8. **[agent-memory.md](agent-memory.md)** — sandbox `.vaultrun/memory/` MCP tools
-7. **[workflow-as-asset.md](workflow-as-asset.md)** — local-first positioning for missions / verify / memory / swarm / cost
+9. **[workflow-as-asset.md](workflow-as-asset.md)** — local-first positioning for missions / verify / memory / swarm / cost
 
 ## Supporting documentation
 

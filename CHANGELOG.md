@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Missions foundation** — reusable tool-sequence storage + API (`/api/v1/missions`, `mission_runs`); see `docs/features/missions.md`
+
 ### Fixed
 - MCP tool dispatch accepts typed JSON arguments (bools, numbers, nested objects/arrays) via shared `coerceToolArgs` — hosts no longer need all-string maps
 

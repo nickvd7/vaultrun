@@ -44,6 +44,7 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
+	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -119,10 +120,11 @@ func TestE2ESmoke(t *testing.T) {
 	// and newRouter skips those routes when it is absent.
 	costTracker := cost.New(db, []byte(e2eMasterKey))
 	templatesManager := templates.New(db)
+	missionsManager := missions.New(db)
 	replayMgr := replay.New(db, ws, []byte(e2eMasterKey))
 
 	r := newRouter(cfg, db, dockerClient, ws, rnr, al, policy.AllowAll{}, queue,
-		nil, nil, nil, costTracker, templatesManager, nil, nil, replayMgr, enterpriseHooks{})
+		nil, nil, nil, costTracker, templatesManager, missionsManager, nil, nil, replayMgr, enterpriseHooks{})
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

@@ -95,15 +95,16 @@ func dispatchTaskTool(ctx context.Context, tasks *taskStore, name string, args j
 	if tasks == nil {
 		return taskToolError("tasks store not available")
 	}
-	m := map[string]string{}
+	// Hosts commonly send typed JSON (bool/number/object), not only strings.
+	var raw map[string]any
 	if len(args) > 0 {
-		if err := json.Unmarshal(args, &m); err != nil {
+		if err := json.Unmarshal(args, &raw); err != nil {
 			return taskToolError("invalid arguments: " + err.Error())
 		}
 	}
-	taskID := strings.TrimSpace(m["task_id"])
+	taskID := strings.TrimSpace(anyString(raw["task_id"]))
 	if taskID == "" {
-		taskID = strings.TrimSpace(m["taskId"])
+		taskID = strings.TrimSpace(anyString(raw["taskId"]))
 	}
 	if taskID == "" {
 		return taskToolError("task_id is required")
@@ -123,36 +124,45 @@ func dispatchTaskTool(ctx context.Context, tasks *taskStore, name string, args j
 		}
 		return taskToolJSON(res)
 	case "update_task":
-		params := &tasksUpdateParams{TaskID: taskID, Message: m["message"]}
-		if p := strings.TrimSpace(m["progress"]); p != "" {
-			f, err := strconv.ParseFloat(p, 64)
+		params := &tasksUpdateParams{
+			TaskID:  taskID,
+			Message: anyString(raw["message"]),
+		}
+		if _, has := raw["progress"]; has {
+			f, err := anyFloat(raw["progress"])
 			if err != nil {
 				return taskToolError("progress must be a number")
 			}
 			params.Progress = f
 		}
-		if raw := strings.TrimSpace(m["input_responses"]); raw != "" {
-			var responses map[string]taskInputResponse
-			if err := json.Unmarshal([]byte(raw), &responses); err != nil {
-				return taskToolError("input_responses must be a JSON object: " + err.Error())
+		if v, has := raw["input_responses"]; has && v != nil {
+			responses, err := parseInputResponsesArg(v)
+			if err != nil {
+				return taskToolError(err.Error())
 			}
 			params.InputResponses = responses
 		}
-		switch strings.ToLower(strings.TrimSpace(m["approve"])) {
-		case "true", "1", "yes":
-			if params.InputResponses == nil {
-				params.InputResponses = map[string]taskInputResponse{}
-			}
-			if _, exists := params.InputResponses[taskConfirmRequestKey]; !exists {
-				content, _ := json.Marshal(map[string]any{"approved": true})
-				params.InputResponses[taskConfirmRequestKey] = taskInputResponse{Action: "accept", Content: content}
-			}
-		case "false", "0", "no":
-			if params.InputResponses == nil {
-				params.InputResponses = map[string]taskInputResponse{}
-			}
-			if _, exists := params.InputResponses[taskConfirmRequestKey]; !exists {
-				params.InputResponses[taskConfirmRequestKey] = taskInputResponse{Action: "decline"}
+		if _, has := raw["approve"]; has {
+			switch anyBoolString(raw["approve"]) {
+			case "true":
+				if params.InputResponses == nil {
+					params.InputResponses = map[string]taskInputResponse{}
+				}
+				if _, exists := params.InputResponses[taskConfirmRequestKey]; !exists {
+					content, _ := json.Marshal(map[string]any{"approved": true})
+					params.InputResponses[taskConfirmRequestKey] = taskInputResponse{Action: "accept", Content: content}
+				}
+			case "false":
+				if params.InputResponses == nil {
+					params.InputResponses = map[string]taskInputResponse{}
+				}
+				if _, exists := params.InputResponses[taskConfirmRequestKey]; !exists {
+					params.InputResponses[taskConfirmRequestKey] = taskInputResponse{Action: "decline"}
+				}
+			case "":
+				// ignore empty
+			default:
+				return taskToolError("approve must be true or false")
 			}
 		}
 		res, err := tasks.updateTaskResult(ctx, params)
@@ -162,6 +172,118 @@ func dispatchTaskTool(ctx context.Context, tasks *taskStore, name string, args j
 		return taskToolJSON(res)
 	default:
 		return taskToolError(fmt.Sprintf("unknown task tool %q", name))
+	}
+}
+
+func parseInputResponsesArg(v any) (map[string]taskInputResponse, error) {
+	switch x := v.(type) {
+	case string:
+		s := strings.TrimSpace(x)
+		if s == "" {
+			return nil, nil
+		}
+		var responses map[string]taskInputResponse
+		if err := json.Unmarshal([]byte(s), &responses); err != nil {
+			return nil, fmt.Errorf("input_responses must be a JSON object: %w", err)
+		}
+		return responses, nil
+	case map[string]any:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return nil, fmt.Errorf("input_responses: %w", err)
+		}
+		var responses map[string]taskInputResponse
+		if err := json.Unmarshal(b, &responses); err != nil {
+			return nil, fmt.Errorf("input_responses must be a JSON object: %w", err)
+		}
+		return responses, nil
+	default:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return nil, fmt.Errorf("input_responses must be a JSON object")
+		}
+		var responses map[string]taskInputResponse
+		if err := json.Unmarshal(b, &responses); err != nil {
+			return nil, fmt.Errorf("input_responses must be a JSON object: %w", err)
+		}
+		return responses, nil
+	}
+}
+
+func anyString(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	case json.Number:
+		return x.String()
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+func anyFloat(v any) (float64, error) {
+	switch x := v.(type) {
+	case float64:
+		return x, nil
+	case float32:
+		return float64(x), nil
+	case int:
+		return float64(x), nil
+	case int64:
+		return float64(x), nil
+	case json.Number:
+		return x.Float64()
+	case string:
+		s := strings.TrimSpace(x)
+		if s == "" {
+			return 0, fmt.Errorf("empty")
+		}
+		return strconv.ParseFloat(s, 64)
+	default:
+		return 0, fmt.Errorf("unsupported type %T", v)
+	}
+}
+
+func anyBoolString(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	case string:
+		s := strings.ToLower(strings.TrimSpace(x))
+		switch s {
+		case "true", "1", "yes":
+			return "true"
+		case "false", "0", "no":
+			return "false"
+		case "":
+			return ""
+		default:
+			return s
+		}
+	case float64:
+		if x == 1 {
+			return "true"
+		}
+		if x == 0 {
+			return "false"
+		}
+		return fmt.Sprint(x)
+	default:
+		return strings.ToLower(strings.TrimSpace(fmt.Sprint(x)))
 	}
 }
 

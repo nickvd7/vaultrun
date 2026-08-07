@@ -53,7 +53,19 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 # Endpoint: POST http://localhost:8090/mcp
 # Header:   Authorization: Bearer your-secret-token
 # Body:     {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{...}}
+#
+# MCP 2026-07-28 clients also send:
+#   MCP-Protocol-Version: 2026-07-28
+#   Mcp-Method: tools/call
+#   Mcp-Name: <tool name>
+# Legacy clients (no those headers) remain supported.
 ```
+
+## Protocol
+
+- **Current:** MCP `2026-07-28` (stateless; `server/discover`; cache hints on `tools/list`)
+- **Legacy:** MCP `2024-11-05` `initialize` / `initialized` still accepted
+- Details: [docs/mcp.md](../../docs/mcp.md)
 
 ## Environment variables
 

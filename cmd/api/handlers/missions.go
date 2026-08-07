@@ -320,7 +320,7 @@ func (h *MissionHandler) GetRun(c *gin.Context) {
 		return
 	}
 	actor := middleware.Actor(c)
-	if !h.mayRead(c, actor, cur) {
+	if !h.mayReadRuns(c, actor, cur) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
@@ -364,12 +364,16 @@ func (h *MissionHandler) UpdateRun(c *gin.Context) {
 	}
 	var req missions.UpdateRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 	run, err := h.manager.UpdateRun(c.Request.Context(), missionID, runID, req)
 	if err == missions.ErrRunNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+	if errors.Is(err, missions.ErrInvalidMission) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run update"})
 		return
 	}
 	if err != nil {
@@ -378,9 +382,16 @@ func (h *MissionHandler) UpdateRun(c *gin.Context) {
 	}
 	resp := gin.H{"run": run}
 	if req.Attribute {
+		if run.SessionID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "run has no session_id", "run": run})
+			return
+		}
+		if _, ok := h.hub.checkSessionAccess(c, *run.SessionID, models.OrgRoleViewer); !ok {
+			return
+		}
 		attr, aerr := h.manager.AttributeRunCosts(c.Request.Context(), missionID, runID)
 		if aerr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": aerr.Error(), "run": run})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cost attribution failed", "run": run})
 			return
 		}
 		resp["cost_attribution"] = attr
@@ -414,13 +425,25 @@ func (h *MissionHandler) AttributeRunCosts(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
-	attr, err := h.manager.AttributeRunCosts(c.Request.Context(), missionID, runID)
+	run, err := h.manager.GetRun(c.Request.Context(), missionID, runID)
 	if err == missions.ErrRunNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
+		return
+	}
+	if run.SessionID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "run has no session_id"})
+		return
+	}
+	if _, ok := h.hub.checkSessionAccess(c, *run.SessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+	attr, err := h.manager.AttributeRunCosts(c.Request.Context(), missionID, runID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cost attribution failed"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"cost_attribution": attr})
@@ -448,7 +471,7 @@ func (h *MissionHandler) GetRunCosts(c *gin.Context) {
 		return
 	}
 	actor := middleware.Actor(c)
-	if !h.mayRead(c, actor, cur) {
+	if !h.mayReadRuns(c, actor, cur) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
@@ -481,7 +504,7 @@ func (h *MissionHandler) GetMissionCosts(c *gin.Context) {
 		return
 	}
 	actor := middleware.Actor(c)
-	if !h.mayRead(c, actor, cur) {
+	if !h.mayReadRuns(c, actor, cur) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

@@ -92,10 +92,22 @@ func (m *Manager) UpdateRun(ctx context.Context, missionID, runID uuid.UUID, req
 	}
 	status := cur.Status
 	if req.Status != "" {
-		status = req.Status
+		switch req.Status {
+		case "pending", "recorded", "running", "completed", "failed", "cancelled":
+			status = req.Status
+		default:
+			return nil, fmt.Errorf("%w: invalid status", ErrInvalidMission)
+		}
 	}
 	results := cur.StepResults
 	if req.StepResults != nil {
+		raw, err := json.Marshal(req.StepResults)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) > 256*1024 {
+			return nil, fmt.Errorf("%w: step_results too large", ErrInvalidMission)
+		}
 		results = req.StepResults
 	}
 	runErr := cur.Error
@@ -109,10 +121,12 @@ func (m *Manager) UpdateRun(ctx context.Context, missionID, runID uuid.UUID, req
 	now := time.Now().UTC()
 	var finished *time.Time = cur.FinishedAt
 	switch status {
-	case "completed", "failed", "recorded":
+	case "completed", "failed", "recorded", "cancelled":
 		if finished == nil {
 			finished = &now
 		}
+	case "pending", "running":
+		finished = nil
 	}
 	_, err = m.db.ExecContext(ctx, `
 		UPDATE mission_runs SET status=$1, step_results=$2, error=$3, finished_at=$4

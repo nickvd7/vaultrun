@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- MCP tool dispatch accepts typed JSON arguments (bools, numbers, nested objects/arrays) via shared `coerceToolArgs` — hosts no longer need all-string maps
+
+### Fixed
 - MCP task tools accept typed JSON args (`approve` bool, `progress` number, object `input_responses`) instead of requiring all-string maps
 
 ### Added

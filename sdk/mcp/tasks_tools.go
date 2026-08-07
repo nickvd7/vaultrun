@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -207,83 +206,6 @@ func parseInputResponsesArg(v any) (map[string]taskInputResponse, error) {
 			return nil, fmt.Errorf("input_responses must be a JSON object: %w", err)
 		}
 		return responses, nil
-	}
-}
-
-func anyString(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return x
-	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
-	case bool:
-		if x {
-			return "true"
-		}
-		return "false"
-	case json.Number:
-		return x.String()
-	default:
-		return fmt.Sprint(x)
-	}
-}
-
-func anyFloat(v any) (float64, error) {
-	switch x := v.(type) {
-	case float64:
-		return x, nil
-	case float32:
-		return float64(x), nil
-	case int:
-		return float64(x), nil
-	case int64:
-		return float64(x), nil
-	case json.Number:
-		return x.Float64()
-	case string:
-		s := strings.TrimSpace(x)
-		if s == "" {
-			return 0, fmt.Errorf("empty")
-		}
-		return strconv.ParseFloat(s, 64)
-	default:
-		return 0, fmt.Errorf("unsupported type %T", v)
-	}
-}
-
-func anyBoolString(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return ""
-	case bool:
-		if x {
-			return "true"
-		}
-		return "false"
-	case string:
-		s := strings.ToLower(strings.TrimSpace(x))
-		switch s {
-		case "true", "1", "yes":
-			return "true"
-		case "false", "0", "no":
-			return "false"
-		case "":
-			return ""
-		default:
-			return s
-		}
-	case float64:
-		if x == 1 {
-			return "true"
-		}
-		if x == 0 {
-			return "false"
-		}
-		return fmt.Sprint(x)
-	default:
-		return strings.ToLower(strings.TrimSpace(fmt.Sprint(x)))
 	}
 }
 

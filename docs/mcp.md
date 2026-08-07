@@ -15,6 +15,8 @@ and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for ol
 | MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
 | OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |
 
+Tool arguments accept normal JSON types (booleans, numbers, objects, arrays); the server coerces them for handlers. Nested values such as `env` or command `args` may be sent as JSON objects/arrays or as JSON strings.
+
 Application state (sandbox sessions) is **not** protocol state: tools return an
 explicit `session_id` that clients pass on later calls.
 

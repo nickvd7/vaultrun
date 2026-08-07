@@ -103,6 +103,7 @@ func (ts *taskStore) requestInput(id string, requests map[string]taskInputReques
 		}
 	}
 
+	var enteredInputRequired bool
 	ok := ts.update(id, func(t *taskRecord) bool {
 		if t.terminal() || t.Status == taskCancelled {
 			return false
@@ -123,12 +124,18 @@ func (ts *taskStore) requestInput(id string, requests map[string]taskInputReques
 			t.InputRequests[k] = req
 			t.UsedInputKeys[k] = true
 		}
+		if t.Status != taskInputRequired {
+			enteredInputRequired = true
+		}
 		t.Status = taskInputRequired
 		t.Message = "waiting for input"
 		return true
 	})
 	if !ok {
 		return fmt.Errorf("unknown taskId %q", id)
+	}
+	if enteredInputRequired {
+		observeTaskInputRequired()
 	}
 	ts.signalWaiters(id)
 	ts.publishInput(id)

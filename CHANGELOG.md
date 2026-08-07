@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- MCP Tasks Prometheus metrics (`vaultrun_mcp_tasks_*`) and structured task lifecycle logs; HTTP `GET /metrics` on the MCP server
+
+### Added
 
 - **MCP Tasks hardening** — `tasks/update` (progress/message), TTL cleanup via
   `MCP_TASK_TTL_SECONDS` (default 30m), cancel race safety, and `async` stripped

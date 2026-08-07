@@ -15,8 +15,9 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 | Cost Intelligence | ✅ Shipped | `internal/cost`, dashboard costs page |
 | Session Templates | ✅ Shipped | `internal/templates` |
 | Verify checkpoints | ✅ Shipped | `internal/verify`, MCP `verify_checkpoint` |
+| Agent memory (sandbox) | ✅ Shipped | MCP `memory_*` → `.vaultrun/memory/` |
 
-**Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1. Verify checkpoints added later as workflow foundation.
+**Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1. Verify checkpoints and agent memory added later as workflow foundation.
 
 ---
 
@@ -30,6 +31,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 5. **[cost-intelligence.md](cost-intelligence.md)** — metrics, budgets, alerts
 6. **[session-templates.md](session-templates.md)** — template marketplace API
 7. **[verify-checkpoints.md](verify-checkpoints.md)** — post-run assertions for missions / MCP
+8. **[agent-memory.md](agent-memory.md)** — sandbox `.vaultrun/memory/` MCP tools
 
 ## Supporting documentation
 

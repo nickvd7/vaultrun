@@ -297,3 +297,221 @@ func (h *MissionHandler) ListRuns(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"runs": runs})
 }
+
+// GetRun GET /api/v1/missions/:id/runs/:run_id
+func (h *MissionHandler) GetRun(c *gin.Context) {
+	missionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	runID, err := uuid.Parse(c.Param("run_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+		return
+	}
+	cur, err := h.manager.Get(c.Request.Context(), missionID)
+	if err == missions.ErrMissionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
+		return
+	}
+	actor := middleware.Actor(c)
+	if !h.mayReadRuns(c, actor, cur) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	run, err := h.manager.GetRun(c.Request.Context(), missionID, runID)
+	if err == missions.ErrRunNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"run": run})
+}
+
+// UpdateRun PATCH /api/v1/missions/:id/runs/:run_id
+func (h *MissionHandler) UpdateRun(c *gin.Context) {
+	missionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	runID, err := uuid.Parse(c.Param("run_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+		return
+	}
+	cur, err := h.manager.Get(c.Request.Context(), missionID)
+	if err == missions.ErrMissionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
+		return
+	}
+	actor := middleware.Actor(c)
+	if !h.mayWrite(c, actor, cur) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	var req missions.UpdateRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	run, err := h.manager.UpdateRun(c.Request.Context(), missionID, runID, req)
+	if err == missions.ErrRunNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+	if errors.Is(err, missions.ErrInvalidMission) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run update"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
+		return
+	}
+	resp := gin.H{"run": run}
+	if req.Attribute {
+		if run.SessionID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "run has no session_id", "run": run})
+			return
+		}
+		if _, ok := h.hub.checkSessionAccess(c, *run.SessionID, models.OrgRoleViewer); !ok {
+			return
+		}
+		attr, aerr := h.manager.AttributeRunCosts(c.Request.Context(), missionID, runID)
+		if aerr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cost attribution failed", "run": run})
+			return
+		}
+		resp["cost_attribution"] = attr
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// AttributeRunCosts POST /api/v1/missions/:id/runs/:run_id/attribute-costs
+func (h *MissionHandler) AttributeRunCosts(c *gin.Context) {
+	missionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	runID, err := uuid.Parse(c.Param("run_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+		return
+	}
+	cur, err := h.manager.Get(c.Request.Context(), missionID)
+	if err == missions.ErrMissionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
+		return
+	}
+	actor := middleware.Actor(c)
+	if !h.mayWrite(c, actor, cur) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	run, err := h.manager.GetRun(c.Request.Context(), missionID, runID)
+	if err == missions.ErrRunNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
+		return
+	}
+	if run.SessionID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "run has no session_id"})
+		return
+	}
+	if _, ok := h.hub.checkSessionAccess(c, *run.SessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+	attr, err := h.manager.AttributeRunCosts(c.Request.Context(), missionID, runID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cost attribution failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"cost_attribution": attr})
+}
+
+// GetRunCosts GET /api/v1/missions/:id/runs/:run_id/costs
+func (h *MissionHandler) GetRunCosts(c *gin.Context) {
+	missionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	runID, err := uuid.Parse(c.Param("run_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+		return
+	}
+	cur, err := h.manager.Get(c.Request.Context(), missionID)
+	if err == missions.ErrMissionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
+		return
+	}
+	actor := middleware.Actor(c)
+	if !h.mayReadRuns(c, actor, cur) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	attr, err := h.manager.GetRunAttribution(c.Request.Context(), missionID, runID)
+	if err == missions.ErrRunNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no cost attribution for this run"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get costs failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"cost_attribution": attr})
+}
+
+// GetMissionCosts GET /api/v1/missions/:id/costs
+func (h *MissionHandler) GetMissionCosts(c *gin.Context) {
+	missionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	cur, err := h.manager.Get(c.Request.Context(), missionID)
+	if err == missions.ErrMissionNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
+		return
+	}
+	actor := middleware.Actor(c)
+	if !h.mayReadRuns(c, actor, cur) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	summary, err := h.manager.GetMissionCostSummary(c.Request.Context(), missionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "get costs failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"summary": summary})
+}

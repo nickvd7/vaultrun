@@ -302,6 +302,11 @@ func newRouter(
 		authGroup.DELETE("/missions/:id", missionsH.Delete)
 		authGroup.POST("/missions/:id/runs", missionsH.RecordRun)
 		authGroup.GET("/missions/:id/runs", missionsH.ListRuns)
+		authGroup.GET("/missions/:id/runs/:run_id", missionsH.GetRun)
+		authGroup.PATCH("/missions/:id/runs/:run_id", missionsH.UpdateRun)
+		authGroup.POST("/missions/:id/runs/:run_id/attribute-costs", missionsH.AttributeRunCosts)
+		authGroup.GET("/missions/:id/runs/:run_id/costs", missionsH.GetRunCosts)
+		authGroup.GET("/missions/:id/costs", missionsH.GetMissionCosts)
 	}
 
 	// Replay endpoints — checkpoint creation, restore, fork (time-travel debugging)

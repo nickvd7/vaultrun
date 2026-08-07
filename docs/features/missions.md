@@ -1,6 +1,6 @@
 # Missions — reusable verified tool sequences
 
-Status: **foundation shipped** (API + storage). Inspired by workflow-as-asset patterns (save the plan, replay later).
+Status: **foundation + cost attribution shipped** (API + storage). Inspired by workflow-as-asset patterns (save the plan, replay later).
 
 ## Idea
 
@@ -18,6 +18,15 @@ A **mission** is a named, versioned sequence of MCP/API tool steps (e.g. `run_co
 | `DELETE` | `/api/v1/missions/:id` | Delete |
 | `POST` | `/api/v1/missions/:id/runs` | Record a run (optional `session_id`) |
 | `GET` | `/api/v1/missions/:id/runs` | List recent runs |
+| `GET` | `/api/v1/missions/:id/runs/:run_id` | Get one run |
+| `PATCH` | `/api/v1/missions/:id/runs/:run_id` | Update status / step_results (`attribute_costs` optional) |
+| `POST` | `/api/v1/missions/:id/runs/:run_id/attribute-costs` | Snapshot session cost_metrics onto the run |
+| `GET` | `/api/v1/missions/:id/runs/:run_id/costs` | Read cost attribution for a run |
+| `GET` | `/api/v1/missions/:id/costs` | Aggregate attributed costs for the mission |
+
+## Cost attribution (replay)
+
+`cost_metrics` rows stay immutable. When a run has a `session_id`, call **attribute-costs** (or `PATCH` with `"attribute_costs": true`) to snapshot compute/storage/network totals into `mission_cost_attributions`. That links mission replay history to spend without mutating billing rows.
 
 ## Step shape
 

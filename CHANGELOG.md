@@ -50,8 +50,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **OAuth / EMA server surface** — optional Protected Resource Metadata via
   `MCP_OAUTH_ISSUERS` (+ optional RFC 7662 introspection). Static `MCP_AUTH_TOKEN`
   remains supported.
-- **MCP protocol unit tests** — core coverage runs on the official SDK in-memory
-  transport (`sdk_protocol_test.go`); `protocol_legacy.go` kept for edge cases only.
+- **MCP protocol unit tests** — core + edge-case coverage runs on the official SDK
+  HTTP / in-memory transports (`sdk_protocol_test.go`); the pre-SDK
+  `protocol_legacy.go` serve loop is removed.
 
 ### Changed (earlier)
 

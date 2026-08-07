@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,121 +16,8 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
-func runMCPRequest(t *testing.T, srv *server, reqJSON string) jsonRPCResponse {
-	t.Helper()
-	var out bytes.Buffer
-	in := strings.NewReader(reqJSON + "\n")
-	_ = srv.serve(context.Background(), in, &out)
-
-	var resp jsonRPCResponse
-	if out.Len() == 0 {
-		t.Fatal("server produced no output")
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v (raw: %s)", err, out.String())
-	}
-	return resp
-}
-
 func newTestServer() *server {
 	return newServer(nil, "python:3.12-slim", "", fsConfig{})
-}
-
-// The following tests still exercise protocol_legacy.go (serve/handleRequest).
-// Prefer sdk_protocol_test.go for behaviour that production runs on the official SDK.
-// Keep these only for edge cases the SDK path does not cover (discover, version meta, notifications).
-
-func TestLegacyProtocolServerDiscover(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`10`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "server/discover",
-		Params:  json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"test","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}`),
-	})
-	resp := runMCPRequest(t, srv, req)
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
-	}
-	var disc mcpDiscoverResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &disc); err != nil {
-		t.Fatalf("unmarshal discover: %v", err)
-	}
-	if disc.ResultType != "complete" {
-		t.Errorf("resultType: got %q", disc.ResultType)
-	}
-	if disc.TTLMs <= 0 || disc.CacheScope != "public" {
-		t.Errorf("cache hints missing: ttl=%d scope=%q", disc.TTLMs, disc.CacheScope)
-	}
-	foundCurrent, foundLegacy := false, false
-	for _, v := range disc.SupportedVersions {
-		if v == protocolVersionCurrent {
-			foundCurrent = true
-		}
-		if v == protocolVersionLegacy {
-			foundLegacy = true
-		}
-	}
-	if !foundCurrent || !foundLegacy {
-		t.Errorf("supportedVersions=%v, want both current and legacy", disc.SupportedVersions)
-	}
-	if disc.Capabilities.Tools == nil {
-		t.Error("tools capability missing")
-	}
-	if disc.Meta == nil || disc.Meta[metaKeyServerInfo] == nil {
-		t.Error("serverInfo _meta missing")
-	}
-}
-
-func TestLegacyProtocolUnsupportedVersionInMeta(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`11`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "tools/list",
-		Params:  json.RawMessage(`{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientCapabilities":{}}}`),
-	})
-	resp := runMCPRequest(t, srv, req)
-	if resp.Error == nil {
-		t.Fatal("expected unsupported protocol version error")
-	}
-	if resp.Error.Code != errUnsupportedProtocolVersion {
-		t.Errorf("code: got %d want %d", resp.Error.Code, errUnsupportedProtocolVersion)
-	}
-}
-
-func TestLegacyProtocolUnknownMethod(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`3`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "bogus/method",
-	})
-
-	resp := runMCPRequest(t, srv, req)
-
-	if resp.Error == nil {
-		t.Fatal("expected error for unknown method")
-	}
-	if resp.Error.Code != errMethodNotFound {
-		t.Errorf("expected errMethodNotFound (%d), got %d", errMethodNotFound, resp.Error.Code)
-	}
-}
-
-func TestLegacyProtocolNotificationNoResponse(t *testing.T) {
-	// Notifications (no ID) must not produce a response.
-	srv := newTestServer()
-	var out bytes.Buffer
-	notif := `{"jsonrpc":"2.0","method":"initialized"}` + "\n"
-	in := strings.NewReader(notif)
-	_ = srv.serve(context.Background(), in, &out)
-	if out.Len() != 0 {
-		t.Errorf("expected no output for notification, got: %s", out.String())
-	}
 }
 
 // ── HTTP transport tests ───────────────────────────────────────────────────

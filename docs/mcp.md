@@ -63,7 +63,7 @@ Until upstream ships Tasks:
 - Async opt-in: VaultRun `async=true` on taskable tools (plus optional `confirm=true` → `input_required`)
 - Persistence / caps: VaultRun `taskStore` (memory or Redis) — unchanged when migrating
 
-Migration notes live in `sdk/mcp/tasks_sdk_compat.go`. Prefer adopting SDK-native helpers when available; keep VaultRun’s store, security caps, and elicitation behavior.
+Migration notes live in `sdk/mcp/tasks_sdk_compat.go`. Re-check on each `go-sdk` upgrade; latest v1.7.0 still has no first-class Tasks. Prefer adopting SDK-native helpers when available; keep VaultRun’s store, security caps, and elicitation behavior.
 
 ### OAuth / EMA env (HTTP)
 

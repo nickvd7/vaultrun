@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -9,8 +12,7 @@ import (
 )
 
 // connectTestSDKSession builds the production SDK server path (bridge + tasks)
-// over an in-memory transport. Prefer this over the legacy serve()/handleRequest
-// loop when asserting protocol behaviour that production actually runs.
+// over an in-memory transport.
 func connectTestSDKSession(t *testing.T) (context.Context, *mcpsdk.ClientSession) {
 	t.Helper()
 	ctx := context.Background()
@@ -144,5 +146,117 @@ func TestSDKProtocolDBToolsListed(t *testing.T) {
 		if !names[w] {
 			t.Errorf("expected tool %q in list", w)
 		}
+	}
+}
+
+func TestHTTPRootAdvertisesSupportedVersions(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var body struct {
+		Name              string   `json:"name"`
+		SupportedVersions []string `json:"supported_versions"`
+		Extensions        []string `json:"extensions"`
+		SDK               string   `json:"sdk"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Name != mcpServerName {
+		t.Fatalf("name=%q", body.Name)
+	}
+	if body.SDK == "" {
+		t.Fatal("missing sdk")
+	}
+	foundCurrent, foundLegacy := false, false
+	for _, v := range body.SupportedVersions {
+		if v == protocolVersionCurrent {
+			foundCurrent = true
+		}
+		if v == protocolVersionLegacy {
+			foundLegacy = true
+		}
+	}
+	if !foundCurrent || !foundLegacy {
+		t.Fatalf("supported_versions=%v", body.SupportedVersions)
+	}
+	hasTasks, hasApps := false, false
+	for _, e := range body.Extensions {
+		if e == extTasks {
+			hasTasks = true
+		}
+		if e == extApps {
+			hasApps = true
+		}
+	}
+	if !hasTasks || !hasApps {
+		t.Fatalf("extensions=%v", body.Extensions)
+	}
+}
+
+func TestHTTPUnsupportedProtocolVersion(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":` + modernMeta("2099-01-01") + `}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("MCP-Protocol-Version", "2099-01-01")
+	req.Header.Set("Mcp-Method", "tools/list")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var rpcResp jsonRPCResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		t.Fatal(err)
+	}
+	if rpcResp.Error == nil || rpcResp.Error.Code != errUnsupportedProtocolVersion {
+		t.Fatalf("expected unsupported protocol version, got %+v", rpcResp.Error)
+	}
+}
+
+func TestHTTPNotificationAcceptedWithoutBody(t *testing.T) {
+	ts, cleanup := newTestHTTPRouter("tok")
+	defer cleanup()
+
+	// JSON-RPC notification: no id → no response body (202 Accepted).
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer tok")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if len(b) != 0 {
+		t.Fatalf("expected empty body for notification, got %q", b)
 	}
 }

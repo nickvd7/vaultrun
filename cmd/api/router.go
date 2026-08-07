@@ -323,6 +323,9 @@ func newRouter(
 		authGroup.GET("/sessions/:id/messages", collabH.GetMessages)
 		authGroup.POST("/sessions/:id/messages", collabH.SendMessage)
 		authGroup.POST("/sessions/:id/enable-collaboration", collabH.EnableCollaboration)
+		authGroup.GET("/sessions/:id/graph", collabH.GetAgentGraph)
+		authGroup.POST("/sessions/:id/graph/edges", collabH.AddGraphEdge)
+		authGroup.DELETE("/sessions/:id/graph/edges/:edge_id", collabH.RemoveGraphEdge)
 	}
 
 	// Policy endpoints expose Rego source and dry-run eval — restrict to the

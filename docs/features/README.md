@@ -25,6 +25,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 1. **[session-replay.md](session-replay.md)** — checkpoints, restore/fork
 2. **[browser-automation.md](browser-automation.md)** — headless browser + MCP tools · also [../browser-automation.md](../browser-automation.md)
 3. **[multi-agent-collaboration.md](multi-agent-collaboration.md)** — presence + messaging
+   - also **[agent-swarm-graph.md](agent-swarm-graph.md)** — topology edges
 4. **[natural-language-policy.md](natural-language-policy.md)** — LLM → OPA/iptables · also [../natural-language-policy.md](../natural-language-policy.md)
 5. **[cost-intelligence.md](cost-intelligence.md)** — metrics, budgets, alerts
 6. **[session-templates.md](session-templates.md)** — template marketplace API

@@ -124,3 +124,14 @@ func ValidateMaxAgents(maxAgents int) error {
 	}
 	return nil
 }
+
+// ValidateGraphRelation restricts swarm edge kinds.
+func ValidateGraphRelation(relation string) error {
+	switch relation {
+	case RelationReportsTo, RelationReviews, RelationHandoff, RelationPeer:
+		return nil
+	default:
+		return invalid("relation %q must be one of %q, %q, %q, %q",
+			relation, RelationReportsTo, RelationReviews, RelationHandoff, RelationPeer)
+	}
+}

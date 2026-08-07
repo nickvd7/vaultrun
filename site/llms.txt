@@ -40,7 +40,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - Language: Go 1.25+ (API/CLI/MCP); Next.js dashboard; Python + Go SDKs
 - Sandbox: One Docker container per session; network off by default; non-root; capabilities dropped
 - Auth: API keys (`vr_…`); optional OIDC/SAML via VaultRun Enterprise
-- MCP: official Go SDK; 53 core tools (+6 Flowd when MCP_FLOWD_ENABLED); stdio or HTTP; Tasks (`async` / `tasks/get|update|cancel`), Apps, optional OAuth PRM
+- MCP: official Go SDK; 53 core tools (+6 Flowd when MCP_FLOWD_ENABLED); stdio or HTTP; Tasks (`async` / `tasks/get|update|cancel`, optional Redis); Apps; optional OAuth PRM
 - Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
 - Bugs / features: https://github.com/nickvd7/vaultrun/issues/new/choose (use templates)
 - Security: private only — https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md

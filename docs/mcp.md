@@ -22,9 +22,14 @@ explicit `session_id` that clients pass on later calls.
 
 | Variable | Purpose |
 |---|---|
-| `MCP_TASK_TTL_SECONDS` | How long finished tasks stay in memory (default `1800`) |
+| `MCP_TASK_TTL_SECONDS` | How long finished tasks stay available (default `1800`) |
 | `MCP_TASK_MAX_AGE_SECONDS` | Max age for working tasks before forced fail (default `7200`) |
 | `MCP_TASK_MAX_INFLIGHT` | Cap on concurrent working tasks (default `64`) |
+| `MCP_REDIS_ADDR` / `REDIS_ADDR` | When set and reachable, task metadata is stored in Redis (durable + multi-instance). Falls back to in-memory on ping failure. |
+| `MCP_REDIS_PASSWORD` / `REDIS_PASSWORD` | Redis password |
+| `MCP_REDIS_DB` / `REDIS_DB` | Redis DB index (default `0`) |
+
+Redis keys: `mcp:task:<taskId>`, `mcp:tasks:inflight` (SET), pub/sub `mcp:tasks:cancel` for cross-instance cancel.
 
 ### OAuth / EMA env (HTTP)
 

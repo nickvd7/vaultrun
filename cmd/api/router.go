@@ -22,6 +22,7 @@ import (
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
+	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -30,7 +31,6 @@ import (
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
-
 
 func newRouter(
 	cfg *config.Config,
@@ -46,6 +46,7 @@ func newRouter(
 	artStore artifacts.Store,
 	costTracker *cost.Tracker,
 	templatesManager *templates.Manager,
+	missionsManager *missions.Manager,
 	collabManager *collab.Manager,
 	collabHub *collab.Hub,
 	replayMgr *replay.Manager,
@@ -282,6 +283,19 @@ func newRouter(
 	authGroup.PUT("/templates/:id", templatesH.UpdateTemplate)
 	authGroup.DELETE("/templates/:id", templatesH.DeleteTemplate)
 	authGroup.POST("/templates/:id/use", templatesH.CreateSessionFromTemplate)
+
+	// Missions — reusable verified tool sequences (workflow-as-asset)
+	if missionsManager != nil {
+		missionsH := handlers.NewMissionHandler(missionsManager, hub)
+		authGroup.GET("/missions", missionsH.List)
+		authGroup.POST("/missions", missionsH.Create)
+		authGroup.GET("/missions/slug/:slug", missionsH.GetBySlug)
+		authGroup.GET("/missions/:id", missionsH.Get)
+		authGroup.PUT("/missions/:id", missionsH.Update)
+		authGroup.DELETE("/missions/:id", missionsH.Delete)
+		authGroup.POST("/missions/:id/runs", missionsH.RecordRun)
+		authGroup.GET("/missions/:id/runs", missionsH.ListRuns)
+	}
 
 	// Replay endpoints — checkpoint creation, restore, fork (time-travel debugging)
 	if replayMgr != nil {

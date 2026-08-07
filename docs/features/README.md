@@ -14,6 +14,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 | Natural Language Policy | ✅ Shipped | `internal/nlpolicy` |
 | Cost Intelligence | ✅ Shipped | `internal/cost`, dashboard costs page |
 | Session Templates | ✅ Shipped | `internal/templates` |
+| Missions (tool sequences) | 🚧 Foundation | `internal/missions` |
 
 **Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1.
 
@@ -27,6 +28,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 4. **[natural-language-policy.md](natural-language-policy.md)** — LLM → OPA/iptables · also [../natural-language-policy.md](../natural-language-policy.md)
 5. **[cost-intelligence.md](cost-intelligence.md)** — metrics, budgets, alerts
 6. **[session-templates.md](session-templates.md)** — template marketplace API
+7. **[missions.md](missions.md)** — reusable verified tool sequences
 
 ## Supporting documentation
 

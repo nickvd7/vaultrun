@@ -29,6 +29,7 @@ import (
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
+	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
@@ -151,6 +152,7 @@ func main() {
 
 	// Session templates manager — marketplace and template-based session creation.
 	templatesManager := templates.New(db)
+	missionsManager := missions.New(db)
 	// Bootstrap built-in templates (idempotent).
 	if err := templatesManager.Bootstrap(context.Background()); err != nil {
 		slog.Error("bootstrap templates", "err", err)
@@ -350,7 +352,8 @@ func main() {
 	// ── Enterprise features (ee/): SSO is wired in via build tag.
 	ent := initEnterprise(cfg, db, al)
 
-	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager, collabManager, collabHub, replayMgr, ent)
+	r := newRouter(cfg, db, docker, ws, rnr, al, policyHook, queue, sec, pool, artStore, costTracker, templatesManager,
+		missionsManager, collabManager, collabHub, replayMgr, ent)
 
 	srv := &http.Server{
 		Addr:         cfg.ServerAddr(),

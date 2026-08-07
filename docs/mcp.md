@@ -52,6 +52,19 @@ When the MCP HTTP server is running, scrape Prometheus metrics at `GET /metrics`
 Structured logs (`vaultrun-mcp: task …`) emit at create, terminal transitions, cancel,
 `input_required`, TTL/max-age, and Redis fallback. `backend` is `memory` or `redis`.
 
+### Tasks and the official Go SDK
+
+VaultRun depends on [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) **v1.7.0** for transport and tool bridging. That SDK release **does not** include first-class Tasks APIs yet (no built-in `tasks/get` / `tasks/update` / `tasks/cancel` helpers or `CreateTaskResult` types).
+
+Until upstream ships Tasks:
+
+- Capability advertisement: `io.modelcontextprotocol/tasks` via `ServerCapabilities.AddExtension`
+- Wire methods: registered with `AddReceivingCustomMethod` (`tasks/get`, `tasks/update`, `tasks/cancel`)
+- Async opt-in: VaultRun `async=true` on taskable tools (plus optional `confirm=true` → `input_required`)
+- Persistence / caps: VaultRun `taskStore` (memory or Redis) — unchanged when migrating
+
+Migration notes live in `sdk/mcp/tasks_sdk_compat.go`. Prefer adopting SDK-native helpers when available; keep VaultRun’s store, security caps, and elicitation behavior.
+
 ### OAuth / EMA env (HTTP)
 
 | Variable | Purpose |

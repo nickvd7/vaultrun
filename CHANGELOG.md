@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Document MCP Tasks vs official Go SDK v1.7.0 (no first-class Tasks yet) and add a registration/migration seam in `tasks_sdk_compat.go`
+
 ### Added
 - MCP Tasks Prometheus metrics (`vaultrun_mcp_tasks_*`) and structured task lifecycle logs; HTTP `GET /metrics` on the MCP server
 

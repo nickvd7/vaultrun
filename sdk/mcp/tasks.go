@@ -1,8 +1,9 @@
-// Tasks extension (io.modelcontextprotocol/tasks) — pollable long-running work.
+// Tasks extension (io.modelcontextprotocol/tasks, SEP-2663) — pollable long-running work.
 //
-// The official Go SDK does not yet ship first-class Tasks support (still on the
-// SDK roadmap). VaultRun implements the extension surface via custom methods
-// so clients that advertise the extension can poll durable task handles.
+// The official Go SDK (v1.7.0) does not yet ship first-class Tasks support.
+// See tasks_sdk_compat.go for the registration seam and migration checklist.
+// VaultRun implements the extension surface via custom methods so clients that
+// advertise the extension can poll durable task handles.
 //
 // Persistence: in-memory by default. When REDIS_ADDR or MCP_REDIS_ADDR is set
 // and reachable, task metadata is stored in Redis (survives restarts / shared
@@ -639,7 +640,7 @@ type tasksUpdateResult struct {
 }
 
 func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
-	if err := mcpsdk.AddReceivingCustomMethod(sdk, "tasks/get",
+	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodGet,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksGetParams) (*tasksGetResult, error) {
 			if params == nil || params.TaskID == "" {
 				return nil, fmt.Errorf("taskId is required")
@@ -671,7 +672,7 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 		return err
 	}
 
-	if err := mcpsdk.AddReceivingCustomMethod(sdk, "tasks/cancel",
+	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodCancel,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksCancelParams) (*tasksCancelResult, error) {
 			if params == nil || params.TaskID == "" {
 				return nil, fmt.Errorf("taskId is required")
@@ -722,7 +723,7 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 		return err
 	}
 
-	if err := mcpsdk.AddReceivingCustomMethod(sdk, "tasks/update",
+	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodUpdate,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksUpdateParams) (*tasksUpdateResult, error) {
 			if params == nil || params.TaskID == "" {
 				return nil, fmt.Errorf("taskId is required")

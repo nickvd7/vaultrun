@@ -225,3 +225,14 @@ func itoa(n int) string {
 	}
 	return string(digits)
 }
+
+func TestValidateGraphRelation(t *testing.T) {
+	for _, ok := range []string{RelationReportsTo, RelationReviews, RelationHandoff, RelationPeer} {
+		if err := ValidateGraphRelation(ok); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	if err := ValidateGraphRelation("owns"); err == nil {
+		t.Fatal("expected error for unknown relation")
+	}
+}

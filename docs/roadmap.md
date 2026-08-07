@@ -100,4 +100,5 @@ These remain intentional non-goals until there is clear demand and infrastructur
 - [x] Missions foundation (reusable tool sequences API)
 - [x] Verify checkpoints (`POST /api/v1/verify`, MCP `verify_checkpoint`)
 - [x] Agent swarm graph foundation (`/sessions/:id/graph`)
+- [x] Agent memory MCP tools (`.vaultrun/memory/`)
 - [ ] Optional public “starting from” commercial packaging — **blocked on pricing**; scaffold in [commercial.md](commercial.md)

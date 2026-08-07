@@ -18,6 +18,7 @@
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
 <link rel="stylesheet" href="/nav.css">
+<link rel="stylesheet" href="/site.css">
 <style>
   :root { --bg:#0a0a0a; --bg-alt:#111; --fg:#e8e8e8; --dim:#8a8a8a; --faint:#555; --line:#262626; }
   * { box-sizing: border-box; }
@@ -30,11 +31,11 @@
   .lede { color:var(--dim); margin:0 0 32px; max-width:62ch; }
   h2 { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin:36px 0 12px; }
   h2::before { content:"## "; color:var(--faint); }
-  pre.diagram { color:var(--dim); font-size:12.5px; line-height:1.45; overflow-x:auto; padding:24px; border:1px solid var(--line); background:var(--bg-alt); margin:0 0 20px; }
+  pre.diagram { color:var(--dim); font-size:12.5px; line-height:1.45; overflow-x:hidden; padding:24px; border:1px solid var(--line); background:var(--bg-alt); margin:0 0 20px; }
   pre.diagram b { color:var(--fg); font-weight:600; }
-  .term { border:1px solid var(--line); background:var(--bg-alt); margin:0 0 16px; }
+  .term { border:1px solid var(--line); background:var(--bg-alt); margin:0 0 16px; overflow:hidden; }
   .term-bar { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); padding:9px 14px; color:var(--faint); font-size:12px; }
-  .term pre { margin:0; padding:18px; overflow-x:auto; font-size:13px; line-height:1.75; }
+  .term pre { margin:0; padding:18px; overflow-x:hidden; font-size:13px; line-height:1.75; }
   .p { color:var(--faint); }
   .c { color:var(--faint); }
   ul { margin:0; padding-left:1.2em; color:var(--dim); }
@@ -46,6 +47,7 @@
   footer { margin-top:40px; padding-top:24px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; display:flex; flex-wrap:wrap; gap:8px 16px; }
   footer a { color:var(--dim); text-decoration:none; }
   footer a:hover { color:var(--fg); }
+  @media (max-width: 768px) { .wrap { padding: 24px 16px 48px; } h1 { font-size: 22px; } }
 </style>
 </head>
 <body>
@@ -77,13 +79,34 @@
   <p class="lede">Two local-first tools for different layers of automation. Flowd learns your file workflows on your machine. VaultRun gives AI agents a secure place to run code. Use both when you want approval-driven local automations <em>and</em> audited sandbox execution.</p>
 
   <h2>how they fit</h2>
-<pre class="diagram">
+<pre class="diagram desktop-only">
   <b>flowd</b>                         <b>VaultRun</b>
   observe filesystem              Docker sandbox per session
   detect rename/move patterns     run_command · MCP · audit trail
   suggest → you approve           agents · scripts · CI
   flowctl undo                    network off by default
 </pre>
+  <div class="flow-stack" aria-label="How Flowd and VaultRun fit">
+    <div class="flow-card">
+      <strong>flowd</strong>
+      <ul>
+        <li>Observe filesystem</li>
+        <li>Detect rename/move patterns</li>
+        <li>Suggest → you approve</li>
+        <li><code>flowctl undo</code></li>
+      </ul>
+    </div>
+    <div class="flow-arrow">+</div>
+    <div class="flow-card">
+      <strong>VaultRun</strong>
+      <ul>
+        <li>Docker sandbox per session</li>
+        <li><code>run_command</code> · MCP · audit trail</li>
+        <li>Agents · scripts · CI</li>
+        <li>Network off by default</li>
+      </ul>
+    </div>
+  </div>
 
   <h2>typical agent flow</h2>
   <ol style="color:var(--dim); padding-left:1.2em; margin:0 0 20px;">

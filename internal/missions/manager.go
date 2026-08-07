@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -67,6 +68,7 @@ func (m *Manager) Create(ctx context.Context, orgID *uuid.UUID, actor string, re
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	req.Normalize()
 	var exists bool
 	if err := m.db.GetContext(ctx, &exists, `SELECT EXISTS(SELECT 1 FROM missions WHERE slug=$1)`, req.Slug); err != nil {
 		return nil, err
@@ -133,7 +135,12 @@ func (m *Manager) List(ctx context.Context, filter MissionFilter) ([]Mission, er
 		args = append(args, "%"+s+"%")
 		where = append(where, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d OR slug ILIKE $%d)", len(args), len(args), len(args)))
 	}
-	args = append(args, limit, filter.Offset)
+	args = append(args, limit)
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	args = append(args, offset)
 	q := fmt.Sprintf(`SELECT * FROM missions WHERE %s ORDER BY updated_at DESC LIMIT $%d OFFSET $%d`,
 		strings.Join(where, " AND "), len(args)-1, len(args))
 	var rows []missionRow
@@ -157,18 +164,31 @@ func (m *Manager) Update(ctx context.Context, id uuid.UUID, req UpdateMissionReq
 		return nil, err
 	}
 	if req.Name != nil {
-		cur.Name = *req.Name
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || utf8.RuneCountInString(name) > maxNameLen {
+			return nil, fmt.Errorf("%w: invalid name", ErrInvalidMission)
+		}
+		cur.Name = name
 	}
 	if req.Description != nil {
+		if utf8.RuneCountInString(*req.Description) > maxDescriptionLen {
+			return nil, fmt.Errorf("%w: description too long", ErrInvalidMission)
+		}
 		cur.Description = *req.Description
 	}
 	if req.Version != nil {
+		if utf8.RuneCountInString(*req.Version) > maxVersionLen {
+			return nil, fmt.Errorf("%w: version too long", ErrInvalidMission)
+		}
 		cur.Version = *req.Version
 	}
 	if req.Published != nil {
 		cur.Published = *req.Published
 	}
 	if req.Tags != nil {
+		if err := validateTags(req.Tags); err != nil {
+			return nil, err
+		}
 		cur.Tags = req.Tags
 	}
 	if req.Steps != nil {

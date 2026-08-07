@@ -10,6 +10,7 @@ import (
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/missions"
+	"github.com/nickvd7/vaultrun/internal/models"
 )
 
 type MissionHandler struct {
@@ -51,6 +52,22 @@ func (h *MissionHandler) mayRead(c *gin.Context, actor string, m *missions.Missi
 	return err == nil
 }
 
+// mayReadRuns gates execution history and cost data. Published definitions are
+// world-readable, but runs/session_ids/spend stay private to owners and org members.
+func (h *MissionHandler) mayReadRuns(c *gin.Context, actor string, m *missions.Mission) bool {
+	if actor == "master" {
+		return true
+	}
+	if m.CreatedBy != "" && m.CreatedBy == actor {
+		return true
+	}
+	if m.OrgID == nil {
+		return false
+	}
+	_, err := dbpkg.GetOrgMemberRole(c.Request.Context(), h.hub.db, *m.OrgID, actor)
+	return err == nil
+}
+
 func (h *MissionHandler) mayWrite(c *gin.Context, actor string, m *missions.Mission) bool {
 	if actor == "master" {
 		return true
@@ -68,9 +85,10 @@ func (h *MissionHandler) mayWrite(c *gin.Context, actor string, m *missions.Miss
 func (h *MissionHandler) List(c *gin.Context) {
 	var filter missions.MissionFilter
 	_ = c.ShouldBindQuery(&filter)
-	// Non-master callers only see published unless they filter otherwise — default published=true for anon-ish keys.
+	// Non-master callers only ever see published missions in list (ignore
+	// published=false which would otherwise dump every org's drafts).
 	actor := middleware.Actor(c)
-	if actor != "master" && filter.Published == nil {
+	if actor != "master" {
 		pub := true
 		filter.Published = &pub
 	}
@@ -232,12 +250,17 @@ func (h *MissionHandler) RecordRun(c *gin.Context) {
 		return
 	}
 	actor := middleware.Actor(c)
-	if !h.mayRead(c, actor, cur) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	if !h.mayWrite(c, actor, cur) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 		return
 	}
 	var req missions.StartMissionRunRequest
 	_ = c.ShouldBindJSON(&req)
+	if req.SessionID != nil {
+		if _, ok := h.hub.checkSessionAccess(c, *req.SessionID, models.OrgRoleViewer); !ok {
+			return
+		}
+	}
 	orgID, _ := h.callerOrg(c, actor)
 	run, err := h.manager.RecordRun(c.Request.Context(), id, req.SessionID, orgID, "recorded", []any{}, "")
 	if err != nil {
@@ -263,7 +286,7 @@ func (h *MissionHandler) ListRuns(c *gin.Context) {
 		return
 	}
 	actor := middleware.Actor(c)
-	if !h.mayRead(c, actor, cur) {
+	if !h.mayReadRuns(c, actor, cur) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

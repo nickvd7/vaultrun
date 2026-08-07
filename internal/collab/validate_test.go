@@ -236,3 +236,12 @@ func TestValidateGraphRelation(t *testing.T) {
 		t.Fatal("expected error for unknown relation")
 	}
 }
+
+func TestValidateGraphRelationAndLabelCaps(t *testing.T) {
+	if err := ValidateGraphRelation("owns"); err == nil {
+		t.Fatal("expected unknown relation error")
+	}
+	if maxGraphLabelBytes < 100 || maxGraphMetadataBytes < 1024 {
+		t.Fatal("unexpected graph caps")
+	}
+}

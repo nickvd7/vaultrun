@@ -403,6 +403,10 @@ func (h *CollabHandler) AddGraphEdge(c *gin.Context) {
 	if _, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
 		return
 	}
+	if !h.collaborationEnabled(c, sessionID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "collaboration not enabled for this session"})
+		return
+	}
 	var req struct {
 		FromAgent string                 `json:"from_agent" binding:"required"`
 		ToAgent   string                 `json:"to_agent" binding:"required"`
@@ -411,13 +415,17 @@ func (h *CollabHandler) AddGraphEdge(c *gin.Context) {
 		Metadata  map[string]interface{} `json:"metadata"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 	edge, err := h.manager.AddGraphEdge(c.Request.Context(), sessionID, req.FromAgent, req.ToAgent, req.Relation, req.Label, req.Metadata)
 	if err != nil {
 		if errors.Is(err, collab.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, collab.ErrGraphEdgeLimit) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "graph edge limit reached"})
 			return
 		}
 		slog.Error("add graph edge", "err", err, "session_id", sessionID)
@@ -441,6 +449,10 @@ func (h *CollabHandler) RemoveGraphEdge(c *gin.Context) {
 		return
 	}
 	if _, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
+		return
+	}
+	if !h.collaborationEnabled(c, sessionID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "collaboration not enabled for this session"})
 		return
 	}
 	if err := h.manager.RemoveGraphEdge(c.Request.Context(), sessionID, edgeID); err != nil {

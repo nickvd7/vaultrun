@@ -21,6 +21,15 @@ const (
 // ErrGraphEdgeNotFound is returned when an edge cannot be deleted.
 var ErrGraphEdgeNotFound = errors.New("graph edge not found")
 
+// ErrGraphEdgeLimit is returned when a session has too many edges.
+var ErrGraphEdgeLimit = errors.New("graph edge limit reached")
+
+const (
+	maxGraphLabelBytes    = 512
+	maxGraphMetadataBytes = 16 * 1024
+	maxGraphEdgesPerSession = 256
+)
+
 // GraphEdge is a directed relation between two agents in a session.
 type GraphEdge struct {
 	ID        uuid.UUID              `db:"id" json:"id"`
@@ -54,12 +63,45 @@ func (m *Manager) AddGraphEdge(ctx context.Context, sessionID uuid.UUID, from, t
 	if from == to {
 		return nil, invalid("from_agent and to_agent must differ")
 	}
+	if len(label) > maxGraphLabelBytes {
+		return nil, invalid("label exceeds %d bytes", maxGraphLabelBytes)
+	}
 	if metadata == nil {
 		metadata = map[string]interface{}{}
 	}
 	metaJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshal metadata: %w", err)
+	}
+	if len(metaJSON) > maxGraphMetadataBytes {
+		return nil, invalid("metadata exceeds %d bytes", maxGraphMetadataBytes)
+	}
+
+	// Prefer active agents when Redis is available; fall back to session_agents history.
+	fromOK, err := m.agentKnown(ctx, sessionID, from)
+	if err != nil {
+		return nil, err
+	}
+	toOK, err := m.agentKnown(ctx, sessionID, to)
+	if err != nil {
+		return nil, err
+	}
+	if !fromOK || !toOK {
+		return nil, invalid("from_agent and to_agent must be known agents in the session")
+	}
+
+	var edgeCount int
+	if err := m.db.GetContext(ctx, &edgeCount,
+		`SELECT COUNT(*) FROM agent_graph_edges WHERE session_id = $1`, sessionID); err != nil {
+		return nil, fmt.Errorf("count graph edges: %w", err)
+	}
+	var existing int
+	_ = m.db.GetContext(ctx, &existing, `
+		SELECT COUNT(*) FROM agent_graph_edges
+		WHERE session_id=$1 AND from_agent=$2 AND to_agent=$3 AND relation=$4`,
+		sessionID, from, to, relation)
+	if existing == 0 && edgeCount >= maxGraphEdgesPerSession {
+		return nil, ErrGraphEdgeLimit
 	}
 
 	id := uuid.New()
@@ -87,6 +129,25 @@ func (m *Manager) AddGraphEdge(ctx context.Context, sessionID uuid.UUID, from, t
 		return nil, fmt.Errorf("upsert graph edge: %w", err)
 	}
 	return edge, nil
+}
+
+func (m *Manager) agentKnown(ctx context.Context, sessionID uuid.UUID, agentID string) (bool, error) {
+	if m.redis != nil {
+		active, err := m.IsAgentActive(ctx, sessionID, agentID)
+		if err != nil {
+			return false, err
+		}
+		if active {
+			return true, nil
+		}
+	}
+	var n int
+	err := m.db.GetContext(ctx, &n, `
+		SELECT COUNT(*) FROM session_agents WHERE session_id=$1 AND agent_id=$2`, sessionID, agentID)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // RemoveGraphEdge deletes an edge by ID within a session.

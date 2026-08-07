@@ -338,6 +338,7 @@ func TestHTTPAuthorizedWithToken(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer secret-token")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -365,6 +366,7 @@ func TestHTTPSecurityHeaders(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -376,12 +378,16 @@ func TestHTTPSecurityHeaders(t *testing.T) {
 	checks := map[string]string{
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "DENY",
-		"Cache-Control":          "no-store",
 	}
 	for header, want := range checks {
 		if got := resp.Header.Get(header); got != want {
 			t.Errorf("header %s: want %q, got %q", header, want, got)
 		}
+	}
+	// Gin middleware sets no-store; the official SDK may overwrite with no-cache.
+	cc := resp.Header.Get("Cache-Control")
+	if cc != "no-store" && !strings.Contains(cc, "no-cache") {
+		t.Errorf("Cache-Control: want no-store or no-cache*, got %q", cc)
 	}
 }
 
@@ -401,6 +407,7 @@ func TestHTTPRateLimit(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
 			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}`))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
 		req.Header.Set("Authorization", "Bearer tok")
 		resp, _ := http.DefaultClient.Do(req)
 		resp.Body.Close()
@@ -430,6 +437,7 @@ func TestHTTPModernHeadersOK(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":` + modernMeta(protocolVersionCurrent) + `}`
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
 	req.Header.Set("Mcp-Method", "tools/list")
@@ -458,6 +466,7 @@ func TestHTTPHeaderMismatchMethod(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":` + modernMeta(protocolVersionCurrent) + `}`
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
 	req.Header.Set("Mcp-Method", "ping") // mismatch
@@ -487,6 +496,7 @@ func TestHTTPToolsCallNameHeaderRequired(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + params + `}`
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
 	req.Header.Set("Mcp-Method", "tools/call")
@@ -509,6 +519,7 @@ func TestHTTPModernMethodNotFoundIs404(t *testing.T) {
 	body := `{"jsonrpc":"2.0","id":1,"method":"bogus/method","params":` + modernMeta(protocolVersionCurrent) + `}`
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 	req.Header.Set("MCP-Protocol-Version", protocolVersionCurrent)
 	req.Header.Set("Mcp-Method", "bogus/method")
@@ -530,6 +541,7 @@ func TestHTTPLegacyStillWorksWithoutHeaders(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer tok")
 
 	resp, err := http.DefaultClient.Do(req)

@@ -5,17 +5,32 @@ transport selection, TLS, authentication, rate limiting, and per-tool examples.
 
 ## Protocol versions
 
-VaultRun MCP speaks **MCP `2026-07-28`** (stateless Streamable HTTP) and keeps
-backward compatibility with **`2024-11-05`** (legacy `initialize` handshake).
+VaultRun MCP is built on the **official Go MCP SDK** (`github.com/modelcontextprotocol/go-sdk` v1.7.0+)
+and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for older clients.
 
-| Client style | How it works |
+| Feature | Status |
 |---|---|
-| **Modern** (`2026-07-28`) | Optional `server/discover`; every request carries `_meta` + HTTP headers `MCP-Protocol-Version`, `Mcp-Method`, and (for `tools/call`) `Mcp-Name`. No protocol session. |
-| **Legacy** (`2024-11-05`) | `initialize` / `initialized` handshake still accepted (stdio + HTTP without the new headers). |
+| Official Go SDK transport | stdio + HTTP (`Stateless`, JSON responses) |
+| Tasks extension | `async=true` on long tools → `taskId`; `tasks/get` / `tasks/cancel` |
+| MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
+| OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |
 
 Application state (sandbox sessions) is **not** protocol state: tools return an
-explicit `session_id` that clients pass on later calls — the pattern the 2026
-spec recommends for stateful apps on a stateless transport.
+explicit `session_id` that clients pass on later calls.
+
+### OAuth / EMA env (HTTP)
+
+| Variable | Purpose |
+|---|---|
+| `MCP_AUTH_TOKEN` | Static bearer (always supported) |
+| `MCP_OAUTH_ISSUERS` | Comma-separated authorization server issuer URLs → enables PRM |
+| `MCP_PUBLIC_BASE_URL` / `MCP_RESOURCE_URL` | Public resource URL advertised in PRM |
+| `MCP_OAUTH_SCOPES` | Scopes listed in PRM (default `mcp`) |
+| `MCP_OAUTH_INTROSPECTION_URL` | RFC 7662 introspection endpoint |
+| `MCP_OAUTH_INTROSPECTION_CLIENT_ID` / `_SECRET` | Introspection client credentials |
+
+EMA clients use the IdP + MCP auth-server flow on the **client** side; this server
+advertises PRM and validates tokens (static and/or introspection).
 
 ---
 

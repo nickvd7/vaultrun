@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **MCP server now uses the official Go SDK** (`github.com/modelcontextprotocol/go-sdk` v1.7.0)
+  for stdio + Streamable HTTP (`Stateless` + JSON responses). VaultRun tool handlers
+  are bridged into the SDK; `session_id` remains an explicit tool argument.
+- **Tasks extension** (`io.modelcontextprotocol/tasks`) — set `async=true` on
+  long-running tools (e.g. `run_command`) to get a `taskId`; poll with `tasks/get`,
+  cancel with `tasks/cancel`.
+- **MCP Apps** — ships `ui://vaultrun/session-panel` and attaches UI meta on
+  session tools (`MCP_APPS_ENABLED=false` to disable).
+- **OAuth / EMA server surface** — optional Protected Resource Metadata via
+  `MCP_OAUTH_ISSUERS` (+ optional RFC 7662 introspection). Static `MCP_AUTH_TOKEN`
+  remains supported.
+
+### Changed (earlier)
+
 - **MCP protocol dual-support for `2026-07-28`** (`sdk/mcp`) — Stateless
   Streamable HTTP: `server/discover`, per-request `_meta` protocol version,
   `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` header validation, cache

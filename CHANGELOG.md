@@ -28,6 +28,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `protocol_legacy.go` (unit tests only); production uses the official Go SDK.
 - **MCP Apps docs** — document `ui://vaultrun/session-panel`, tool UI meta,
   `MCP_APPS_ENABLED`, and the EMA client/server split in `docs/mcp.md`.
+- **MCP Apps run + artifacts panels** — add `ui://vaultrun/run-panel` and
+  `ui://vaultrun/artifacts-panel`, attached to `run_command`/`get_run` and
+  `list_artifacts`.
 
 ### Changed
 

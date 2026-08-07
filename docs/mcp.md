@@ -48,22 +48,23 @@ advertises PRM and validates tokens (static and/or introspection).
 ### MCP Apps
 
 Hosts that support the MCP Apps extension (`io.modelcontextprotocol/ui`) can
-render a lightweight HTML panel shipped by VaultRun:
+render lightweight HTML panels shipped by VaultRun:
 
-| Item | Value |
+| Resource URI | Attached tools |
 |---|---|
-| Resource URI | `ui://vaultrun/session-panel` |
-| MIME type | `text/html;profile=mcp-app` |
-| Attached tools | `list_sessions`, `get_session`, `create_session` (via tool `_meta.ui.resourceUri`) |
-| Disable | `MCP_APPS_ENABLED=false` |
+| `ui://vaultrun/session-panel` | `list_sessions`, `get_session`, `create_session` |
+| `ui://vaultrun/run-panel` | `run_command`, `get_run` |
+| `ui://vaultrun/artifacts-panel` | `list_artifacts` |
 
-The panel explains that VaultRun is **stateless at the MCP layer**: clients must
+MIME type: `text/html;profile=mcp-app`. Disable all Apps with `MCP_APPS_ENABLED=false`.
+
+Panels remind hosts that VaultRun is **stateless at the MCP layer**: clients must
 pass explicit `session_id` handles between tool calls. Hosts without Apps support
-ignore the resource and keep using normal tool text.
+ignore the resources and keep using normal tool text.
 
 EMA (Enterprise Managed Authorization) is a **client** concern. Server-side you
-only need PRM + token validation (see OAuth env above); the Apps panel does not
-perform auth itself.
+only need PRM + token validation (see OAuth env above); Apps panels do not
+perform auth themselves.
 
 ---
 

@@ -1,8 +1,8 @@
 # VaultRun
 
-> Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 53-tool MCP server (stdio + HTTP), HMAC-signed audit trail. No SaaS, no telemetry.
+> Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 53-tool MCP server (stdio + HTTP), HMAC-signed audit trail. Local-first: workflows stay assets on your infra. No SaaS, no telemetry.
 
-VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker containers on your own infrastructure. Apache 2.0 open core; Enterprise SSO (OIDC + SAML) is available separately.
+VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker containers on your own infrastructure. Successful tool sequences can be saved as missions (verify checkpoints, sandbox memory, swarm graph, cost attribution on replay). Apache 2.0 open core; Enterprise SSO (OIDC + SAML) is available separately.
 
 ## Start here
 
@@ -41,6 +41,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - Sandbox: One Docker container per session; network off by default; non-root; capabilities dropped
 - Auth: API keys (`vr_…`); optional OIDC/SAML via VaultRun Enterprise
 - MCP: official Go SDK; 53 core tools (+6 Flowd when MCP_FLOWD_ENABLED); stdio or HTTP; Tasks (`async` / `tasks/get|update|cancel`, optional Redis); Apps; optional OAuth PRM
+- Workflows: missions (reusable sequences), verify checkpoints, agent memory (`.vaultrun/memory/`), swarm graph edges, mission cost attribution — all self-hosted
 - Install: `git clone https://github.com/nickvd7/vaultrun && cp .env.example .env && make up && make bootstrap-key`
 - Bugs / features: https://github.com/nickvd7/vaultrun/issues/new/choose (use templates)
 - Security: private only — https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md

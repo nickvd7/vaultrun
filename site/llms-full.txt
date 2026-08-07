@@ -1,6 +1,6 @@
 # VaultRun — full summary for AI systems
 
-VaultRun is a self-hosted secure runtime for AI agents. It runs agent workflows inside isolated Docker sandboxes on the operator’s infrastructure so code execution, file access, database queries, and cloud API calls stay inside a blast radius that the operator controls. There is no VaultRun SaaS dependency and no product telemetry.
+VaultRun is a self-hosted secure runtime for AI agents. It runs agent workflows inside isolated Docker sandboxes on the operator’s infrastructure so code execution, file access, database queries, and cloud API calls stay inside a blast radius that the operator controls. There is no VaultRun SaaS dependency and no product telemetry. Positioning is local-first: successful agent tool sequences can become owned workflow assets (missions) with verify checkpoints, sandbox memory, multi-agent swarm topology, and cost attribution on replay — without sending plans or spend data to a vendor cloud.
 
 ## Problem it solves
 
@@ -34,6 +34,16 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 The server uses the official Go MCP SDK and supports the Tasks extension (`async=true` → `tasks/get` / `tasks/update` / `tasks/cancel`; optional Redis durability via `MCP_REDIS_ADDR`/`REDIS_ADDR`; TTL/caps via `MCP_TASK_*`) and MCP Apps (`ui://vaultrun/session-panel`).
 
 Tool groups include sandbox session/file/run tools, SQLite/Postgres/MongoDB, AWS (S3, SSM, Secrets Manager, Lambda), scoped host filesystem tools, GitHub helpers, snapshots, artifacts, audit listing, and optional Flowd workflow tools (`MCP_FLOWD_ENABLED=true`).
+
+## Workflow as asset (local-first)
+
+VaultRun can persist agent work as inspectable resources on the operator’s deployment:
+
+- **Missions** — named, versioned tool sequences (`/api/v1/missions`)
+- **Verify checkpoints** — `exit_code_zero` / `stdout_contains` / `file_exists` (`POST /api/v1/verify`, MCP `verify_checkpoint`)
+- **Agent memory** — MCP `memory_*` under `.vaultrun/memory/` in the session workspace
+- **Swarm graph** — directed agent edges on collaborative sessions (`/sessions/:id/graph`)
+- **Cost attribution** — snapshot session cost metrics onto a mission run without mutating immutable `cost_metrics`
 
 ## Install (local)
 

@@ -194,7 +194,17 @@ func (h *CollabHandler) GetActiveAgents(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"agents": agents})
+	resp := gin.H{"agents": agents}
+	if c.Query("include_graph") == "true" {
+		edges, err := h.manager.ListGraphEdges(c.Request.Context(), sessionID)
+		if err != nil {
+			slog.Error("list graph edges", "err", err, "session_id", sessionID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list graph edges"})
+			return
+		}
+		resp["edges"] = edges
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // GetMessages returns recent messages for a session
@@ -360,4 +370,99 @@ func (h *CollabHandler) EnableCollaboration(c *gin.Context) {
 		"message":    "collaboration enabled",
 		"max_agents": maxAgents,
 	})
+}
+
+// GetAgentGraph returns active agents plus swarm topology edges.
+// GET /api/v1/sessions/:id/graph
+func (h *CollabHandler) GetAgentGraph(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+	if _, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
+		return
+	}
+	graph, err := h.manager.GetAgentGraph(c.Request.Context(), sessionID)
+	if err != nil {
+		slog.Error("get agent graph", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get agent graph"})
+		return
+	}
+	c.JSON(http.StatusOK, graph)
+}
+
+// AddGraphEdge adds or updates a directed swarm edge.
+// POST /api/v1/sessions/:id/graph/edges
+func (h *CollabHandler) AddGraphEdge(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+	if _, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
+		return
+	}
+	if !h.collaborationEnabled(c, sessionID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "collaboration not enabled for this session"})
+		return
+	}
+	var req struct {
+		FromAgent string                 `json:"from_agent" binding:"required"`
+		ToAgent   string                 `json:"to_agent" binding:"required"`
+		Relation  string                 `json:"relation" binding:"required"`
+		Label     string                 `json:"label"`
+		Metadata  map[string]interface{} `json:"metadata"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	edge, err := h.manager.AddGraphEdge(c.Request.Context(), sessionID, req.FromAgent, req.ToAgent, req.Relation, req.Label, req.Metadata)
+	if err != nil {
+		if errors.Is(err, collab.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, collab.ErrGraphEdgeLimit) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "graph edge limit reached"})
+			return
+		}
+		slog.Error("add graph edge", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add graph edge"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"edge": edge})
+}
+
+// RemoveGraphEdge deletes a swarm edge.
+// DELETE /api/v1/sessions/:id/graph/edges/:edge_id
+func (h *CollabHandler) RemoveGraphEdge(c *gin.Context) {
+	sessionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+	edgeID, err := uuid.Parse(c.Param("edge_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid edge ID"})
+		return
+	}
+	if _, ok := h.baseHub.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
+		return
+	}
+	if !h.collaborationEnabled(c, sessionID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "collaboration not enabled for this session"})
+		return
+	}
+	if err := h.manager.RemoveGraphEdge(c.Request.Context(), sessionID, edgeID); err != nil {
+		if errors.Is(err, collab.ErrGraphEdgeNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "edge not found"})
+			return
+		}
+		slog.Error("remove graph edge", "err", err, "session_id", sessionID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove graph edge"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

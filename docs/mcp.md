@@ -12,6 +12,7 @@ and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for ol
 |---|---|
 | Official Go SDK transport | stdio + HTTP (`Stateless`, JSON responses) |
 | Tasks extension | `async=true` → `taskId`; poll/update/cancel via tools `get_task` / `update_task` / `cancel_task` (also custom methods `tasks/*`); `input_required` via `inputRequests`/`inputResponses`; optional `confirm=true` |
+| Verify checkpoints | MCP `verify_checkpoint` + `POST /api/v1/verify` (`exit_code_zero`, `stdout_contains`, `file_exists`) |
 | MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
 | OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |
 

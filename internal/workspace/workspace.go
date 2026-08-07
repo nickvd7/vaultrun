@@ -137,6 +137,19 @@ func (m *Manager) safeReadPath(sessionID uuid.UUID, userPath string) (string, er
 	return real, nil
 }
 
+// Exists reports whether userPath refers to a real file/dir inside the
+// session workspace. Symlinks that escape the workspace root are treated as
+// absent (not an oracle for host paths).
+func (m *Manager) Exists(sessionID uuid.UUID, userPath string) (bool, error) {
+	if _, err := m.SafePath(sessionID, userPath); err != nil {
+		return false, err
+	}
+	if _, err := m.safeReadPath(sessionID, userPath); err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
 // WriteFile writes data to a safe path inside the workspace, creating
 // intermediate directories as needed.
 //

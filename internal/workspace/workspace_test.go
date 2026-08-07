@@ -190,6 +190,18 @@ func TestSymlinkEscapePrevention(t *testing.T) {
 		f.Close()
 		t.Error("OpenFile should reject a symlink that escapes the workspace")
 	}
+
+	exists, err := m.Exists(id, "escape-link")
+	if err != nil {
+		t.Fatalf("Exists: %v", err)
+	}
+	if exists {
+		t.Error("Exists must not report host path via escaping symlink")
+	}
+	exists, err = m.Exists(id, "missing.txt")
+	if err != nil || exists {
+		t.Fatalf("missing file: exists=%v err=%v", exists, err)
+	}
 }
 
 // sessionPath is exposed via SessionPath

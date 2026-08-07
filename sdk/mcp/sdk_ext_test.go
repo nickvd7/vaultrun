@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -109,7 +110,9 @@ func TestTasksAsyncRunCommand(t *testing.T) {
 
 	// Extract task id and poll via custom method.
 	var payload struct {
-		TaskID string `json:"taskId"`
+		Task struct {
+			TaskID string `json:"taskId"`
+		} `json:"task"`
 	}
 	start := strings.Index(text, "{")
 	if start < 0 {
@@ -118,10 +121,13 @@ func TestTasksAsyncRunCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(text[start:]), &payload); err != nil {
 		t.Fatal(err)
 	}
+	if payload.Task.TaskID == "" {
+		t.Fatalf("missing taskId in %q", text)
+	}
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		rec, ok := store.get(payload.TaskID)
+		rec, ok := store.get(payload.Task.TaskID)
 		if !ok {
 			t.Fatal("task missing from store")
 		}
@@ -187,5 +193,198 @@ func TestAppsResourceRegistered(t *testing.T) {
 	}
 	if !strings.Contains(res.Contents[0].Text, "VaultRun") {
 		t.Fatalf("unexpected content: %s", res.Contents[0].Text[:80])
+	}
+}
+
+func TestTasksUpdateAndCancel(t *testing.T) {
+	store := newTaskStore()
+	id := "task_test_1"
+	store.put(&taskRecord{
+		ID:        id,
+		Status:    taskWorking,
+		Tool:      "run_command",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+		Message:   "started",
+	})
+
+	ok := store.update(id, func(t *taskRecord) bool {
+		if t.terminal() {
+			return false
+		}
+		t.Progress = 0.5
+		t.Message = "halfway"
+		return true
+	})
+	if !ok {
+		t.Fatal("update missed")
+	}
+	got, found := store.get(id)
+	if !found || got.Progress != 0.5 || got.Message != "halfway" || got.Status != taskWorking {
+		t.Fatalf("unexpected after update: %#v", got)
+	}
+
+	store.update(id, func(t *taskRecord) bool {
+		if t.terminal() {
+			return false
+		}
+		t.Status = taskCancelled
+		t.Message = "cancellation requested"
+		t.Progress = 1
+		t.FinishedAt = time.Now().UTC()
+		return true
+	})
+	got, _ = store.get(id)
+	if got.Status != taskCancelled {
+		t.Fatalf("status=%s", got.Status)
+	}
+
+	before := got.UpdatedAt
+	time.Sleep(2 * time.Millisecond)
+	store.update(id, func(t *taskRecord) bool {
+		if t.terminal() {
+			return false
+		}
+		t.Progress = 0.9
+		t.Message = "too late"
+		return true
+	})
+	got, _ = store.get(id)
+	if got.Progress != 1 || got.Message != "cancellation requested" {
+		t.Fatalf("terminal task mutated: %#v", got)
+	}
+	if !got.UpdatedAt.Equal(before) {
+		t.Fatalf("UpdatedAt refreshed on terminal no-op: %v -> %v", before, got.UpdatedAt)
+	}
+}
+
+func TestTaskTTLExpire(t *testing.T) {
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Millisecond,
+		maxAge:      time.Hour,
+		maxInflight: 64,
+	}
+	old := time.Now().UTC().Add(-time.Hour)
+	store.put(&taskRecord{
+		ID:         "old",
+		Status:     taskCompleted,
+		UpdatedAt:  old,
+		CreatedAt:  old,
+		FinishedAt: old,
+	})
+	store.put(&taskRecord{
+		ID:        "live",
+		Status:    taskWorking,
+		UpdatedAt: old,
+		CreatedAt: time.Now().UTC(),
+	})
+	store.expire()
+	if _, ok := store.get("old"); ok {
+		t.Fatal("completed task should expire")
+	}
+	if _, ok := store.get("live"); !ok {
+		t.Fatal("working task must not expire via TTL alone")
+	}
+}
+
+func TestTaskMaxAgeCancelsStaleWorking(t *testing.T) {
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Hour,
+		maxAge:      time.Millisecond,
+		maxInflight: 64,
+	}
+	old := time.Now().UTC().Add(-time.Hour)
+	store.put(&taskRecord{
+		ID:        "stale",
+		Status:    taskWorking,
+		CreatedAt: old,
+		UpdatedAt: old,
+	})
+	store.expire()
+	got, ok := store.get("stale")
+	if !ok {
+		t.Fatal("expected timed-out task retained until TTL")
+	}
+	if got.Status != taskFailed || got.Error != "task exceeded max age" {
+		t.Fatalf("unexpected: %#v", got)
+	}
+}
+
+func TestTaskMaxInflight(t *testing.T) {
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Hour,
+		maxAge:      time.Hour,
+		maxInflight: 1,
+	}
+	srv := newTestServer()
+	first := store.startToolTask(context.Background(), srv, "run_command",
+		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
+	if first.IsError {
+		t.Fatalf("first task should start: %+v", first.Content)
+	}
+	second := store.startToolTask(context.Background(), srv, "run_command",
+		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
+	if !second.IsError {
+		t.Fatal("expected inflight cap error")
+	}
+}
+
+func TestAuthorizeTaskAccess(t *testing.T) {
+	rec := &taskRecord{ID: "t1", Owner: "alice"}
+	if err := authorizeTaskAccess(rec, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeTaskAccess(rec, ""); err != nil {
+		t.Fatal("empty actor should be allowed (stdio)")
+	}
+	if err := authorizeTaskAccess(rec, "bob"); err == nil {
+		t.Fatal("expected denial for other owner")
+	}
+	if err := authorizeTaskAccess(&taskRecord{ID: "t2"}, "bob"); err != nil {
+		t.Fatal("unowned task should allow any actor")
+	}
+}
+
+func TestStripAsyncFlag(t *testing.T) {
+	in := json.RawMessage(`{"image":"alpine","async":true,"name":"x"}`)
+	out := stripAsyncFlag(in)
+	var m map[string]any
+	if err := json.Unmarshal(out, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["async"]; ok {
+		t.Fatal("async should be stripped")
+	}
+	if m["image"] != "alpine" || m["name"] != "x" {
+		t.Fatalf("unexpected: %#v", m)
+	}
+	if !strings.Contains(string(in), `"async"`) {
+		t.Fatal("original raw message should be unchanged")
+	}
+}
+
+func TestWantsAsyncTask(t *testing.T) {
+	if !wantsAsyncTask(nil, json.RawMessage(`{"async":true}`)) {
+		t.Fatal("bool true")
+	}
+	if !wantsAsyncTask(nil, json.RawMessage(`{"async":"true"}`)) {
+		t.Fatal("string true")
+	}
+	if wantsAsyncTask(nil, json.RawMessage(`{"async":false}`)) {
+		t.Fatal("bool false")
+	}
+	if wantsAsyncTask(nil, json.RawMessage(`{}`)) {
+		t.Fatal("missing async must not force task mode")
+	}
+}
+
+func TestClampTaskMessage(t *testing.T) {
+	long := strings.Repeat("ä", maxTaskMessageRunes+10)
+	got := clampTaskMessage(long)
+	if utf8.RuneCountInString(got) != maxTaskMessageRunes {
+		t.Fatalf("got %d runes", utf8.RuneCountInString(got))
 	}
 }

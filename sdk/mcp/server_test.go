@@ -38,63 +38,11 @@ func newTestServer() *server {
 	return newServer(nil, "python:3.12-slim", "", fsConfig{})
 }
 
-func TestProtocolInitialize(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`1`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "initialize",
-		Params:  json.RawMessage(`{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}`),
-	})
+// The following tests still exercise protocol_legacy.go (serve/handleRequest).
+// Prefer sdk_protocol_test.go for behaviour that production runs on the official SDK.
+// Keep these only for edge cases the SDK path does not cover (discover, version meta, notifications).
 
-	resp := runMCPRequest(t, srv, req)
-
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
-	}
-
-	// Result should contain protocolVersion and serverInfo.
-	var initResult mcpInitializeResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &initResult); err != nil {
-		t.Fatalf("unmarshal init result: %v", err)
-	}
-	if initResult.ProtocolVersion != "2024-11-05" {
-		t.Errorf("wrong protocol version: %q", initResult.ProtocolVersion)
-	}
-	if initResult.ServerInfo.Name != "vaultrun-mcp" {
-		t.Errorf("wrong server name: %q", initResult.ServerInfo.Name)
-	}
-	if initResult.Capabilities.Tools == nil {
-		t.Error("tools capability should be set")
-	}
-}
-
-func TestProtocolInitializeNegotiatesModern(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`1`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "initialize",
-		Params:  json.RawMessage(`{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"test","version":"0"}}`),
-	})
-	resp := runMCPRequest(t, srv, req)
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
-	}
-	var initResult mcpInitializeResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &initResult); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if initResult.ProtocolVersion != protocolVersionCurrent {
-		t.Errorf("expected %s, got %q", protocolVersionCurrent, initResult.ProtocolVersion)
-	}
-}
-
-func TestProtocolServerDiscover(t *testing.T) {
+func TestLegacyProtocolServerDiscover(t *testing.T) {
 	srv := newTestServer()
 	id := json.RawMessage(`10`)
 	req := mustJSON(jsonRPCRequest{
@@ -138,7 +86,7 @@ func TestProtocolServerDiscover(t *testing.T) {
 	}
 }
 
-func TestProtocolUnsupportedVersionInMeta(t *testing.T) {
+func TestLegacyProtocolUnsupportedVersionInMeta(t *testing.T) {
 	srv := newTestServer()
 	id := json.RawMessage(`11`)
 	req := mustJSON(jsonRPCRequest{
@@ -156,75 +104,7 @@ func TestProtocolUnsupportedVersionInMeta(t *testing.T) {
 	}
 }
 
-func TestProtocolToolsList(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`2`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "tools/list",
-		Params:  json.RawMessage(`{}`),
-	})
-
-	resp := runMCPRequest(t, srv, req)
-
-	if resp.Error != nil {
-		t.Fatalf("unexpected error: %+v", resp.Error)
-	}
-
-	var listResult mcpToolsListResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &listResult); err != nil {
-		t.Fatalf("unmarshal tools list: %v", err)
-	}
-	if listResult.ResultType != "complete" {
-		t.Errorf("expected resultType=complete, got %q", listResult.ResultType)
-	}
-	if listResult.TTLMs != toolsListTTLMs {
-		t.Errorf("ttlMs: got %d want %d", listResult.TTLMs, toolsListTTLMs)
-	}
-	if listResult.CacheScope != "public" {
-		t.Errorf("cacheScope: got %q", listResult.CacheScope)
-	}
-
-	wantTools := []string{
-		"create_session", "list_sessions", "get_session", "delete_session",
-		"run_command", "upload_file", "read_file", "list_files",
-		"delete_file", "get_run", "list_runs",
-		"create_snapshot", "list_snapshots",
-		"create_artifact", "list_artifacts",
-		"list_audit_logs",
-		"list_images", "pull_image", "get_session_stats", "get_session_logs",
-		"run_github_repo", "github_post_comment",
-		"fs_read_file", "fs_write_file", "fs_list_dir", "fs_delete_file",
-		"s3_list_buckets", "s3_list_objects", "s3_get_object",
-		"s3_put_object", "s3_delete_object", "s3_head_object",
-		"ssm_get_parameter", "ssm_put_parameter", "ssm_delete_parameter", "ssm_list_parameters",
-		"sm_get_secret", "sm_list_secrets",
-		"lambda_list_functions", "lambda_invoke",
-		"sqlite_query", "sqlite_execute", "sqlite_schema",
-		"pg_query", "pg_execute", "pg_schema",
-		"mongo_find", "mongo_insert_one", "mongo_update", "mongo_delete",
-		"mongo_aggregate", "mongo_collections", "mongo_generate_mongoose",
-	}
-	toolNames := make(map[string]bool)
-	for _, tool := range listResult.Tools {
-		toolNames[tool.Name] = true
-		if tool.Description == "" {
-			t.Errorf("tool %q has empty description", tool.Name)
-		}
-		if tool.InputSchema.Type == "" {
-			t.Errorf("tool %q has empty inputSchema.type", tool.Name)
-		}
-	}
-	for _, want := range wantTools {
-		if !toolNames[want] {
-			t.Errorf("expected tool %q in tools list", want)
-		}
-	}
-}
-
-func TestProtocolUnknownMethod(t *testing.T) {
+func TestLegacyProtocolUnknownMethod(t *testing.T) {
 	srv := newTestServer()
 	id := json.RawMessage(`3`)
 	req := mustJSON(jsonRPCRequest{
@@ -243,23 +123,7 @@ func TestProtocolUnknownMethod(t *testing.T) {
 	}
 }
 
-func TestProtocolPing(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`4`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "ping",
-	})
-
-	resp := runMCPRequest(t, srv, req)
-
-	if resp.Error != nil {
-		t.Fatalf("unexpected error on ping: %+v", resp.Error)
-	}
-}
-
-func TestProtocolNotificationNoResponse(t *testing.T) {
+func TestLegacyProtocolNotificationNoResponse(t *testing.T) {
 	// Notifications (no ID) must not produce a response.
 	srv := newTestServer()
 	var out bytes.Buffer
@@ -268,35 +132,6 @@ func TestProtocolNotificationNoResponse(t *testing.T) {
 	_ = srv.serve(context.Background(), in, &out)
 	if out.Len() != 0 {
 		t.Errorf("expected no output for notification, got: %s", out.String())
-	}
-}
-
-func TestToolCallUnknownTool(t *testing.T) {
-	srv := newTestServer()
-	id := json.RawMessage(`5`)
-	req := mustJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      &id,
-		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name":"nonexistent_tool","arguments":{}}`),
-	})
-
-	resp := runMCPRequest(t, srv, req)
-
-	// Unknown tool returns a tool result with isError=true, not a JSON-RPC error.
-	if resp.Error != nil {
-		t.Fatalf("unexpected JSON-RPC error (expected tool-level error): %+v", resp.Error)
-	}
-	var toolResult mcpToolResult
-	b, _ := json.Marshal(resp.Result)
-	if err := json.Unmarshal(b, &toolResult); err != nil {
-		t.Fatalf("unmarshal tool result: %v", err)
-	}
-	if !toolResult.IsError {
-		t.Error("expected isError=true for unknown tool")
-	}
-	if len(toolResult.Content) == 0 || !strings.Contains(toolResult.Content[0].Text, "nonexistent_tool") {
-		t.Errorf("expected error message to mention tool name, got: %v", toolResult.Content)
 	}
 }
 

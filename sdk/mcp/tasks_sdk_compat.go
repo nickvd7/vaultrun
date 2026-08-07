@@ -1,10 +1,11 @@
 // Upstream Go SDK Tasks compatibility notes and registration boundary.
 //
-// As of github.com/modelcontextprotocol/go-sdk v1.7.0 the SDK speaks MCP
-// 2026-07-28 and exposes AddReceivingCustomMethod, but it does NOT ship
-// first-class helpers for the Tasks extension (io.modelcontextprotocol/tasks,
-// SEP-2663): no Task types, no tasks/get|update|cancel registration helpers,
-// and no built-in async tool result wrapping.
+// As of github.com/modelcontextprotocol/go-sdk v1.7.0 (still latest on
+// proxy.golang.org as of 2026-08), the SDK speaks MCP 2026-07-28 and exposes
+// AddReceivingCustomMethod, but it does NOT ship first-class helpers for the
+// Tasks extension (io.modelcontextprotocol/tasks, SEP-2663): no Task types,
+// no tasks/get|update|cancel registration helpers, and no built-in async tool
+// result wrapping. Re-check on each go-sdk upgrade before migrating.
 //
 // VaultRun therefore keeps a server-side implementation in tasks.go /
 // tasks_input.go / tasks_redis.go and registers the wire methods through

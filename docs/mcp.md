@@ -31,6 +31,27 @@ explicit `session_id` that clients pass on later calls.
 
 Redis keys: `mcp:task:<taskId>`, `mcp:tasks:inflight` (SET), pub/sub `mcp:tasks:cancel` for cross-instance cancel.
 
+### Tasks observability
+
+When the MCP HTTP server is running, scrape Prometheus metrics at `GET /metrics`
+(same bind as the MCP port). Protect with `MCP_METRICS_TOKEN` or `METRICS_TOKEN`
+(`Authorization: Bearer …`); if unset the endpoint is open — restrict via network policy.
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `vaultrun_mcp_tasks_started_total` | counter | `tool`, `backend` | Task created |
+| `vaultrun_mcp_tasks_terminal_total` | counter | `status`, `backend` | Reached completed/failed/cancelled |
+| `vaultrun_mcp_tasks_cancelled_total` | counter | | Explicit cancel that transitioned a working task |
+| `vaultrun_mcp_tasks_input_required_total` | counter | | Entered `input_required` |
+| `vaultrun_mcp_tasks_inflight` | gauge | `backend` | Current non-terminal tasks |
+| `vaultrun_mcp_tasks_ttl_evicted_total` | counter | | Removed by idle TTL (memory) |
+| `vaultrun_mcp_tasks_max_age_failed_total` | counter | | Forced failed by max age |
+| `vaultrun_mcp_tasks_redis_fallback_total` | counter | | Redis create failed → memory |
+| `vaultrun_mcp_tasks_inflight_rejected_total` | counter | | Rejected by max concurrent |
+
+Structured logs (`vaultrun-mcp: task …`) emit at create, terminal transitions, cancel,
+`input_required`, TTL/max-age, and Redis fallback. `backend` is `memory` or `redis`.
+
 ### OAuth / EMA env (HTTP)
 
 | Variable | Purpose |
@@ -162,6 +183,7 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 | `GET` | `/sse` | Legacy HTTP+SSE stub (deprecated in MCP 2026-07-28; prefer `POST /mcp`) |
 | `GET` | `/` | Server info JSON (includes `supported_versions`) |
 | `GET` | `/healthz` | Health check — returns `{"ok":true}` |
+| `GET` | `/metrics` | Prometheus metrics (optional `MCP_METRICS_TOKEN` / `METRICS_TOKEN`) |
 
 ### Authentication
 

@@ -164,8 +164,7 @@ func newTaskStore() *taskStore {
 		err := rdb.Ping(ctx).Err()
 		cancel()
 		if err != nil {
-			slog.Warn("vaultrun-mcp: Redis unreachable, using in-memory tasks",
-				"addr", addr, "err", err)
+			observeRedisFallback(addr, err)
 			_ = rdb.Close()
 		} else {
 			ts.rdb = rdb
@@ -227,6 +226,8 @@ func (ts *taskStore) expire() {
 	ageCutoff := now.Add(-ts.maxAge)
 
 	var cancelFns []context.CancelFunc
+	evicted := 0
+	maxAged := 0
 
 	ts.mu.Lock()
 	for id, t := range ts.tasks {
@@ -242,6 +243,7 @@ func (ts *taskStore) expire() {
 			t.UpdatedAt = now
 			t.cancel = nil
 			delete(ts.cancels, id)
+			maxAged++
 		}
 		if t.terminal() {
 			finished := t.FinishedAt
@@ -251,6 +253,7 @@ func (ts *taskStore) expire() {
 			if finished.Before(ttlCutoff) {
 				delete(ts.tasks, id)
 				delete(ts.cancels, id)
+				evicted++
 			}
 		}
 	}
@@ -259,6 +262,11 @@ func (ts *taskStore) expire() {
 	for _, fn := range cancelFns {
 		fn()
 	}
+	for i := 0; i < maxAged; i++ {
+		observeTaskMaxAgeFailed()
+		ts.observeTerminal(taskFailed)
+	}
+	observeTaskTTLEvicted(evicted)
 }
 
 func (ts *taskStore) get(id string) (*taskRecord, bool) {
@@ -317,6 +325,26 @@ func (ts *taskStore) update(id string, fn func(*taskRecord) bool) bool {
 		t.UpdatedAt = time.Now().UTC()
 	}
 	return true
+}
+
+// updateMaybeTerminal is like update, but emits terminal metrics when a task
+// newly reaches a terminal status.
+func (ts *taskStore) updateMaybeTerminal(id string, fn func(*taskRecord) bool) bool {
+	var status taskStatus
+	var became bool
+	ok := ts.update(id, func(t *taskRecord) bool {
+		before := t.terminal()
+		mutated := fn(t)
+		if mutated && !before && t.terminal() {
+			became = true
+			status = t.Status
+		}
+		return mutated
+	})
+	if became {
+		ts.observeTerminal(status)
+	}
+	return ok
 }
 
 func (ts *taskStore) inflightLocked() int {
@@ -418,6 +446,8 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		msg := fmt.Sprintf("error: too many in-flight tasks (max %d); wait or cancel existing ones", ts.maxInflight)
 		if err != errTaskInflightFull {
 			msg = fmt.Sprintf("error: failed to start task: %v", err)
+		} else {
+			observeInflightRejected(ts.maxInflight)
 		}
 		return &mcpsdk.CallToolResult{
 			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: msg}},
@@ -425,6 +455,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		}
 	}
 	ts.storeCancel(id, cancel)
+	ts.observeStarted(name)
 
 	cleanArgs := stripTaskControlFlags(args)
 	go func() {
@@ -435,7 +466,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		if needConfirm {
 			msg := fmt.Sprintf("Approve running tool %q?", name)
 			if err := ts.requestInput(id, approvalElicitation(msg)); err != nil {
-				ts.update(id, func(t *taskRecord) bool {
+				ts.updateMaybeTerminal(id, func(t *taskRecord) bool {
 					if t.terminal() {
 						return false
 					}
@@ -450,7 +481,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 			}
 			responses, err := ts.waitForInput(taskCtx, id)
 			if err != nil {
-				ts.update(id, func(t *taskRecord) bool {
+				ts.updateMaybeTerminal(id, func(t *taskRecord) bool {
 					if t.terminal() {
 						return false
 					}
@@ -470,7 +501,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 				return
 			}
 			if !responseApproved(responses[taskConfirmRequestKey]) {
-				ts.update(id, func(t *taskRecord) bool {
+				ts.updateMaybeTerminal(id, func(t *taskRecord) bool {
 					if t.terminal() {
 						return false
 					}
@@ -486,7 +517,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		}
 
 		result, err := srv.callTool(taskCtx, name, cleanArgs)
-		ts.update(id, func(t *taskRecord) bool {
+		ts.updateMaybeTerminal(id, func(t *taskRecord) bool {
 			if t.terminal() {
 				return false
 			}
@@ -657,7 +688,7 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 
 			var alreadyTerminal bool
 			var statusAfter string
-			ok := tasks.update(params.TaskID, func(t *taskRecord) bool {
+			ok := tasks.updateMaybeTerminal(params.TaskID, func(t *taskRecord) bool {
 				if t.terminal() {
 					alreadyTerminal = true
 					statusAfter = string(t.Status)
@@ -675,6 +706,7 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
 			}
 			if !alreadyTerminal {
+				observeTaskCancel()
 				if fn := tasks.takeCancel(params.TaskID); fn != nil {
 					fn()
 				}

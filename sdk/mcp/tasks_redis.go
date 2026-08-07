@@ -195,7 +195,7 @@ func (ts *taskStore) expireRedis() {
 			continue
 		}
 		if rec.CreatedAt.Before(ageCutoff) {
-			ts.update(id, func(t *taskRecord) bool {
+			became := ts.updateMaybeTerminal(id, func(t *taskRecord) bool {
 				if t.terminal() {
 					return false
 				}
@@ -206,6 +206,9 @@ func (ts *taskStore) expireRedis() {
 				t.FinishedAt = now
 				return true
 			})
+			if became {
+				observeTaskMaxAgeFailed()
+			}
 			if fn := ts.takeCancel(id); fn != nil {
 				fn()
 			}

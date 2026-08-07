@@ -47,6 +47,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -266,9 +267,10 @@ var writeTools = map[string]bool{
 //  4. RateLimit    — global per-IP flood protection, runs BEFORE auth so
 //     brute-force token guesses are throttled too
 //  5. /healthz     — unauthenticated readiness probe (registered before auth)
-//  6. OAuth PRM    — /.well-known/oauth-protected-resource (unauthenticated)
-//  7. Auth         — bearer token required for remaining routes
-//  8. Routes       — /, /sse, /mcp (official Streamable HTTP SDK handler)
+//  6. /metrics     — Prometheus scrape (optional METRICS_TOKEN / MCP_METRICS_TOKEN)
+//  7. OAuth PRM    — /.well-known/oauth-protected-resource (unauthenticated)
+//  8. Auth         — bearer token required for remaining routes
+//  9. Routes       — /, /sse, /mcp (official Streamable HTTP SDK handler)
 func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -344,6 +346,30 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 			"tools_count": len(toolDefinitions()),
 		})
 	})
+
+	// Prometheus metrics (same scrape pattern as the main API). Prefer
+	// MCP_METRICS_TOKEN, else fall back to METRICS_TOKEN. When unset the
+	// endpoint is open — restrict via network policy in production.
+	metricsHandler := gin.WrapH(promhttp.Handler())
+	metricsToken := os.Getenv("MCP_METRICS_TOKEN")
+	if metricsToken == "" {
+		metricsToken = os.Getenv("METRICS_TOKEN")
+	}
+	if metricsToken != "" {
+		expected := "Bearer " + metricsToken
+		r.GET("/metrics", func(c *gin.Context) {
+			authHdr := c.GetHeader("Authorization")
+			if subtle.ConstantTimeCompare([]byte(authHdr), []byte(expected)) != 1 {
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
+			metricsHandler(c)
+		})
+	} else {
+		slog.Warn("vaultrun-mcp: METRICS_TOKEN/MCP_METRICS_TOKEN unset — /metrics is unauthenticated; " +
+			"set a token or restrict the endpoint via firewall/reverse-proxy")
+		r.GET("/metrics", metricsHandler)
+	}
 
 	if oauthCfg.prmEnabled() {
 		meta := oauthCfg.metadata()

@@ -45,6 +45,26 @@ Redis keys: `mcp:task:<taskId>`, `mcp:tasks:inflight` (SET), pub/sub `mcp:tasks:
 EMA clients use the IdP + MCP auth-server flow on the **client** side; this server
 advertises PRM and validates tokens (static and/or introspection).
 
+### MCP Apps
+
+Hosts that support the MCP Apps extension (`io.modelcontextprotocol/ui`) can
+render a lightweight HTML panel shipped by VaultRun:
+
+| Item | Value |
+|---|---|
+| Resource URI | `ui://vaultrun/session-panel` |
+| MIME type | `text/html;profile=mcp-app` |
+| Attached tools | `list_sessions`, `get_session`, `create_session` (via tool `_meta.ui.resourceUri`) |
+| Disable | `MCP_APPS_ENABLED=false` |
+
+The panel explains that VaultRun is **stateless at the MCP layer**: clients must
+pass explicit `session_id` handles between tool calls. Hosts without Apps support
+ignore the resource and keep using normal tool text.
+
+EMA (Enterprise Managed Authorization) is a **client** concern. Server-side you
+only need PRM + token validation (see OAuth env above); the Apps panel does not
+perform auth itself.
+
 ---
 
 ## Transport selection

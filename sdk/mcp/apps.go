@@ -26,8 +26,8 @@ const sessionPanelHTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>VaultRun</h1>
-  <p>Use <code>list_sessions</code> / <code>get_session</code> to inspect sandboxes. Pass explicit <code>session_id</code> handles between tools — the MCP transport is stateless.</p>
-  <div class="hint">This panel is an MCP Apps surface (<code>ui://vaultrun/session-panel</code>). Hosts without Apps support ignore it and keep using tool text.</div>
+  <p>Use <code>list_sessions</code> / <code>get_session</code> / <code>create_session</code> to manage sandboxes. Pass an explicit <code>session_id</code> on every follow-up tool call — the MCP transport is stateless.</p>
+  <div class="hint">MCP Apps surface <code>ui://vaultrun/session-panel</code>. Disable with <code>MCP_APPS_ENABLED=false</code>. Hosts without Apps support ignore this resource.</div>
 </body>
 </html>`
 

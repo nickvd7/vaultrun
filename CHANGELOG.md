@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Mission cost attribution** — snapshot session `cost_metrics` onto mission runs (`mission_cost_attributions`); `PATCH …/runs/:run_id`, `…/attribute-costs`, `GET …/costs`
 - **Missions foundation** — reusable tool-sequence storage + API (`/api/v1/missions`, `mission_runs`); see `docs/features/missions.md`
 - **Agent swarm graph** — directed edges (`reports_to` / `reviews` / `handoff` / `peer`) on collaborative sessions; `GET/POST/DELETE …/graph`; see `docs/features/agent-swarm-graph.md`
 - **Positioning** — local-first / workflow-as-asset on site (`#workflows`), use-cases, `llms.txt` / `llms-full.txt`, and README; see `docs/features/workflow-as-asset.md`

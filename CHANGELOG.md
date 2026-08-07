@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **MCP protocol dual-support for `2026-07-28`** (`sdk/mcp`) — Stateless
+  Streamable HTTP: `server/discover`, per-request `_meta` protocol version,
+  `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` header validation, cache
+  hints (`ttlMs`, `cacheScope`) on `tools/list` and discover, and `resultType`
+  on tool results. Legacy `2024-11-05` `initialize` / `initialized` clients
+  keep working without the new headers.
+
+---
+
 ## [0.3.2] — 2026-07-31
 
 **Cross-feature security release.** A second testing pass, focused on where features interact rather than each in isolation, found twelve more defects — eight security-relevant. Full analysis in [docs/security-testing-report.md](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).

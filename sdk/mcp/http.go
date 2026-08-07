@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -286,7 +287,16 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		corsConfig.AllowOrigins = cfg.allowedOrigins
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "OPTIONS"}
-	corsConfig.AllowHeaders = []string{"Content-Type", "Authorization"}
+	// Include MCP 2026-07-28 routing headers so browser-based clients can
+	// send Streamable HTTP requests cross-origin.
+	corsConfig.AllowHeaders = []string{
+		"Content-Type",
+		"Authorization",
+		"MCP-Protocol-Version",
+		"Mcp-Method",
+		"Mcp-Name",
+		"Accept",
+	}
 	r.Use(cors.New(corsConfig))
 
 	// Security headers on every response. We omit the legacy X-XSS-Protection
@@ -369,15 +379,17 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 	// GET / — server discovery info.
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"name":        "vaultrun-mcp",
-			"version":     "0.1.0",
-			"protocol":    "mcp/2024-11-05",
-			"transport":   "http",
-			"tools_count": len(toolDefinitions()),
+			"name":               mcpServerName,
+			"version":            mcpServerVersion,
+			"protocol":           "mcp/" + protocolVersionCurrent,
+			"supported_versions": supportedProtocolVersions(),
+			"transport":          "http",
+			"tools_count":        len(toolDefinitions()),
 		})
 	})
 
-	// GET /sse — Server-Sent Events stub for future push notifications.
+	// GET /sse — legacy HTTP+SSE stub (deprecated in MCP 2026-07-28).
+	// Prefer Streamable HTTP POST /mcp. Kept for older probes only.
 	r.GET("/sse", func(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -398,7 +410,7 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		heavyLimiter = newIPRateLimiter(cfg.heavyTierLimit)
 	}
 
-	// POST /mcp — main JSON-RPC 2.0 endpoint.
+	// POST /mcp — main JSON-RPC 2.0 endpoint (Streamable HTTP).
 	r.POST("/mcp", func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4*1024*1024)
 
@@ -412,6 +424,13 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		}
 
 		slog.Debug("mcp/http: received", "method", req.Method, "id", req.ID, "ip", c.ClientIP())
+
+		// MCP 2026-07-28 header validation. Legacy clients that omit the
+		// MCP-Protocol-Version header continue to work unchanged.
+		if status, errResp := validateMCPHTTPHeaders(c.Request.Header, &req); errResp != nil {
+			c.JSON(status, errResp)
+			return
+		}
 
 		// Per-tool tier rate limiting for resource-intensive operations. We check
 		// this after body decode (the tool name is inside the payload) but before
@@ -446,10 +465,132 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 			c.Status(http.StatusNoContent)
 			return
 		}
-		c.JSON(http.StatusOK, resp)
+
+		// Map MCP 2026-07-28 error codes to the required HTTP statuses when the
+		// client is speaking the modern protocol. Legacy clients keep 200.
+		status := http.StatusOK
+		if isModernHTTPRequest(c.Request.Header, &req) && resp.Error != nil {
+			switch resp.Error.Code {
+			case errMethodNotFound:
+				status = http.StatusNotFound
+			case errHeaderMismatch, errUnsupportedProtocolVersion, errMissingClientCapability, errInvalidParams:
+				status = http.StatusBadRequest
+			}
+		}
+		c.JSON(status, resp)
 	})
 
 	return r
+}
+
+// ---------------------------------------------------------------------------
+// MCP 2026-07-28 Streamable HTTP header validation
+// ---------------------------------------------------------------------------
+
+// isModernHTTPRequest reports whether the client is speaking the post-session
+// protocol (MCP-Protocol-Version header present, or _meta protocol version set
+// to a known modern version). Legacy clients that omit the header stay on the
+// old 200-OK-with-JSON-RPC-error behaviour.
+func isModernHTTPRequest(h http.Header, req *jsonRPCRequest) bool {
+	if h.Get("MCP-Protocol-Version") != "" {
+		return true
+	}
+	meta := parseRequestMeta(req.Params)
+	return meta.ProtocolVersion == protocolVersionCurrent
+}
+
+// validateMCPHTTPHeaders enforces Streamable HTTP request metadata headers
+// when the client is on the modern protocol. Returns (status, response) on
+// failure, or (0, nil) when the request may proceed.
+//
+// Legacy clients (no MCP-Protocol-Version header and no modern _meta) skip
+// validation entirely so existing Claude Desktop / stdio-style HTTP callers
+// keep working.
+func validateMCPHTTPHeaders(h http.Header, req *jsonRPCRequest) (int, *jsonRPCResponse) {
+	headerVersion := strings.TrimSpace(h.Get("MCP-Protocol-Version"))
+	meta := parseRequestMeta(req.Params)
+
+	// Pure legacy path: no version header → no mandatory routing headers.
+	if headerVersion == "" {
+		// If the body claims a modern version without the matching header,
+		// treat that as a mismatch (modern clients MUST send the header).
+		if meta.ProtocolVersion == protocolVersionCurrent {
+			return http.StatusBadRequest, headerMismatchResponse(req.ID, "MCP-Protocol-Version header required for protocol "+protocolVersionCurrent)
+		}
+		return 0, nil
+	}
+
+	if !isSupportedProtocolVersion(headerVersion) {
+		return http.StatusBadRequest, unsupportedVersionError(req.ID, headerVersion)
+	}
+
+	if meta.ProtocolVersion == "" {
+		return http.StatusBadRequest, headerMismatchResponse(req.ID, "params._meta."+metaKeyProtocolVersion+" must match MCP-Protocol-Version header")
+	}
+	if meta.ProtocolVersion != headerVersion {
+		return http.StatusBadRequest, headerMismatchResponse(req.ID, "MCP-Protocol-Version header does not match params._meta protocol version")
+	}
+
+	methodHeader := strings.TrimSpace(h.Get("Mcp-Method"))
+	if methodHeader == "" {
+		return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Method header is required")
+	}
+	if methodHeader != req.Method {
+		return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Method header does not match JSON-RPC method")
+	}
+
+	// Mcp-Name is required for tools/call (and would be for resources/read,
+	// prompts/get — we only implement tools).
+	if req.Method == "tools/call" {
+		nameHeader, err := decodeMCPHeaderValue(h.Get("Mcp-Name"))
+		if err != nil {
+			return http.StatusBadRequest, headerMismatchResponse(req.ID, "invalid Mcp-Name header encoding: "+err.Error())
+		}
+		if nameHeader == "" {
+			return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Name header is required for tools/call")
+		}
+		var params mcpToolCallParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return http.StatusBadRequest, &jsonRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &jsonRPCError{Code: errInvalidParams, Message: "invalid params: " + err.Error()},
+			}
+		}
+		if nameHeader != params.Name {
+			return http.StatusBadRequest, headerMismatchResponse(req.ID, "Mcp-Name header does not match params.name")
+		}
+	}
+
+	return 0, nil
+}
+
+func headerMismatchResponse(id *json.RawMessage, msg string) *jsonRPCResponse {
+	return &jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error: &jsonRPCError{
+			Code:    errHeaderMismatch,
+			Message: msg,
+		},
+	}
+}
+
+// decodeMCPHeaderValue handles the optional =?base64?...?= sentinel used when
+// an Mcp-Name (or Mcp-Param-*) value is not plain ASCII.
+func decodeMCPHeaderValue(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	const prefix = "=?base64?"
+	const suffix = "?="
+	if strings.HasPrefix(v, prefix) && strings.HasSuffix(v, suffix) {
+		encoded := strings.TrimSuffix(strings.TrimPrefix(v, prefix), suffix)
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return "", err
+		}
+		return string(decoded), nil
+	}
+	return v, nil
 }
 
 // ---------------------------------------------------------------------------

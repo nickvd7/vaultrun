@@ -69,7 +69,11 @@ func (s *server) toolVerifyCheckpoint(ctx context.Context, args map[string]strin
 	spec := body["spec"].(map[string]any)
 
 	if v := args["exit_code_zero"]; v != "" {
-		spec["exit_code_zero"] = v == "true"
+		b, err := parseStrictToolBool(v)
+		if err != nil {
+			return mcpToolResult{}, fmt.Errorf("exit_code_zero: %w", err)
+		}
+		spec["exit_code_zero"] = b
 	}
 	if v := args["stdout_contains"]; v != "" {
 		spec["stdout_contains"] = v
@@ -91,7 +95,11 @@ func (s *server) toolVerifyCheckpoint(ctx context.Context, args map[string]strin
 		body["step_name"] = v
 	}
 	if v := args["persist"]; v != "" {
-		body["persist"] = v == "true"
+		b, err := parseStrictToolBool(v)
+		if err != nil {
+			return mcpToolResult{}, fmt.Errorf("persist: %w", err)
+		}
+		body["persist"] = b
 	}
 
 	obs := map[string]any{}
@@ -120,4 +128,15 @@ func (s *server) toolVerifyCheckpoint(ctx context.Context, args map[string]strin
 		status = "PASSED"
 	}
 	return textResult(fmt.Sprintf("verify_checkpoint: %s\n%s", status, string(raw))), nil
+}
+
+func parseStrictToolBool(v string) (bool, error) {
+	switch anyBoolString(v) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("must be true or false")
+	}
 }

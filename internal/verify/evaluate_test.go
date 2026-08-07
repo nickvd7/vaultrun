@@ -87,3 +87,24 @@ func TestSpecEmpty(t *testing.T) {
 		t.Fatal("non-empty")
 	}
 }
+
+func TestEvaluateRejectsMissingChecksStillPassEmpty(t *testing.T) {
+	r := Evaluate(Spec{}, Observation{}, nil)
+	if !r.Passed || len(r.Checks) != 0 {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestEvaluateExitCodeNonZeroRequired(t *testing.T) {
+	want := false
+	code := 2
+	r := Evaluate(Spec{ExitCodeZero: &want}, Observation{ExitCode: &code}, nil)
+	if !r.Passed {
+		t.Fatalf("non-zero required should pass: %+v", r)
+	}
+	zero := 0
+	r = Evaluate(Spec{ExitCodeZero: &want}, Observation{ExitCode: &zero}, nil)
+	if r.Passed {
+		t.Fatalf("zero should fail when want_zero=false: %+v", r)
+	}
+}

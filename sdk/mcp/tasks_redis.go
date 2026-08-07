@@ -230,15 +230,21 @@ func (ts *taskStore) listenCancelPubSub() {
 	if ts.rdb == nil {
 		return
 	}
-	sub := ts.rdb.Subscribe(context.Background(), redisTaskCancelChan)
+	sub := ts.rdb.Subscribe(context.Background(), redisTaskCancelChan, redisTaskInputChan)
 	ch := sub.Channel()
 	for msg := range ch {
 		id := msg.Payload
 		if !validTaskID(id) {
 			continue
 		}
-		if fn := ts.takeCancel(id); fn != nil {
-			fn()
+		switch msg.Channel {
+		case redisTaskCancelChan:
+			if fn := ts.takeCancel(id); fn != nil {
+				fn()
+			}
+			ts.signalWaiters(id)
+		case redisTaskInputChan:
+			ts.signalWaiters(id)
 		}
 	}
 }

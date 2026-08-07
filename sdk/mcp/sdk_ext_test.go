@@ -265,6 +265,7 @@ func TestTaskTTLExpire(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
 		cancels:     make(map[string]context.CancelFunc),
+		waiters:     make(map[string]chan struct{}),
 		ttl:         time.Millisecond,
 		maxAge:      time.Hour,
 		maxInflight: 64,
@@ -298,6 +299,7 @@ func TestTaskMaxAgeCancelsStaleWorking(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
 		cancels:     make(map[string]context.CancelFunc),
+		waiters:     make(map[string]chan struct{}),
 		ttl:         time.Hour,
 		maxAge:      time.Millisecond,
 		maxInflight: 64,
@@ -324,6 +326,7 @@ func TestTaskMaxInflight(t *testing.T) {
 	store := &taskStore{
 		tasks:       make(map[string]*taskRecord),
 		cancels:     make(map[string]context.CancelFunc),
+		waiters:     make(map[string]chan struct{}),
 		ttl:         time.Hour,
 		maxAge:      time.Hour,
 		maxInflight: 1,

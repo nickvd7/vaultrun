@@ -110,6 +110,12 @@ func toolDefinitions() []mcpTool {
 							"immediately. Poll with tasks/get. Default false (synchronous).",
 						Enum: []string{"true", "false"},
 					},
+					"confirm": {
+						Type: "string",
+						Description: "When async=true, set to 'true' to pause the task in input_required until the " +
+							"client approves via tasks/update inputResponses (elicitation form). Default false.",
+						Enum: []string{"true", "false"},
+					},
 				},
 				Required: []string{"session_id", "command"},
 			},

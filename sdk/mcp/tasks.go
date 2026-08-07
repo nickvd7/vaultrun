@@ -48,19 +48,22 @@ const (
 )
 
 type taskRecord struct {
-	ID           string          `json:"taskId"`
-	Status       taskStatus      `json:"status"`
-	Tool         string          `json:"tool"`
-	Owner        string          `json:"owner,omitempty"` // auth UserID; never returned on MCP wire
-	CreatedAt    time.Time       `json:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
-	FinishedAt   time.Time       `json:"finishedAt,omitempty"`
-	Result       json.RawMessage `json:"result,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	Progress     float64         `json:"progress,omitempty"` // 0..1 hint
-	Message      string          `json:"message,omitempty"`
-	PollInterval int             `json:"pollIntervalMs,omitempty"`
-	cancel       context.CancelFunc
+	ID             string                       `json:"taskId"`
+	Status         taskStatus                   `json:"status"`
+	Tool           string                       `json:"tool"`
+	Owner          string                       `json:"owner,omitempty"` // auth UserID; never returned on MCP wire
+	CreatedAt      time.Time                    `json:"createdAt"`
+	UpdatedAt      time.Time                    `json:"updatedAt"`
+	FinishedAt     time.Time                    `json:"finishedAt,omitempty"`
+	Result         json.RawMessage              `json:"result,omitempty"`
+	Error          string                       `json:"error,omitempty"`
+	Progress       float64                      `json:"progress,omitempty"` // 0..1 hint
+	Message        string                       `json:"message,omitempty"`
+	PollInterval   int                          `json:"pollIntervalMs,omitempty"`
+	InputRequests  map[string]taskInputRequest  `json:"inputRequests,omitempty"`
+	InputResponses map[string]taskInputResponse `json:"inputResponses,omitempty"`
+	UsedInputKeys  map[string]bool              `json:"usedInputKeys,omitempty"`
+	cancel         context.CancelFunc
 }
 
 func (t *taskRecord) terminal() bool {
@@ -85,6 +88,7 @@ type taskStore struct {
 	mu          sync.RWMutex
 	tasks       map[string]*taskRecord // memory backend; also unused when redis set
 	cancels     map[string]context.CancelFunc
+	waiters     map[string]chan struct{}
 	rdb         *redis.Client
 	ttl         time.Duration
 	maxAge      time.Duration
@@ -139,6 +143,7 @@ func newTaskStore() *taskStore {
 	ts := &taskStore{
 		tasks:       make(map[string]*taskRecord),
 		cancels:     make(map[string]context.CancelFunc),
+		waiters:     make(map[string]chan struct{}),
 		ttl:         ttl,
 		maxAge:      maxAge,
 		maxInflight: maxInflight,
@@ -187,6 +192,7 @@ func newTaskStoreWithRedis(rdb *redis.Client, ttl, maxAge time.Duration, maxInfl
 	ts := &taskStore{
 		tasks:       make(map[string]*taskRecord),
 		cancels:     make(map[string]context.CancelFunc),
+		waiters:     make(map[string]chan struct{}),
 		rdb:         rdb,
 		ttl:         ttl,
 		maxAge:      maxAge,
@@ -384,19 +390,7 @@ func truncateTaskResult(b []byte) json.RawMessage {
 
 // stripAsyncFlag removes the VaultRun async control key so tool handlers never see it.
 func stripAsyncFlag(args json.RawMessage) json.RawMessage {
-	if len(args) == 0 {
-		return args
-	}
-	var m map[string]any
-	if err := json.Unmarshal(args, &m); err != nil {
-		return args
-	}
-	delete(m, "async")
-	b, err := json.Marshal(m)
-	if err != nil {
-		return args
-	}
-	return b
+	return stripTaskControlFlags(args)
 }
 
 var errTaskInflightFull = fmt.Errorf("too many in-flight tasks")
@@ -405,6 +399,7 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 	id := "task_" + uuid.NewString()
 	taskCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	now := time.Now().UTC()
+	needConfirm := wantsConfirm(args)
 	rec := &taskRecord{
 		ID:           id,
 		Status:       taskWorking,
@@ -431,10 +426,65 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 	}
 	ts.storeCancel(id, cancel)
 
-	cleanArgs := stripAsyncFlag(args)
+	cleanArgs := stripTaskControlFlags(args)
 	go func() {
 		defer cancel()
 		defer ts.takeCancel(id)
+		defer ts.signalWaiters(id)
+
+		if needConfirm {
+			msg := fmt.Sprintf("Approve running tool %q?", name)
+			if err := ts.requestInput(id, approvalElicitation(msg)); err != nil {
+				ts.update(id, func(t *taskRecord) bool {
+					if t.terminal() {
+						return false
+					}
+					t.Status = taskFailed
+					t.Error = err.Error()
+					t.Message = "failed to request confirmation"
+					t.Progress = 1
+					t.FinishedAt = time.Now().UTC()
+					return true
+				})
+				return
+			}
+			responses, err := ts.waitForInput(taskCtx, id)
+			if err != nil {
+				ts.update(id, func(t *taskRecord) bool {
+					if t.terminal() {
+						return false
+					}
+					if taskCtx.Err() != nil {
+						t.Status = taskCancelled
+						t.Error = "cancelled"
+						t.Message = "cancelled"
+					} else {
+						t.Status = taskFailed
+						t.Error = err.Error()
+						t.Message = "failed while waiting for input"
+					}
+					t.Progress = 1
+					t.FinishedAt = time.Now().UTC()
+					return true
+				})
+				return
+			}
+			if !responseApproved(responses[taskConfirmRequestKey]) {
+				ts.update(id, func(t *taskRecord) bool {
+					if t.terminal() {
+						return false
+					}
+					t.Status = taskFailed
+					t.Error = "confirmation declined"
+					t.Message = "declined"
+					t.Progress = 1
+					t.FinishedAt = time.Now().UTC()
+					return true
+				})
+				return
+			}
+		}
+
 		result, err := srv.callTool(taskCtx, name, cleanArgs)
 		ts.update(id, func(t *taskRecord) bool {
 			if t.terminal() {
@@ -477,6 +527,10 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		})
 	}()
 
+	hint := "Poll with tasks/get; optional tasks/update for progress notes; tasks/cancel to abort."
+	if needConfirm {
+		hint = "Task requires confirmation: poll tasks/get for inputRequests, then tasks/update with inputResponses."
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"task": map[string]any{
 			"taskId":         id,
@@ -484,8 +538,9 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 			"tool":           name,
 			"pollIntervalMs": 2000,
 			"progress":       0,
+			"confirm":        needConfirm,
 		},
-		"hint": "Poll with tasks/get; optional tasks/update for progress notes; tasks/cancel to abort.",
+		"hint": hint,
 	})
 	return &mcpsdk.CallToolResult{
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{
@@ -493,9 +548,10 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		}},
 		StructuredContent: map[string]any{
 			"task": map[string]any{
-				"taskId": id,
-				"status": string(taskWorking),
-				"tool":   name,
+				"taskId":  id,
+				"status":  string(taskWorking),
+				"tool":    name,
+				"confirm": needConfirm,
 			},
 		},
 	}
@@ -508,16 +564,17 @@ type tasksGetParams struct {
 
 type tasksGetResult struct {
 	mcpsdk.ResultBase
-	TaskID       string          `json:"taskId"`
-	Status       string          `json:"status"`
-	Tool         string          `json:"tool,omitempty"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
-	Progress     float64         `json:"progress,omitempty"`
-	Message      string          `json:"message,omitempty"`
-	PollInterval int             `json:"pollIntervalMs,omitempty"`
-	Result       json.RawMessage `json:"result,omitempty"`
-	Error        string          `json:"error,omitempty"`
+	TaskID        string                      `json:"taskId"`
+	Status        string                      `json:"status"`
+	Tool          string                      `json:"tool,omitempty"`
+	CreatedAt     time.Time                   `json:"createdAt"`
+	UpdatedAt     time.Time                   `json:"updatedAt"`
+	Progress      float64                     `json:"progress,omitempty"`
+	Message       string                      `json:"message,omitempty"`
+	PollInterval  int                         `json:"pollIntervalMs,omitempty"`
+	Result        json.RawMessage             `json:"result,omitempty"`
+	Error         string                      `json:"error,omitempty"`
+	InputRequests map[string]taskInputRequest `json:"inputRequests,omitempty"`
 }
 
 type tasksCancelParams struct {
@@ -534,10 +591,11 @@ type tasksCancelResult struct {
 
 type tasksUpdateParams struct {
 	mcpsdk.ParamsBase
-	TaskID   string  `json:"taskId"`
-	Message  string  `json:"message,omitempty"`
-	Progress float64 `json:"progress,omitempty"`
-	// Input is reserved for future input_required flows (MRTR).
+	TaskID         string                       `json:"taskId"`
+	Message        string                       `json:"message,omitempty"`
+	Progress       float64                      `json:"progress,omitempty"`
+	InputResponses map[string]taskInputResponse `json:"inputResponses,omitempty"`
+	// Input is a legacy alias: treated as inputResponses["confirm"] content when set.
 	Input json.RawMessage `json:"input,omitempty"`
 }
 
@@ -566,16 +624,17 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 				return nil, err
 			}
 			return &tasksGetResult{
-				TaskID:       rec.ID,
-				Status:       string(rec.Status),
-				Tool:         rec.Tool,
-				CreatedAt:    rec.CreatedAt,
-				UpdatedAt:    rec.UpdatedAt,
-				Progress:     rec.Progress,
-				Message:      rec.Message,
-				PollInterval: rec.PollInterval,
-				Result:       rec.Result,
-				Error:        rec.Error,
+				TaskID:        rec.ID,
+				Status:        string(rec.Status),
+				Tool:          rec.Tool,
+				CreatedAt:     rec.CreatedAt,
+				UpdatedAt:     rec.UpdatedAt,
+				Progress:      rec.Progress,
+				Message:       rec.Message,
+				PollInterval:  rec.PollInterval,
+				Result:        rec.Result,
+				Error:         rec.Error,
+				InputRequests: cloneInputRequests(rec.InputRequests),
 			}, nil
 		}); err != nil {
 		return err
@@ -619,6 +678,7 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 				if fn := tasks.takeCancel(params.TaskID); fn != nil {
 					fn()
 				}
+				tasks.signalWaiters(params.TaskID)
 				tasks.publishCancel(params.TaskID)
 			}
 			msg := "cancellation requested"
@@ -641,8 +701,8 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 			if utf8.RuneCountInString(params.Message) > maxTaskMessageRunes {
 				return nil, fmt.Errorf("message exceeds %d character limit", maxTaskMessageRunes)
 			}
-			if len(params.Input) > maxTaskMessageRunes {
-				return nil, fmt.Errorf("input exceeds %d byte limit", maxTaskMessageRunes)
+			if len(params.Input) > maxInputPayloadBytes {
+				return nil, fmt.Errorf("input exceeds %d byte limit", maxInputPayloadBytes)
 			}
 			actor := taskOwnerFromContext(ctx)
 			if rec, ok := tasks.get(params.TaskID); ok {
@@ -651,11 +711,29 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 				}
 			}
 
+			responses := params.InputResponses
+			if len(params.Input) > 0 {
+				if responses == nil {
+					responses = make(map[string]taskInputResponse)
+				}
+				if _, exists := responses[taskConfirmRequestKey]; !exists {
+					responses[taskConfirmRequestKey] = taskInputResponse{
+						Action:  "accept",
+						Content: params.Input,
+					}
+				}
+			}
+			if len(responses) > 0 {
+				if _, err := tasks.applyInputResponses(params.TaskID, responses); err != nil {
+					return nil, err
+				}
+			}
+
 			var terminal bool
 			ok := tasks.update(params.TaskID, func(t *taskRecord) bool {
 				if t.terminal() {
 					terminal = true
-					return false // do not refresh TTL
+					return false
 				}
 				changed := false
 				if params.Message != "" {
@@ -672,20 +750,18 @@ func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 						changed = true
 					}
 				}
-				if len(params.Input) > 0 && t.Status == taskInputRequired {
-					t.Status = taskWorking
-					t.Message = "input received"
-					changed = true
-				}
 				return changed
 			})
 			if !ok {
 				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
 			}
-			if terminal {
+			if terminal && len(responses) == 0 {
 				return nil, fmt.Errorf("task %q is already finished", params.TaskID)
 			}
-			rec, _ := tasks.get(params.TaskID)
+			rec, found := tasks.get(params.TaskID)
+			if !found {
+				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
+			}
 			return &tasksUpdateResult{
 				TaskID:   params.TaskID,
 				Status:   string(rec.Status),

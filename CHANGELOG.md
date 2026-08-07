@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **MCP Tasks tool wrappers** — `get_task`, `update_task`, `cancel_task` so tools-only hosts (Cursor, Claude) can poll/cancel async work without custom JSON-RPC methods
+
+### Added
 
 - **MCP Tasks Prometheus metrics** — `vaultrun_mcp_tasks_*` counters/gauges and
   structured lifecycle logs; HTTP `GET /metrics` on the MCP server

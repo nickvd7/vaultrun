@@ -88,6 +88,11 @@ func dispatchTool(ctx context.Context, srv *server, tasks *taskStore, req *mcpsd
 		}, nil
 	}
 
+	// Task control tools (poll/update/cancel) — usable by tools-only MCP hosts.
+	if tasks != nil && isTaskControlTool(name) {
+		return dispatchTaskTool(ctx, tasks, name, args), nil
+	}
+
 	// Optional async path for long-running tools when the Tasks extension is used.
 	if tasks != nil && wantsAsyncTask(req, args) && isTaskableTool(name) {
 		return tasks.startToolTask(ctx, srv, name, args), nil

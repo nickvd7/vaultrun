@@ -65,7 +65,7 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 - **SDK:** official [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) v1.7.0+
 - **Current:** MCP `2026-07-28` (stateless Streamable HTTP)
-- **Extensions:** Tasks (`async=true` → `tasks/get` / `tasks/update` / `tasks/cancel`; optional Redis via `MCP_REDIS_ADDR`/`REDIS_ADDR`; caps via `MCP_TASK_*`), MCP Apps (`ui://vaultrun/session-panel`)
+- **Extensions:** Tasks (`async=true` → `get_task` / `update_task` / `cancel_task` tools, plus `tasks/*` methods; optional Redis via `MCP_REDIS_ADDR`/`REDIS_ADDR`; caps via `MCP_TASK_*`), MCP Apps (`ui://vaultrun/session-panel`)
 - **Auth (HTTP):** static `MCP_AUTH_TOKEN`; optional OAuth PRM via `MCP_OAUTH_ISSUERS` (+ introspection)
 - Details: [docs/mcp.md](../../docs/mcp.md)
 

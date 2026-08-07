@@ -559,9 +559,9 @@ func (ts *taskStore) startToolTask(ctx context.Context, srv *server, name string
 		})
 	}()
 
-	hint := "Poll with tasks/get; optional tasks/update for progress notes; tasks/cancel to abort."
+	hint := "Poll with get_task (or tasks/get); update_task / cancel_task also available as tools."
 	if needConfirm {
-		hint = "Task requires confirmation: poll tasks/get for inputRequests, then tasks/update with inputResponses."
+		hint = "Task requires confirmation: poll get_task for inputRequests, then update_task with approve=true/false (or input_responses)."
 	}
 	payload, _ := json.Marshal(map[string]any{
 		"task": map[string]any{
@@ -639,173 +639,187 @@ type tasksUpdateResult struct {
 	Progress float64 `json:"progress,omitempty"`
 }
 
+func (ts *taskStore) getTaskResult(ctx context.Context, taskID string) (*tasksGetResult, error) {
+	if taskID == "" || !validTaskID(taskID) {
+		return nil, fmt.Errorf("unknown taskId %q", taskID)
+	}
+	rec, ok := ts.get(taskID)
+	if !ok {
+		return nil, fmt.Errorf("unknown taskId %q", taskID)
+	}
+	if err := authorizeTaskAccess(rec, taskOwnerFromContext(ctx)); err != nil {
+		return nil, err
+	}
+	return &tasksGetResult{
+		TaskID:        rec.ID,
+		Status:        string(rec.Status),
+		Tool:          rec.Tool,
+		CreatedAt:     rec.CreatedAt,
+		UpdatedAt:     rec.UpdatedAt,
+		Progress:      rec.Progress,
+		Message:       rec.Message,
+		PollInterval:  rec.PollInterval,
+		Result:        rec.Result,
+		Error:         rec.Error,
+		InputRequests: cloneInputRequests(rec.InputRequests),
+	}, nil
+}
+
+func (ts *taskStore) cancelTaskResult(ctx context.Context, taskID string) (*tasksCancelResult, error) {
+	if taskID == "" || !validTaskID(taskID) {
+		return nil, fmt.Errorf("unknown taskId %q", taskID)
+	}
+	actor := taskOwnerFromContext(ctx)
+	if rec, ok := ts.get(taskID); ok {
+		if err := authorizeTaskAccess(rec, actor); err != nil {
+			return nil, err
+		}
+	}
+
+	var alreadyTerminal bool
+	var statusAfter string
+	ok := ts.updateMaybeTerminal(taskID, func(t *taskRecord) bool {
+		if t.terminal() {
+			alreadyTerminal = true
+			statusAfter = string(t.Status)
+			return false // do not refresh TTL
+		}
+		t.Status = taskCancelled
+		t.Error = "cancelled"
+		t.Message = "cancellation requested"
+		t.Progress = 1
+		t.FinishedAt = time.Now().UTC()
+		statusAfter = string(taskCancelled)
+		return true
+	})
+	if !ok {
+		return nil, fmt.Errorf("unknown taskId %q", taskID)
+	}
+	if !alreadyTerminal {
+		observeTaskCancel()
+		if fn := ts.takeCancel(taskID); fn != nil {
+			fn()
+		}
+		ts.signalWaiters(taskID)
+		ts.publishCancel(taskID)
+	}
+	msg := "cancellation requested"
+	if alreadyTerminal {
+		msg = "task already finished"
+	}
+	return &tasksCancelResult{TaskID: taskID, Status: statusAfter, Message: msg}, nil
+}
+
+func (ts *taskStore) updateTaskResult(ctx context.Context, params *tasksUpdateParams) (*tasksUpdateResult, error) {
+	if params == nil || params.TaskID == "" || !validTaskID(params.TaskID) {
+		id := ""
+		if params != nil {
+			id = params.TaskID
+		}
+		return nil, fmt.Errorf("unknown taskId %q", id)
+	}
+	if utf8.RuneCountInString(params.Message) > maxTaskMessageRunes {
+		return nil, fmt.Errorf("message exceeds %d character limit", maxTaskMessageRunes)
+	}
+	if len(params.Input) > maxInputPayloadBytes {
+		return nil, fmt.Errorf("input exceeds %d byte limit", maxInputPayloadBytes)
+	}
+	actor := taskOwnerFromContext(ctx)
+	if rec, ok := ts.get(params.TaskID); ok {
+		if err := authorizeTaskAccess(rec, actor); err != nil {
+			return nil, err
+		}
+	}
+
+	responses := params.InputResponses
+	if len(params.Input) > 0 {
+		if responses == nil {
+			responses = make(map[string]taskInputResponse)
+		}
+		if _, exists := responses[taskConfirmRequestKey]; !exists {
+			responses[taskConfirmRequestKey] = taskInputResponse{
+				Action:  "accept",
+				Content: params.Input,
+			}
+		}
+	}
+	if len(responses) > 0 {
+		if _, err := ts.applyInputResponses(params.TaskID, responses); err != nil {
+			return nil, err
+		}
+	}
+
+	var terminal bool
+	ok := ts.update(params.TaskID, func(t *taskRecord) bool {
+		if t.terminal() {
+			terminal = true
+			return false
+		}
+		changed := false
+		if params.Message != "" {
+			t.Message = clampTaskMessage(params.Message)
+			changed = true
+		}
+		if params.Progress > 0 {
+			p := params.Progress
+			if p > 1 {
+				p = 1
+			}
+			if t.Progress != p {
+				t.Progress = p
+				changed = true
+			}
+		}
+		return changed
+	})
+	if !ok {
+		return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
+	}
+	if terminal && len(responses) == 0 {
+		return nil, fmt.Errorf("task %q is already finished", params.TaskID)
+	}
+	rec, found := ts.get(params.TaskID)
+	if !found {
+		return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
+	}
+	return &tasksUpdateResult{
+		TaskID:   params.TaskID,
+		Status:   string(rec.Status),
+		Message:  rec.Message,
+		Progress: rec.Progress,
+	}, nil
+}
+
 func registerTaskMethods(sdk *mcpsdk.Server, tasks *taskStore) error {
 	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodGet,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksGetParams) (*tasksGetResult, error) {
-			if params == nil || params.TaskID == "" {
+			if params == nil {
 				return nil, fmt.Errorf("taskId is required")
 			}
-			if !validTaskID(params.TaskID) {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			rec, ok := tasks.get(params.TaskID)
-			if !ok {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			if err := authorizeTaskAccess(rec, taskOwnerFromContext(ctx)); err != nil {
-				return nil, err
-			}
-			return &tasksGetResult{
-				TaskID:        rec.ID,
-				Status:        string(rec.Status),
-				Tool:          rec.Tool,
-				CreatedAt:     rec.CreatedAt,
-				UpdatedAt:     rec.UpdatedAt,
-				Progress:      rec.Progress,
-				Message:       rec.Message,
-				PollInterval:  rec.PollInterval,
-				Result:        rec.Result,
-				Error:         rec.Error,
-				InputRequests: cloneInputRequests(rec.InputRequests),
-			}, nil
+			return tasks.getTaskResult(ctx, params.TaskID)
 		}); err != nil {
 		return err
 	}
 
 	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodCancel,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksCancelParams) (*tasksCancelResult, error) {
-			if params == nil || params.TaskID == "" {
+			if params == nil {
 				return nil, fmt.Errorf("taskId is required")
 			}
-			if !validTaskID(params.TaskID) {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			actor := taskOwnerFromContext(ctx)
-			if rec, ok := tasks.get(params.TaskID); ok {
-				if err := authorizeTaskAccess(rec, actor); err != nil {
-					return nil, err
-				}
-			}
-
-			var alreadyTerminal bool
-			var statusAfter string
-			ok := tasks.updateMaybeTerminal(params.TaskID, func(t *taskRecord) bool {
-				if t.terminal() {
-					alreadyTerminal = true
-					statusAfter = string(t.Status)
-					return false // do not refresh TTL
-				}
-				t.Status = taskCancelled
-				t.Error = "cancelled"
-				t.Message = "cancellation requested"
-				t.Progress = 1
-				t.FinishedAt = time.Now().UTC()
-				statusAfter = string(taskCancelled)
-				return true
-			})
-			if !ok {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			if !alreadyTerminal {
-				observeTaskCancel()
-				if fn := tasks.takeCancel(params.TaskID); fn != nil {
-					fn()
-				}
-				tasks.signalWaiters(params.TaskID)
-				tasks.publishCancel(params.TaskID)
-			}
-			msg := "cancellation requested"
-			if alreadyTerminal {
-				msg = "task already finished"
-			}
-			return &tasksCancelResult{TaskID: params.TaskID, Status: statusAfter, Message: msg}, nil
+			return tasks.cancelTaskResult(ctx, params.TaskID)
 		}); err != nil {
 		return err
 	}
 
 	if err := mcpsdk.AddReceivingCustomMethod(sdk, tasksMethodUpdate,
 		func(ctx context.Context, ss *mcpsdk.ServerSession, params *tasksUpdateParams) (*tasksUpdateResult, error) {
-			if params == nil || params.TaskID == "" {
-				return nil, fmt.Errorf("taskId is required")
-			}
-			if !validTaskID(params.TaskID) {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			if utf8.RuneCountInString(params.Message) > maxTaskMessageRunes {
-				return nil, fmt.Errorf("message exceeds %d character limit", maxTaskMessageRunes)
-			}
-			if len(params.Input) > maxInputPayloadBytes {
-				return nil, fmt.Errorf("input exceeds %d byte limit", maxInputPayloadBytes)
-			}
-			actor := taskOwnerFromContext(ctx)
-			if rec, ok := tasks.get(params.TaskID); ok {
-				if err := authorizeTaskAccess(rec, actor); err != nil {
-					return nil, err
-				}
-			}
-
-			responses := params.InputResponses
-			if len(params.Input) > 0 {
-				if responses == nil {
-					responses = make(map[string]taskInputResponse)
-				}
-				if _, exists := responses[taskConfirmRequestKey]; !exists {
-					responses[taskConfirmRequestKey] = taskInputResponse{
-						Action:  "accept",
-						Content: params.Input,
-					}
-				}
-			}
-			if len(responses) > 0 {
-				if _, err := tasks.applyInputResponses(params.TaskID, responses); err != nil {
-					return nil, err
-				}
-			}
-
-			var terminal bool
-			ok := tasks.update(params.TaskID, func(t *taskRecord) bool {
-				if t.terminal() {
-					terminal = true
-					return false
-				}
-				changed := false
-				if params.Message != "" {
-					t.Message = clampTaskMessage(params.Message)
-					changed = true
-				}
-				if params.Progress > 0 {
-					p := params.Progress
-					if p > 1 {
-						p = 1
-					}
-					if t.Progress != p {
-						t.Progress = p
-						changed = true
-					}
-				}
-				return changed
-			})
-			if !ok {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			if terminal && len(responses) == 0 {
-				return nil, fmt.Errorf("task %q is already finished", params.TaskID)
-			}
-			rec, found := tasks.get(params.TaskID)
-			if !found {
-				return nil, fmt.Errorf("unknown taskId %q", params.TaskID)
-			}
-			return &tasksUpdateResult{
-				TaskID:   params.TaskID,
-				Status:   string(rec.Status),
-				Message:  rec.Message,
-				Progress: rec.Progress,
-			}, nil
+			return tasks.updateTaskResult(ctx, params)
 		}); err != nil {
 		return err
 	}
 
 	slog.Debug("vaultrun-mcp: tasks extension methods registered",
-		"methods", []string{"tasks/get", "tasks/cancel", "tasks/update"})
+		"methods", []string{"tasks/get", "tasks/cancel", "tasks/update"},
+		"tools", []string{"get_task", "update_task", "cancel_task"})
 	return nil
 }

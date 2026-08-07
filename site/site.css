@@ -1,0 +1,303 @@
+/* Shared layout + mobile overflow fixes for vaultrun.dev pages.
+   Goal: no nested horizontal scrollbars on phones — wrap, stack, or swap. */
+
+html {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.wrap,
+section,
+header,
+footer,
+.site-nav,
+.term,
+.demo-shell,
+.tab-panels,
+.grid,
+.paths,
+.toolcats,
+.bridge,
+.cmp-wrap,
+.table-wrap {
+  max-width: 100%;
+  min-width: 0;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe,
+pre,
+table,
+code {
+  max-width: 100%;
+}
+
+/* Desktop-only / mobile-only swaps */
+.mobile-only { display: none !important; }
+.desktop-only { display: block; }
+
+.hero-mark {
+  display: none;
+  width: 56px;
+  height: 56px;
+  margin: 0 0 20px;
+}
+
+.flow-stack {
+  display: none;
+  border: 1px solid var(--line, #262626);
+  background: var(--bg-alt, #111);
+  margin: 0 0 8px;
+}
+
+.flow-stack .flow-card {
+  padding: 14px 16px;
+  color: var(--dim, #8a8a8a);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.flow-stack .flow-card strong,
+.flow-stack .flow-card b {
+  color: var(--fg, #e8e8e8);
+  font-weight: 600;
+}
+
+.flow-stack .flow-card + .flow-card {
+  border-top: 1px solid var(--line, #262626);
+}
+
+.flow-stack .flow-arrow {
+  padding: 8px 16px;
+  border-top: 1px solid var(--line, #262626);
+  border-bottom: 1px solid var(--line, #262626);
+  color: var(--faint, #555);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  background: var(--bg, #0a0a0a);
+}
+
+.flow-stack ul {
+  margin: 8px 0 0;
+  padding-left: 1.15em;
+}
+
+.flow-stack li {
+  margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+
+  .hero-mark {
+    display: block;
+  }
+
+  pre.ascii {
+    display: none !important;
+  }
+
+  .flow-stack {
+    display: block;
+  }
+
+  /* Kill nested horizontal scroll — wrap instead of inner scroll */
+  pre,
+  pre.diagram,
+  .term pre,
+  .demo-body pre {
+    overflow-x: hidden !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 12px !important;
+    line-height: 1.65 !important;
+  }
+
+  code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .term-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 6px;
+  }
+
+  .term-bar .left {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toolrow .lst {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .demo-steps button {
+    flex: 1 1 calc(50% - 1px);
+    border-bottom: 1px solid var(--line, #262626);
+    font-size: 12px;
+    padding: 10px 12px;
+  }
+
+  .demo-body pre {
+    min-height: 0 !important;
+  }
+
+  .tabs button {
+    flex: 1 1 auto;
+    white-space: normal;
+    letter-spacing: 0.04em;
+    padding: 10px 12px;
+  }
+
+  /* Tables: no side-scroll; allow wrapping */
+  .cmp-wrap,
+  .table-wrap {
+    overflow-x: visible !important;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Prefer stacking wide ASCII diagrams when not marked desktop-only */
+  pre.diagram:not(.desktop-only) {
+    white-space: pre-wrap !important;
+  }
+
+  table.cmp,
+  .table-wrap table {
+    table-layout: fixed;
+    width: 100%;
+    font-size: 12px;
+  }
+
+  table.cmp th,
+  table.cmp td,
+  .table-wrap th,
+  .table-wrap td {
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    vertical-align: top;
+  }
+
+  /* Stack comparison rows as cards when too tight */
+  @media (max-width: 540px) {
+    table.cmp thead {
+      display: none;
+    }
+
+    table.cmp,
+    table.cmp tbody,
+    table.cmp tr,
+    table.cmp td {
+      display: block;
+      width: 100%;
+    }
+
+    table.cmp tr {
+      border: 1px solid var(--line, #262626);
+      margin-bottom: 10px;
+      background: var(--bg-alt, #111);
+    }
+
+    table.cmp td {
+      border: none;
+      border-bottom: 1px solid var(--line, #262626);
+      padding: 10px 12px;
+    }
+
+    table.cmp td:last-child {
+      border-bottom: none;
+    }
+
+    table.cmp td:first-child {
+      color: var(--fg, #e8e8e8);
+      font-weight: 600;
+      background: transparent;
+    }
+
+    .table-wrap table thead {
+      display: none;
+    }
+
+    .table-wrap table,
+    .table-wrap tbody,
+    .table-wrap tr,
+    .table-wrap th,
+    .table-wrap td {
+      display: block;
+      width: 100%;
+    }
+
+    .table-wrap tr {
+      border: 1px solid var(--line, #262626);
+      margin-bottom: 10px;
+      background: var(--bg-alt, #111);
+    }
+
+    .table-wrap tr:first-child {
+      display: none; /* column labels — values carry meaning on cards */
+    }
+
+    .table-wrap td,
+    .table-wrap th {
+      border: none;
+      border-bottom: 1px solid var(--line, #262626);
+      padding: 10px 12px;
+    }
+
+    .table-wrap td:last-child,
+    .table-wrap th:last-child {
+      border-bottom: none;
+    }
+
+    .table-wrap td:first-child {
+      color: var(--fg, #e8e8e8);
+      font-weight: 600;
+    }
+  }
+
+  .field,
+  input.field,
+  select.field,
+  textarea.field {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .bridge {
+    padding: 18px 14px;
+  }
+
+  .cta .btn,
+  .demo-actions .btn {
+    max-width: 100%;
+  }
+
+  footer .wrap {
+    gap: 14px;
+  }
+
+  footer nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+  }
+}

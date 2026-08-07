@@ -18,6 +18,7 @@
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
 <link rel="stylesheet" href="/nav.css">
+<link rel="stylesheet" href="/site.css">
 <style>
   :root {
     --bg: #0a0a0a; --bg-alt: #111; --fg: #e8e8e8; --dim: #8a8a8a;
@@ -57,10 +58,11 @@
   .btn.ghost { color: var(--fg); border-color: var(--line); }
   .btn.ghost:hover { border-color: var(--fg); }
   .meta { color: var(--faint); font-size: 12px; margin-top: 40px; }
-  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap { overflow-x: hidden; max-width: 100%; }
   @media (max-width: 768px) {
     .wrap { padding: 24px 16px 48px; }
     h1 { font-size: 22px; }
+    td:first-child { width: auto; }
   }
   @media print {
     body { background: #fff; color: #111; }

@@ -243,9 +243,8 @@ func TestArgsCrazyInputs(t *testing.T) {
 		rawArgs string
 		wantErr string // substring expected in the error
 	}{
-		{"non-string arg value", "get_session", `{"session_id":12345}`, "invalid arguments"},
-		{"nested object arg", "get_session", `{"session_id":{"nested":true}}`, "invalid arguments"},
-		{"array as arguments", "get_session", `["a","b"]`, "invalid arguments"},
+		// Typed scalars/objects are coerced (not rejected) — see TestCoerceToolArgs_TypedJSON.
+		{"array as arguments object", "get_session", `["a","b"]`, "invalid arguments"},
 		{"args not a JSON array", "run_command", `{"session_id":"s","command":"x","args":"just-a-string"}`, "JSON array"},
 		{"args is a JSON object", "run_command", `{"session_id":"s","command":"x","args":"{\"k\":1}"}`, "JSON array"},
 		{"env not a JSON object", "run_command", `{"session_id":"s","command":"x","env":"[1,2,3]"}`, "JSON object"},

@@ -731,11 +731,9 @@ func toolDefinitions() []mcpTool {
 // ---------------------------------------------------------------------------
 
 func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMessage) (mcpToolResult, error) {
-	args := make(map[string]string)
-	if len(rawArgs) > 0 {
-		if err := json.Unmarshal(rawArgs, &args); err != nil {
-			return mcpToolResult{}, fmt.Errorf("invalid arguments: %w", err)
-		}
+	args, err := coerceToolArgs(rawArgs)
+	if err != nil {
+		return mcpToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 
 	switch name {

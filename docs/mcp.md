@@ -22,7 +22,9 @@ explicit `session_id` that clients pass on later calls.
 
 | Variable | Purpose |
 |---|---|
-| `MCP_TASK_TTL_SECONDS` | How long completed/failed/cancelled tasks stay in memory (default `1800`) |
+| `MCP_TASK_TTL_SECONDS` | How long finished tasks stay in memory (default `1800`) |
+| `MCP_TASK_MAX_AGE_SECONDS` | Max age for working tasks before forced fail (default `7200`) |
+| `MCP_TASK_MAX_INFLIGHT` | Cap on concurrent working tasks (default `64`) |
 
 ### OAuth / EMA env (HTTP)
 

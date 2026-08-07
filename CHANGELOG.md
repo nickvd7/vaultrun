@@ -13,6 +13,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `MCP_TASK_TTL_SECONDS` (default 30m), cancel race safety, and `async` stripped
   from tool handler args. Dead custom HTTP header-validation path removed now
   that the official SDK owns Streamable HTTP.
+- **MCP Tasks security caps** — max in-flight tasks (`MCP_TASK_MAX_INFLIGHT`),
+  working-task max age (`MCP_TASK_MAX_AGE_SECONDS`), message/result size limits,
+  owner binding from OAuth `UserID`, and no TTL refresh on terminal no-ops.
+  Async mode requires an explicit `async` flag (extension advertise alone is not enough).
 
 ### Changed
 

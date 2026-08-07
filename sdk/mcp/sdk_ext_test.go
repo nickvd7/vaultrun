@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -207,12 +208,13 @@ func TestTasksUpdateAndCancel(t *testing.T) {
 		Message:   "started",
 	})
 
-	ok := store.update(id, func(t *taskRecord) {
+	ok := store.update(id, func(t *taskRecord) bool {
 		if t.terminal() {
-			return
+			return false
 		}
 		t.Progress = 0.5
 		t.Message = "halfway"
+		return true
 	})
 	if !ok {
 		t.Fatal("update missed")
@@ -222,59 +224,127 @@ func TestTasksUpdateAndCancel(t *testing.T) {
 		t.Fatalf("unexpected after update: %#v", got)
 	}
 
-	var cancelFn context.CancelFunc
-	store.update(id, func(t *taskRecord) {
+	store.update(id, func(t *taskRecord) bool {
 		if t.terminal() {
-			return
+			return false
 		}
-		cancelFn = t.cancel
 		t.Status = taskCancelled
 		t.Message = "cancellation requested"
 		t.Progress = 1
+		t.FinishedAt = time.Now().UTC()
+		return true
 	})
-	if cancelFn != nil {
-		cancelFn()
-	}
 	got, _ = store.get(id)
 	if got.Status != taskCancelled {
 		t.Fatalf("status=%s", got.Status)
 	}
 
-	// Progress must not change after cancel (terminal guard).
-	store.update(id, func(t *taskRecord) {
+	before := got.UpdatedAt
+	time.Sleep(2 * time.Millisecond)
+	store.update(id, func(t *taskRecord) bool {
 		if t.terminal() {
-			return
+			return false
 		}
 		t.Progress = 0.9
 		t.Message = "too late"
+		return true
 	})
 	got, _ = store.get(id)
 	if got.Progress != 1 || got.Message != "cancellation requested" {
 		t.Fatalf("terminal task mutated: %#v", got)
 	}
+	if !got.UpdatedAt.Equal(before) {
+		t.Fatalf("UpdatedAt refreshed on terminal no-op: %v -> %v", before, got.UpdatedAt)
+	}
 }
 
 func TestTaskTTLExpire(t *testing.T) {
-	store := &taskStore{tasks: make(map[string]*taskRecord), ttl: time.Millisecond}
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Millisecond,
+		maxAge:      time.Hour,
+		maxInflight: 64,
+	}
 	old := time.Now().UTC().Add(-time.Hour)
 	store.put(&taskRecord{
-		ID:        "old",
-		Status:    taskCompleted,
-		UpdatedAt: old,
-		CreatedAt: old,
+		ID:         "old",
+		Status:     taskCompleted,
+		UpdatedAt:  old,
+		CreatedAt:  old,
+		FinishedAt: old,
 	})
 	store.put(&taskRecord{
 		ID:        "live",
 		Status:    taskWorking,
 		UpdatedAt: old,
-		CreatedAt: old,
+		CreatedAt: time.Now().UTC(),
 	})
 	store.expire()
 	if _, ok := store.get("old"); ok {
 		t.Fatal("completed task should expire")
 	}
 	if _, ok := store.get("live"); !ok {
-		t.Fatal("working task must not expire")
+		t.Fatal("working task must not expire via TTL alone")
+	}
+}
+
+func TestTaskMaxAgeCancelsStaleWorking(t *testing.T) {
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Hour,
+		maxAge:      time.Millisecond,
+		maxInflight: 64,
+	}
+	old := time.Now().UTC().Add(-time.Hour)
+	store.put(&taskRecord{
+		ID:        "stale",
+		Status:    taskWorking,
+		CreatedAt: old,
+		UpdatedAt: old,
+	})
+	store.expire()
+	got, ok := store.get("stale")
+	if !ok {
+		t.Fatal("expected timed-out task retained until TTL")
+	}
+	if got.Status != taskFailed || got.Error != "task exceeded max age" {
+		t.Fatalf("unexpected: %#v", got)
+	}
+}
+
+func TestTaskMaxInflight(t *testing.T) {
+	store := &taskStore{
+		tasks:       make(map[string]*taskRecord),
+		ttl:         time.Hour,
+		maxAge:      time.Hour,
+		maxInflight: 1,
+	}
+	srv := newTestServer()
+	first := store.startToolTask(context.Background(), srv, "run_command",
+		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
+	if first.IsError {
+		t.Fatalf("first task should start: %+v", first.Content)
+	}
+	second := store.startToolTask(context.Background(), srv, "run_command",
+		json.RawMessage(`{"session_id":"s1","command":"echo","async":true}`))
+	if !second.IsError {
+		t.Fatal("expected inflight cap error")
+	}
+}
+
+func TestAuthorizeTaskAccess(t *testing.T) {
+	rec := &taskRecord{ID: "t1", Owner: "alice"}
+	if err := authorizeTaskAccess(rec, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorizeTaskAccess(rec, ""); err != nil {
+		t.Fatal("empty actor should be allowed (stdio)")
+	}
+	if err := authorizeTaskAccess(rec, "bob"); err == nil {
+		t.Fatal("expected denial for other owner")
+	}
+	if err := authorizeTaskAccess(&taskRecord{ID: "t2"}, "bob"); err != nil {
+		t.Fatal("unowned task should allow any actor")
 	}
 }
 
@@ -307,6 +377,14 @@ func TestWantsAsyncTask(t *testing.T) {
 		t.Fatal("bool false")
 	}
 	if wantsAsyncTask(nil, json.RawMessage(`{}`)) {
-		t.Fatal("missing async")
+		t.Fatal("missing async must not force task mode")
+	}
+}
+
+func TestClampTaskMessage(t *testing.T) {
+	long := strings.Repeat("ä", maxTaskMessageRunes+10)
+	got := clampTaskMessage(long)
+	if utf8.RuneCountInString(got) != maxTaskMessageRunes {
+		t.Fatalf("got %d runes", utf8.RuneCountInString(got))
 	}
 }

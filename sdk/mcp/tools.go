@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-
 // toolDefinitions returns the full list of MCP tools this server exposes.
 func toolDefinitions() []mcpTool {
 	tools := []mcpTool{
@@ -104,6 +103,12 @@ func toolDefinitions() []mcpTool {
 					"env": {
 						Type:        "string",
 						Description: "JSON object of environment variables (e.g. '{\"FOO\":\"bar\"}').",
+					},
+					"async": {
+						Type: "string",
+						Description: "Set to 'true' to run as a Tasks-extension background job and return a taskId " +
+							"immediately. Poll with tasks/get. Default false (synchronous).",
+						Enum: []string{"true", "false"},
 					},
 				},
 				Required: []string{"session_id", "command"},
@@ -288,7 +293,7 @@ func toolDefinitions() []mcpTool {
 		},
 		// ── GitHub tools ──────────────────────────────────────────────────────────
 		{
-			Name: "run_github_repo",
+			Name:        "run_github_repo",
 			Description: "Clone a GitHub repository into a new sandbox session and run commands sequentially.",
 			InputSchema: inputSchema{
 				Type: "object",

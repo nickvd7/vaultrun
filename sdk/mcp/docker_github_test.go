@@ -52,9 +52,9 @@ func TestValidateGitRef(t *testing.T) {
 
 func TestParseOwnerRepo(t *testing.T) {
 	valid := []struct {
-		input         string
-		wantOwner     string
-		wantRepo      string
+		input     string
+		wantOwner string
+		wantRepo  string
 	}{
 		{"owner/repo", "owner", "repo"},
 		{"my-org/my-repo", "my-org", "my-repo"},

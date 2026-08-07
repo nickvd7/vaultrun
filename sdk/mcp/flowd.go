@@ -99,7 +99,7 @@ func (s *server) execFlowctl(ctx context.Context, subcommand ...string) (string,
 func flowdToolDefinitions() []mcpTool {
 	return []mcpTool{
 		{
-			Name:        "flowd_list_suggestions",
+			Name: "flowd_list_suggestions",
 			Description: "List pending workflow automation suggestions from the local Flowd daemon. " +
 				"Requires flowctl and flow-daemon running on the same machine as vaultrun-mcp.",
 			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},

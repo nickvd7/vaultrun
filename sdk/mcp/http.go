@@ -25,6 +25,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
@@ -32,7 +33,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -42,6 +45,8 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/modelcontextprotocol/go-sdk/auth"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -261,25 +266,16 @@ var writeTools = map[string]bool{
 //  4. RateLimit    — global per-IP flood protection, runs BEFORE auth so
 //     brute-force token guesses are throttled too
 //  5. /healthz     — unauthenticated readiness probe (registered before auth)
-//  6. Auth         — bearer token required for all remaining routes
-//  7. Routes       — /, /sse, /mcp (with per-tool tier limiting inside /mcp)
+//  6. OAuth PRM    — /.well-known/oauth-protected-resource (unauthenticated)
+//  7. Auth         — bearer token required for remaining routes
+//  8. Routes       — /, /sse, /mcp (official Streamable HTTP SDK handler)
 func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// Trusted-proxy policy. Default: trust NO proxy, so c.ClientIP() returns
-	// the real TCP peer address and a client cannot spoof X-Forwarded-For to
-	// evade per-IP rate limiting. Opt in via MCP_TRUSTED_PROXIES.
 	_ = r.SetTrustedProxies(cfg.trustedProxies)
 
-	// CORS — must run before auth so that preflight requests from browsers get
-	// a proper response without triggering the auth check.
-	// Wildcard origins ("*") are safe here because the MCP server uses Bearer
-	// token authentication (not cookies), so cross-origin requests cannot be
-	// silently credentialed by an attacker's page. If the auth model ever
-	// changes to use session cookies, this wildcard MUST be replaced with an
-	// explicit origin allowlist (MCP_ALLOWED_ORIGINS).
 	corsConfig := cors.DefaultConfig()
 	if len(cfg.allowedOrigins) == 1 && cfg.allowedOrigins[0] == "*" {
 		corsConfig.AllowAllOrigins = true
@@ -287,8 +283,6 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		corsConfig.AllowOrigins = cfg.allowedOrigins
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "OPTIONS"}
-	// Include MCP 2026-07-28 routing headers so browser-based clients can
-	// send Streamable HTTP requests cross-origin.
 	corsConfig.AllowHeaders = []string{
 		"Content-Type",
 		"Authorization",
@@ -299,11 +293,6 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 	}
 	r.Use(cors.New(corsConfig))
 
-	// Security headers on every response. We omit the legacy X-XSS-Protection
-	// (deprecated; can introduce vulnerabilities in older browsers) and instead
-	// rely on a strict CSP. HSTS is only emitted when this process terminates
-	// TLS — sending it over plain HTTP is meaningless and sending it from
-	// behind a TLS-terminating proxy is the proxy's responsibility.
 	tlsActive := cfg.tlsActive()
 	r.Use(func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
@@ -317,9 +306,6 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		c.Next()
 	})
 
-	// Global per-IP rate limiting runs BEFORE authentication so unauthenticated
-	// floods and bearer-token brute-force attempts are throttled too.
-	// (OPTIONS preflights pass through — the CORS middleware already handled them.)
 	globalLimiter := newIPRateLimiter(cfg.rateLimit)
 	r.Use(func(c *gin.Context) {
 		if c.Request.Method == http.MethodOptions {
@@ -334,11 +320,11 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		c.Next()
 	})
 
-	// GET /healthz — unauthenticated readiness probe for load balancers and
-	// container orchestrators. Registered BEFORE the auth middleware so that
-	// health checks from infrastructure do not require credentials. The probe
-	// verifies the upstream VaultRun API is reachable; it does not leak any
-	// sensitive information (only status + version + tool count).
+	oauthCfg := oauthConfigFromEnv(cfg.authToken, "http://localhost"+cfg.port)
+	if v := os.Getenv("MCP_PUBLIC_BASE_URL"); v != "" {
+		oauthCfg = oauthConfigFromEnv(cfg.authToken, v)
+	}
+
 	r.GET("/healthz", func(c *gin.Context) {
 		if srv.client != nil {
 			hctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
@@ -354,54 +340,27 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"status":      "ok",
-			"version":     "0.1.0",
+			"version":     mcpServerVersion,
 			"tools_count": len(toolDefinitions()),
 		})
 	})
 
-	// Auth middleware — all routes registered below require a valid Bearer token.
-	authToken := cfg.authToken
-	r.Use(func(c *gin.Context) {
-		if c.Request.Method == http.MethodOptions {
-			c.Next()
-			return
-		}
-		header := c.GetHeader("Authorization")
-		token := strings.TrimPrefix(header, "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(authToken)) != 1 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			c.Abort()
-			return
-		}
-		c.Next()
+	if oauthCfg.prmEnabled() {
+		meta := oauthCfg.metadata()
+		r.GET(oauthCfg.metadataPath, gin.WrapH(auth.ProtectedResourceMetadataHandler(meta)))
+		slog.Info("vaultrun-mcp: OAuth PRM enabled", "resource", oauthCfg.resourceURL, "issuers", oauthCfg.issuers)
+	}
+
+	appsEnabled := os.Getenv("MCP_APPS_ENABLED") != "false"
+	tasks := newTaskStore()
+	sdkServer := buildMCPServer(srv, tasks, appsEnabled)
+	innerMCP := mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server {
+		return sdkServer
+	}, &mcpsdk.StreamableHTTPOptions{
+		Stateless:    true,
+		JSONResponse: true,
 	})
 
-	// GET / — server discovery info.
-	r.GET("/", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"name":               mcpServerName,
-			"version":            mcpServerVersion,
-			"protocol":           "mcp/" + protocolVersionCurrent,
-			"supported_versions": supportedProtocolVersions(),
-			"transport":          "http",
-			"tools_count":        len(toolDefinitions()),
-		})
-	})
-
-	// GET /sse — legacy HTTP+SSE stub (deprecated in MCP 2026-07-28).
-	// Prefer Streamable HTTP POST /mcp. Kept for older probes only.
-	r.GET("/sse", func(c *gin.Context) {
-		c.Header("Content-Type", "text/event-stream")
-		c.Header("Cache-Control", "no-cache")
-		c.Header("Connection", "keep-alive")
-		c.String(http.StatusOK, ": connected\n\n")
-	})
-
-	// Per-tool tier rate limiters. These are ADDITIONAL limits on top of the
-	// global per-IP limit. Heavy tools (run_command, create_session, …) get the
-	// strictest budget; write tools (upload_file, delete_file, …) get a moderate
-	// budget; read-only tools are only subject to the global limit.
-	// A tier limit of 0 means "disabled" — the global limit alone applies.
 	var writeLimiter, heavyLimiter *ipRateLimiter
 	if cfg.writeTierLimit > 0 {
 		writeLimiter = newIPRateLimiter(cfg.writeTierLimit)
@@ -409,78 +368,104 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 	if cfg.heavyTierLimit > 0 {
 		heavyLimiter = newIPRateLimiter(cfg.heavyTierLimit)
 	}
-
-	// POST /mcp — main JSON-RPC 2.0 endpoint (Streamable HTTP).
-	r.POST("/mcp", func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4*1024*1024)
-
-		var req jsonRPCRequest
-		if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-			c.JSON(http.StatusOK, jsonRPCResponse{
-				JSONRPC: "2.0",
-				Error:   &jsonRPCError{Code: errParse, Message: "parse error: " + err.Error()},
-			})
-			return
-		}
-
-		slog.Debug("mcp/http: received", "method", req.Method, "id", req.ID, "ip", c.ClientIP())
-
-		// MCP 2026-07-28 header validation. Legacy clients that omit the
-		// MCP-Protocol-Version header continue to work unchanged.
-		if status, errResp := validateMCPHTTPHeaders(c.Request.Header, &req); errResp != nil {
-			c.JSON(status, errResp)
-			return
-		}
-
-		// Per-tool tier rate limiting for resource-intensive operations. We check
-		// this after body decode (the tool name is inside the payload) but before
-		// dispatching — a 429 is cheaper than spawning a container.
-		if req.Method == "tools/call" && len(req.Params) > 0 {
-			var params mcpToolCallParams
-			if err := json.Unmarshal(req.Params, &params); err == nil {
-				var tierLimiter *ipRateLimiter
-				switch {
-				case heavyTools[params.Name]:
-					tierLimiter = heavyLimiter
-				case writeTools[params.Name]:
-					tierLimiter = writeLimiter
+	streamable := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 4*1024*1024+1))
+			if err != nil {
+				http.Error(w, "read error", http.StatusBadRequest)
+				return
+			}
+			_ = r.Body.Close()
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if len(body) <= 4*1024*1024 {
+				var rpc struct {
+					Method string `json:"method"`
+					Params struct {
+						Name string `json:"name"`
+					} `json:"params"`
 				}
-				if tierLimiter != nil && !tierLimiter.allow(c.ClientIP()) {
-					c.JSON(http.StatusTooManyRequests, gin.H{
-						"error": "rate limit exceeded for this operation type",
-					})
-					return
+				if json.Unmarshal(body, &rpc) == nil && rpc.Method == "tools/call" {
+					var tier *ipRateLimiter
+					switch {
+					case heavyTools[rpc.Params.Name]:
+						tier = heavyLimiter
+					case writeTools[rpc.Params.Name]:
+						tier = writeLimiter
+					}
+					if tier != nil && !tier.allow(clientIPFromRequest(r)) {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusTooManyRequests)
+						_, _ = w.Write([]byte(`{"error":"rate limit exceeded for this operation type"}`))
+						return
+					}
 				}
 			}
 		}
+		innerMCP.ServeHTTP(w, r)
+	}))
 
-		start := time.Now()
-		resp := srv.handleRequest(c.Request.Context(), &req)
+	useSDKAuth := oauthCfg.introspectionURL != "" || oauthCfg.prmEnabled()
+	var mcpHandler http.Handler = streamable
+	if useSDKAuth {
+		mcpHandler = newBearerAuthMiddleware(oauthCfg)(streamable)
+	}
 
-		if req.Method == "tools/call" {
-			logHTTPToolCall(c, &req, resp, time.Since(start))
-		}
-
-		if resp == nil {
-			c.Status(http.StatusNoContent)
+	authToken := cfg.authToken
+	r.Use(func(c *gin.Context) {
+		if c.Request.Method == http.MethodOptions {
+			c.Next()
 			return
 		}
-
-		// Map MCP 2026-07-28 error codes to the required HTTP statuses when the
-		// client is speaking the modern protocol. Legacy clients keep 200.
-		status := http.StatusOK
-		if isModernHTTPRequest(c.Request.Header, &req) && resp.Error != nil {
-			switch resp.Error.Code {
-			case errMethodNotFound:
-				status = http.StatusNotFound
-			case errHeaderMismatch, errUnsupportedProtocolVersion, errMissingClientCapability, errInvalidParams:
-				status = http.StatusBadRequest
-			}
+		// /mcp is authenticated by the SDK bearer middleware when OAuth is on.
+		if useSDKAuth && (c.Request.URL.Path == "/mcp" || strings.HasPrefix(c.Request.URL.Path, "/mcp/")) {
+			c.Next()
+			return
 		}
-		c.JSON(status, resp)
+		header := c.GetHeader("Authorization")
+		token := strings.TrimPrefix(header, "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(token), []byte(authToken)) != 1 {
+			if oauthCfg.prmEnabled() {
+				c.Header("WWW-Authenticate", fmt.Sprintf(`Bearer FAKESECRET_g3h4i5j6k7l8m9n0o1p2="%s"`, oauthCfg.metadataURL()))
+			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			c.Abort()
+			return
+		}
+		c.Next()
 	})
 
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"name":               mcpServerName,
+			"version":            mcpServerVersion,
+			"protocol":           "mcp/" + protocolVersionCurrent,
+			"supported_versions": supportedProtocolVersions(),
+			"transport":          "http",
+			"sdk":                "github.com/modelcontextprotocol/go-sdk",
+			"tools_count":        len(toolDefinitions()),
+			"extensions":         []string{extTasks, extApps},
+		})
+	})
+
+	r.GET("/sse", func(c *gin.Context) {
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.String(http.StatusOK, ": connected\n\n")
+	})
+
+	r.Any("/mcp", gin.WrapH(mcpHandler))
+	r.Any("/mcp/*path", gin.WrapH(mcpHandler))
+
 	return r
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // ---------------------------------------------------------------------------

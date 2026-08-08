@@ -69,7 +69,11 @@
       "@id": "https://vaultrun.dev/#org",
       "name": "VaultRun",
       "url": "https://vaultrun.dev/",
-      "email": "mail@030.dev",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "url": "https://vaultrun.dev/#contact",
+        "contactType": "sales"
+      },
       "sameAs": ["https://github.com/nickvd7/vaultrun"]
     }
   ]
@@ -872,7 +876,7 @@ fmt.Println(*run.Stdout)</pre>
     <p class="sub">VaultRun Enterprise adds OIDC (Authorization Code + PKCE) and SAML 2.0 to the
     self-hosted API — Okta, Azure AD, Google Workspace, Keycloak, AD FS, OneLogin — with
     org-aware RBAC and signed dashboard sessions. Eval is free; production needs a license.
-    Requests land in <a href="mailto:mail@030.dev">mail@030.dev</a>.</p>
+    Requests go through the <a href="#contact">contact form</a>.</p>
 
     <div class="cmp-wrap">
     <table class="cmp" aria-label="Core vs Enterprise">
@@ -940,11 +944,6 @@ fmt.Println(*run.Stdout)</pre>
         <a class="btn ghost" href="#contact" data-intent="sales" style="font-size:12.5px">general sales question →</a>
       </div>
     </div>
-    <p class="sub" style="margin-top:20px">
-      Procurement one-pager: <a href="/enterprise.html">enterprise.html</a> ·
-      Use cases: <a href="/use-cases.html">use-cases.html</a> ·
-      Demo script: <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/demo-video-script.md">demo-video-script.md</a>
-    </p>
   </div>
 </section>
 
@@ -952,12 +951,12 @@ fmt.Println(*run.Stdout)</pre>
   <div class="wrap">
     <h2>contact</h2>
     <p class="h2-big">Enterprise, sales, or a walkthrough?</p>
-    <p class="sub">This form goes to <a href="mailto:mail@030.dev">mail@030.dev</a> — for SSO evaluation, licenses, and calls.
+    <p class="sub">Use the form below for SSO evaluation, licenses, and calls.
     <strong style="color:var(--fg)">Bugs &amp; features</strong> → <a href="https://github.com/nickvd7/vaultrun/issues/new/choose">GitHub Issues</a> (use the templates).
     <strong style="color:var(--fg)">Security</strong> → private only: <a href="https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md">SECURITY.md</a> (not this form, unless intent = security report).</p>
 
     <div id="sent-msg" class="term" style="display:none; margin-bottom:20px">
-      <pre><span class="p">$</span> sendmail mail@030.dev
+      <pre><span class="p">$</span> send — contact form
 <span class="o">message queued — we'll get back to you soon. ✓</span></pre>
     </div>
 
@@ -1029,7 +1028,7 @@ fmt.Println(*run.Stdout)</pre>
           <textarea required name="message" id="message" rows="5" placeholder="what's on your mind?" class="field"></textarea>
         </label>
         <div>
-          <button type="submit" class="btn primary" style="cursor:pointer; font-family:inherit">:wq — send to mail@030.dev</button>
+          <button type="submit" class="btn primary" style="cursor:pointer; font-family:inherit">:wq — send message</button>
         </div>
       </div>
     </form>
@@ -1038,7 +1037,7 @@ fmt.Println(*run.Stdout)</pre>
 
 <footer>
   <div class="wrap">
-    <div class="copy">© 2026 VaultRun · Apache 2.0 core · <a href="mailto:mail@030.dev">mail@030.dev</a></div>
+    <div class="copy">© 2026 VaultRun · Apache 2.0 core · <a href="#contact">contact</a></div>
     <nav aria-label="Footer">
       <a href="https://github.com/nickvd7/vaultrun">GitHub</a>
       <a href="https://pypi.org/project/vaultrun-sdk/">PyPI</a>

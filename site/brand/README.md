@@ -24,13 +24,25 @@ Terminal prompt inside a square frame: `>_`
 | `lockup-light.svg` / `lockup-light.png` | Mark + VAULTRUN (light) |
 | `wordmark.svg` / `wordmark-light.svg` | Text only |
 
-## Social / video
+## Social / video / LinkedIn
 
 | File | Size | Use |
 |------|------|-----|
 | `og.png` | 1200×630 | Open Graph / LinkedIn / X link preview |
 | `social-square.png` | 1080×1080 | Profile / square posts |
 | `video-endcard.png` | 1920×1080 | Demo video end card |
+| `linkedin-logo.png` | 400×400 | Company Page logo |
+| `linkedin-cover.png` | 4200×700 | Company Page cover (upload size) |
+| `linkedin-profile-banner.png` | 1584×396 | Founder personal-profile banner |
+| `linkedin-first-post.png` | 1080×1080 | Attach to the Page launch post |
+
+Page copy and settings: [`docs/linkedin-page.md`](../../docs/linkedin-page.md).
+
+Regenerate all rasters (requires Pillow + JetBrains Mono or DejaVu Sans Mono):
+
+```bash
+python3 scripts/generate-brand-pngs.py
+```
 
 ## Rules (short)
 

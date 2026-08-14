@@ -181,8 +181,9 @@ def linkedin_cover() -> Image.Image:
     word_w = text_width(draw, "VAULTRUN", word, tracking)
     tag_w = draw.textlength(tag_line, font=tag)
     block_w = max(word_w, tag_w)
-    # Pack the block to the right; 320px margin so mobile side-crop doesn't clip.
-    tx = w - 320 - int(block_w)
+    # Right-weighted, but not flush: 560px right margin (~64px on the 1128-wide
+    # editor preview) so it sits off the edge without sliding back over the logo.
+    tx = w - 560 - int(block_w)
     block_h = 200 + 24 + 64
     ty = (h - block_h) // 2
     draw_spaced(draw, (tx, ty), "VAULTRUN", word, FG, tracking=tracking)

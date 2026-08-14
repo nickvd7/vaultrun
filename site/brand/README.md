@@ -32,7 +32,7 @@ Terminal prompt inside a square frame: `>_`
 | `social-square.png` | 1080×1080 | Profile / square posts |
 | `video-endcard.png` | 1920×1080 | Demo video end card |
 | `linkedin-logo.png` | 400×400 | Company Page logo |
-| `linkedin-cover.png` | 4200×700 | Company Page cover (upload size) |
+| `linkedin-cover.png` / `linkedin-cover.jpg` | 4200×700 | Company Page cover. **Upload the JPEG.** Type is right-weighted. |
 | `linkedin-profile-banner.png` | 1584×396 | Founder personal-profile banner |
 | `linkedin-first-post.png` | 1080×1080 | Attach to the Page launch post |
 

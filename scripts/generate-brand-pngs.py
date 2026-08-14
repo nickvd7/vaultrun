@@ -257,18 +257,20 @@ def linkedin_cover() -> Image.Image:
     draw.line([(0, h - 3 * scale), (w, h - 3 * scale)], fill=LINE, width=3 * scale)
 
     word = load_font(BOLD, 200 * scale)
-    tag = load_font(REG, 64 * scale)
+    tag = load_font(REG, 44 * scale)
     tracking = 16 * scale
     tag_line = "Self-hosted secure runtime for AI agents"
     word_w = text_width(draw, "VAULTRUN", word, tracking)
     tag_w = draw.textlength(tag_line, font=tag)
-    # Right-weighted block; tagline is the widest line. VAULTRUN centered on it.
-    tx_tag = w - 560 * scale - int(tag_w)
-    tx_word = tx_tag + (tag_w - word_w) / 2
-    block_h = 200 * scale + 36 * scale + 64 * scale
+    block_w = max(word_w, tag_w)
+    tx_block = w - 560 * scale - int(block_w)
+    tx_word = tx_block + (block_w - word_w) / 2
+    tx_tag = tx_block + (block_w - tag_w) / 2
+    gap = 28 * scale
+    block_h = 200 * scale + gap + 44 * scale
     ty = (h - block_h) // 2
     draw_spaced(draw, (tx_word, ty), "VAULTRUN", word, FG, tracking=tracking)
-    draw.text((tx_tag, ty + 200 * scale + 36 * scale), tag_line, font=tag, fill=(196, 196, 196, 255))
+    draw.text((tx_tag, ty + 200 * scale + gap), tag_line, font=tag, fill=(196, 196, 196, 255))
     return img.resize((4200, 700), Image.Resampling.LANCZOS)
 
 

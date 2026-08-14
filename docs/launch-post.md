@@ -85,3 +85,27 @@ VaultRun: https://vaultrun.dev/flowd.html
 Self-hosted sandboxes for AI agents — not another SaaS runner.
 VaultRun: Docker isolation + MCP (53+ tools) + audit trail.
 https://vaultrun.dev · https://github.com/nickvd7/vaultrun
+
+---
+
+## LinkedIn comment reply — HMAC vs hallucinated tool args
+
+Reply **from Nick’s personal profile**, not the Page. Keep it under the comment; don’t start a new post.
+
+```
+Yes — the HMAC trail records the actual inputs, not just that a call happened.
+
+On a sandbox run we write command.started with the command + args into metadata JSON, then HMAC-SHA256 over that payload (id, timestamp, actor, action, session/run ids, metadata). So a model that invents rm -rf / or a weird flag still shows up as those exact args. Credential-looking flags (--token, --password, --api-key, …) are replaced with *** before the row is signed. Secret-broker values never land in audit metadata.
+
+What it does not capture: full stdout, or a “the model meant X” reconstruction. command.finished is exit status + duration.
+
+The container is still the blast radius. The log is how you prove what crossed it. GET /api/v1/audit on your own instance — or the source in internal/audit + internal/runner.
+```
+
+Shorter variant if the thread is already long:
+
+```
+Actual inputs. command.started stores command + args in the signed metadata (credential-looking flags redacted). Not just “a call happened,” and not full stdout. Container = blast radius; HMAC log = what crossed it. GET /api/v1/audit on your box.
+```
+
+Indie Hackers launch post + product listing: [`indiehackers.md`](indiehackers.md).

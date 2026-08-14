@@ -42,6 +42,7 @@ Do not invent social proof. Do not paste pricing.
 | **LinkedIn Page** | Fill About + assets + first post ([linkedin-page.md](linkedin-page.md)) | **In progress** — Page created, copy/assets in this repo |
 | **Founder distribution** | Nick personal post + Page reshare ([launch-post.md](launch-post.md)) | Next, same day as Page first post |
 | **HN** | Show HN from [launch-post.md](launch-post.md) — weekday morning, not same hour as LinkedIn | After LinkedIn is live |
+| **Indie Hackers** | Product listing + Building-group story ([indiehackers.md](indiehackers.md)) — not the same morning as HN | After LinkedIn thread exists |
 | **Demo** | Record [demo-video-script.md](demo-video-script.md); 15s LinkedIn cut | After launch posts |
 | **MCP ecosystem** | awesome-mcp / directories; blog “self-hosted vs SaaS agent sandboxes” | After demo exists to embed |
 | **Flowd** | Cross-promo vaultrun.dev/flowd.html ↔ flowd.net | Companion post week after launch |
@@ -64,7 +65,8 @@ Do not invent social proof. Do not paste pricing.
 - [brand guidelines](brand.md) + [`site/brand/`](../site/brand/) — logo, OG, social, LinkedIn, video end card
 - [content kit](content-kit.md) — pitches, captions, signature, sales talking points
 - [linkedin-page.md](linkedin-page.md) — Page fields, settings, first post, founder banner
-- [launch-post.md](launch-post.md) — LinkedIn short/long, HN draft
+- [launch-post.md](launch-post.md) — LinkedIn short/long, comment replies, HN draft
+- [indiehackers.md](indiehackers.md) — product listing + Building-group post
 - [demo-video-script.md](demo-video-script.md) — 2–3 min walkthrough
 - [enterprise.html](../site/enterprise.html) — procurement one-pager
 - [commercial.md](commercial.md) — packaging scaffold (pricing blocked)
@@ -121,6 +123,7 @@ All paths: [vaultrun.dev/#contact](https://vaultrun.dev/#contact)
 - [x] Publish responsive site
 - [ ] Finish LinkedIn Page (logo, cover, About, Visit website) — [linkedin-page.md](linkedin-page.md)
 - [ ] Post launch on LinkedIn Page + founder reshare
+- [ ] Indie Hackers product listing + Building post — [indiehackers.md](indiehackers.md)
 - [ ] Show HN
 - [ ] Record demo video
 - [ ] Bump site JSON-LD / twitter copy from v0.2.1 / “53-tool” to current

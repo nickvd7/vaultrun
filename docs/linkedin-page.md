@@ -13,7 +13,7 @@ Pair with [`site/brand/`](../site/brand/) (upload files) and [`launch-post.md`](
 | LinkedIn field | File | Size | Notes |
 |----------------|------|------|--------|
 | **Logo** | [`linkedin-logo.png`](../site/brand/linkedin-logo.png) | 400×400 | Dark mark with fill — reads on light *and* dark LinkedIn UI. Do not use the wide lockup; it becomes illegible at feed size. |
-| **Cover / header** | [`linkedin-cover.png`](../site/brand/linkedin-cover.png) | 4200×700 | Official upload size (renders ~1128×191). No mark on the left — LinkedIn overlays the page logo there. Max 3 MB, PNG/JPG. |
+| **Cover / header** | [`linkedin-cover.png`](../site/brand/linkedin-cover.png) | 4200×700 | **This file only.** If the banner shows a mark on the left plus “Building a self-hosted…”, you uploaded the personal-profile banner — replace it. LinkedIn renders ~1128×191 and overlays the page logo bottom-left, so this cover has no mark on the left. In the cropper: don’t zoom, use the full image. Max 3 MB. |
 | **First post image** | [`linkedin-first-post.png`](../site/brand/linkedin-first-post.png) | 1080×1080 | Attach as a native image. Do **not** also paste a URL in the post body (algorithm throttles link posts). |
 | **Link preview** (later) | [`og.png`](../site/brand/og.png) | 1200×630 | Used when someone shares vaultrun.dev. Already referenced by the site. |
 | **Square posts** | [`social-square.png`](../site/brand/social-square.png) | 1080×1080 | Generic square if you need a second image. |
@@ -22,7 +22,7 @@ Pair with [`site/brand/`](../site/brand/) (upload files) and [`launch-post.md`](
 
 | Field | File / copy |
 |-------|-------------|
-| Banner | [`linkedin-profile-banner.png`](../site/brand/linkedin-profile-banner.png) — 1584×396 |
+| Banner | [`linkedin-profile-banner.png`](../site/brand/linkedin-profile-banner.png) — 1584×396. **Not** the company Page cover (wrong ratio: 4:1 vs 6:1). |
 | Photo | Keep a real photo (not the mark). Pages use the mark; people use faces. |
 | Headline | `Building VaultRun — self-hosted agent runtime` |
 | Experience | Add **VaultRun** as current role; set it as the company Page so the logo appears on your profile. |

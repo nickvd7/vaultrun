@@ -155,16 +155,16 @@ def linkedin_logo() -> Image.Image:
 
 
 def linkedin_cover() -> Image.Image:
-    """4200×700 company cover. No page mark — LinkedIn already overlays the logo
-    at the bottom-left. Keep type in the vertical center; extra left inset so the
-    logo overlap does not cover the headline."""
+    """4200×700 company cover (6:1). LinkedIn renders ~1128×191 and overlays the
+    page logo on the bottom-left — so this file has no mark, and type sits in a
+    center-right safe band (not the personal-profile banner layout)."""
     w, h = 4200, 700
     img = Image.new("RGBA", (w, h), BG)
     img = apply_glow(
         img,
         [
-            (900, -60, 700, 22),
-            (3600, 200, 520, 14),
+            (1100, -80, 720, 20),
+            (3400, 80, 560, 16),
         ],
     )
     draw = ImageDraw.Draw(img)
@@ -172,21 +172,34 @@ def linkedin_cover() -> Image.Image:
     draw.line([(0, 0), (w, 0)], fill=LINE, width=2)
     draw.line([(0, h - 1), (w, h - 1)], fill=LINE, width=2)
 
-    title = load_font(BOLD, 88)
-    sub = load_font(REG, 40)
-    tracking = 10
-    line1 = "SELF-HOSTED SECURE RUNTIME FOR AI AGENTS"
-    line2 = "Docker sandboxes  ·  MCP  ·  signed audit  ·  your infra"
-    # ~12% left inset: page logo sits bottom-left on the live cover
-    tx = 520
-    ty = (h - 88 - 32 - 40) // 2 - 4
-    draw_spaced(draw, (tx, ty), line1, title, FG, tracking=tracking)
-    draw.text((tx, ty + 88 + 32), line2, font=sub, fill=DIM)
+    # Faint mark on the FAR right (opposite the page-logo overlap).
+    wm_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    wm_draw = ImageDraw.Draw(wm_layer)
+    wm_size = 520
+    draw_mark(wm_draw, w - wm_size - 80, (h - wm_size) // 2, wm_size, (*FG[:3], 255))
+    wm_layer.putalpha(wm_layer.getchannel("A").point(lambda a: int(a * 0.10) if a else 0))
+    img = Image.alpha_composite(img, wm_layer)
+    draw = ImageDraw.Draw(img)
 
-    url_f = load_font(REG, 36)
-    url = "vaultrun.dev"
-    uw = draw.textlength(url, font=url_f)
-    draw.text((w - 180 - uw, ty + 16), url, font=url_f, fill=FAINT)
+    word = load_font(BOLD, 168)
+    tag = load_font(REG, 56)
+    chips_f = load_font(REG, 40)
+    tracking = 14
+    tag_line = "Self-hosted secure runtime for AI agents"
+    chips = "Docker sandboxes   ·   MCP   ·   signed audit   ·   your infra"
+    word_w = text_width(draw, "VAULTRUN", word, tracking)
+    block_w = max(word_w, draw.textlength(tag_line, font=tag), draw.textlength(chips, font=chips_f))
+    # Center the type; floor at 720px so the page logo (bottom-left) never covers it.
+    tx = max(720, int((w - block_w) / 2))
+    block_h = 168 + 28 + 56 + 24 + 40
+    ty = (h - block_h) // 2 - 8
+    draw_spaced(draw, (tx, ty), "VAULTRUN", word, FG, tracking=tracking)
+    draw.text((tx, ty + 168 + 28), tag_line, font=tag, fill=DIM)
+    draw.text((tx, ty + 168 + 28 + 56 + 24), chips, font=chips_f, fill=FAINT)
+
+    # Hairline under the wordmark, width of VAULTRUN
+    rule_y = ty + 168 + 10
+    draw.line([(tx, rule_y), (tx + word_w, rule_y)], fill=LINE, width=3)
     return img
 
 
@@ -331,6 +344,21 @@ def video_endcard() -> Image.Image:
     return img
 
 
+def _write_cover_preview() -> None:
+    """Desktop mock (~1128×191 cover + logo overlap). Not for upload — QA only."""
+    cover = Image.open(OUT / "linkedin-cover.png").convert("RGBA")
+    disp_w, disp_h = 1128, 191
+    cover_d = cover.resize((disp_w, disp_h), Image.Resampling.LANCZOS)
+    logo = Image.open(OUT / "linkedin-logo.png").convert("RGBA").resize((88, 88), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (disp_w, disp_h + 52), (255, 255, 255, 255))
+    canvas.paste(cover_d, (0, 0))
+    # Page logo sits on the bottom edge, half overlapping the cover.
+    canvas.paste(logo, (28, disp_h - 36), logo)
+    path = Path("/tmp/linkedin-cover-preview.png")
+    canvas.convert("RGB").save(path, "PNG", optimize=True)
+    print(f"  preview (not uploaded) → {path}")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     print(f"Writing brand PNGs → {OUT}")
@@ -354,6 +382,8 @@ def main() -> None:
     save(linkedin_cover(), "linkedin-cover.png")
     save(linkedin_profile_banner(), "linkedin-profile-banner.png")
     save(first_post(), "linkedin-first-post.png")
+
+    _write_cover_preview()
 
     # LinkedIn 3 MB cap — warn if anything is oversized
     for name in (

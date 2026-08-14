@@ -99,6 +99,15 @@ def save(img: Image.Image, name: str) -> None:
     print(f"  {name:32s} {rgb.size[0]:4d}×{rgb.size[1]:<4d}  {kb:7.1f} KB")
 
 
+def save_jpeg(img: Image.Image, name: str, quality: int = 93) -> None:
+    """LinkedIn cover: JPEG 4:4:4 — their help page prefers JPEG over logo-PNGs."""
+    path = OUT / name
+    rgb = img.convert("RGB")
+    rgb.save(path, "JPEG", quality=quality, optimize=True, subsampling=0)
+    kb = path.stat().st_size / 1024
+    print(f"  {name:32s} {rgb.size[0]:4d}×{rgb.size[1]:<4d}  {kb:7.1f} KB")
+
+
 def glow_layer(size: tuple[int, int], blobs: list[tuple[float, float, float, int]]) -> Image.Image:
     """Soft white glows: (cx, cy, radius, peak_alpha)."""
     layer = Image.new("L", size, 0)
@@ -150,56 +159,44 @@ def lockup(width: int, height: int, *, light: bool = False) -> Image.Image:
 
 
 def linkedin_logo() -> Image.Image:
-    """400×400 page logo. Self-contained dark mark so it reads on light and dark UI."""
-    return mark_square(400, light=False)
+    """400×400 page logo. Extra inset so LinkedIn’s rounded crop doesn’t clip the frame.
+    Square mark only — never the lockup wordmark."""
+    size = 400
+    img = Image.new("RGBA", (size, size), BG)
+    draw = ImageDraw.Draw(img)
+    pad = 36
+    draw_mark(draw, pad, pad, size - 2 * pad, FG)
+    return img
 
 
 def linkedin_cover() -> Image.Image:
-    """4200×700 company cover (6:1). LinkedIn renders ~1128×191 and overlays the
-    page logo on the bottom-left — so this file has no mark, and type sits in a
-    center-right safe band (not the personal-profile banner layout)."""
+    """4200×700 company cover (6:1). Live Page renders this as a ~1128×191 strip —
+    two lines max, no mark, no right-edge watermark (LinkedIn crops that corner)."""
     w, h = 4200, 700
     img = Image.new("RGBA", (w, h), BG)
     img = apply_glow(
         img,
         [
-            (1100, -80, 720, 20),
-            (3400, 80, 560, 16),
+            (w // 2, -40, 900, 18),
         ],
     )
     draw = ImageDraw.Draw(img)
     draw_grid(draw, w, h, 70, (22, 22, 22, 255))
-    draw.line([(0, 0), (w, 0)], fill=LINE, width=2)
-    draw.line([(0, h - 1), (w, h - 1)], fill=LINE, width=2)
+    draw.line([(0, 2), (w, 2)], fill=LINE, width=3)
+    draw.line([(0, h - 3), (w, h - 3)], fill=LINE, width=3)
 
-    # Faint mark on the FAR right (opposite the page-logo overlap).
-    wm_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    wm_draw = ImageDraw.Draw(wm_layer)
-    wm_size = 520
-    draw_mark(wm_draw, w - wm_size - 80, (h - wm_size) // 2, wm_size, (*FG[:3], 255))
-    wm_layer.putalpha(wm_layer.getchannel("A").point(lambda a: int(a * 0.10) if a else 0))
-    img = Image.alpha_composite(img, wm_layer)
-    draw = ImageDraw.Draw(img)
-
-    word = load_font(BOLD, 168)
-    tag = load_font(REG, 56)
-    chips_f = load_font(REG, 40)
-    tracking = 14
+    word = load_font(BOLD, 200)
+    tag = load_font(REG, 64)
+    tracking = 16
     tag_line = "Self-hosted secure runtime for AI agents"
-    chips = "Docker sandboxes   ·   MCP   ·   signed audit   ·   your infra"
     word_w = text_width(draw, "VAULTRUN", word, tracking)
-    block_w = max(word_w, draw.textlength(tag_line, font=tag), draw.textlength(chips, font=chips_f))
-    # Center the type; floor at 720px so the page logo (bottom-left) never covers it.
-    tx = max(720, int((w - block_w) / 2))
-    block_h = 168 + 28 + 56 + 24 + 40
-    ty = (h - block_h) // 2 - 8
+    tag_w = draw.textlength(tag_line, font=tag)
+    block_w = max(word_w, tag_w)
+    block_h = 200 + 20 + 64
+    tx = max(640, int((w - block_w) / 2))
+    ty = (h - block_h) // 2
     draw_spaced(draw, (tx, ty), "VAULTRUN", word, FG, tracking=tracking)
-    draw.text((tx, ty + 168 + 28), tag_line, font=tag, fill=DIM)
-    draw.text((tx, ty + 168 + 28 + 56 + 24), chips, font=chips_f, fill=FAINT)
-
-    # Hairline under the wordmark, width of VAULTRUN
-    rule_y = ty + 168 + 10
-    draw.line([(tx, rule_y), (tx + word_w, rule_y)], fill=LINE, width=3)
+    draw.text((tx + (word_w - tag_w) / 2, ty + 200 + 20), tag_line, font=tag, fill=DIM)
     return img
 
 
@@ -379,7 +376,9 @@ def main() -> None:
     save(video_endcard(), "video-endcard.png")
 
     save(linkedin_logo(), "linkedin-logo.png")
-    save(linkedin_cover(), "linkedin-cover.png")
+    cover = linkedin_cover()
+    save(cover, "linkedin-cover.png")
+    save_jpeg(cover, "linkedin-cover.jpg")
     save(linkedin_profile_banner(), "linkedin-profile-banner.png")
     save(first_post(), "linkedin-first-post.png")
 
@@ -389,6 +388,7 @@ def main() -> None:
     for name in (
         "linkedin-logo.png",
         "linkedin-cover.png",
+        "linkedin-cover.jpg",
         "linkedin-profile-banner.png",
         "linkedin-first-post.png",
         "og.png",

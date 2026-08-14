@@ -1,6 +1,10 @@
-# Launch / LinkedIn draft — VaultRun v0.2.x
+# Launch / LinkedIn draft — VaultRun
 
 Copy-paste ready. Adjust tone; do **not** paste internal pricing into social posts.
+
+Company **Page** first post, uploads, and settings: [`linkedin-page.md`](linkedin-page.md). Use this file for the **founder (personal) profile** and HN.
+
+Public MCP wording stays **53+ tools** (matches the site). Do not switch to “61” until the homepage is updated in one pass.
 
 ---
 
@@ -12,9 +16,10 @@ Agents get isolated Docker sandboxes on *your* infrastructure — execute code, 
 
 What’s in the Apache 2.0 core:
 • REST API + Next.js dashboard
-• 53-tool MCP server (stdio + HTTP)
+• 53+ MCP tools (stdio + HTTP)
 • Go & Python SDKs (`pip install vaultrun-sdk`)
 • GitHub CI runner that executes PR tests in a sandbox
+• Local-first workflow assets (missions, verify, memory)
 
 Enterprise SSO (OIDC + SAML) is a commercial overlay for teams that already have Okta / Azure AD / similar. Evaluate free for devops; production via license.
 
@@ -25,6 +30,8 @@ Talk: https://vaultrun.dev/#contact
 
 #AI #MCP #SelfHosted #DevTools #OpenSource
 
+Company Page launch (attach `linkedin-first-post.png`, put the four URLs in the first comment): [`linkedin-page.md`](linkedin-page.md).
+
 ---
 
 ## LinkedIn (longer / founder tone)
@@ -33,9 +40,9 @@ Most “AI agent sandboxes” want your workloads in their cloud.
 
 We built the opposite.
 
-**VaultRun** — self-hosted secure runtime for AI agents. One container per session, network off by default, HMAC-signed audit trail, MCP-native (53 tools). Your Docker, your Postgres, your network.
+**VaultRun** — self-hosted secure runtime for AI agents. One container per session, network off by default, HMAC-signed audit trail, MCP-native (53+ tools). Your Docker, your Postgres, your network. Successful runs become workflow assets you keep.
 
-v0.2 ships open-core (Apache 2.0) plus a clear path to **VaultRun Enterprise** for SSO — so dashboard users don’t share the master API key.
+Open-core (Apache 2.0) plus a clear path to **VaultRun Enterprise** for SSO — so dashboard users don’t share the master API key.
 
 If you’re a platform or security team putting LLM tools into prod: clone it, break it, mail us if you need IdP federation.
 
@@ -76,5 +83,5 @@ VaultRun: https://vaultrun.dev/flowd.html
 ## Optional tweet / X
 
 Self-hosted sandboxes for AI agents — not another SaaS runner.
-VaultRun: Docker isolation + MCP (53 tools) + audit trail.
+VaultRun: Docker isolation + MCP (53+ tools) + audit trail.
 https://vaultrun.dev · https://github.com/nickvd7/vaultrun

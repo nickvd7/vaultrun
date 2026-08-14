@@ -47,4 +47,4 @@ Headlines may be bold monospace; body stays readable at 14–16px.
 
 ## File map
 
-See [`site/brand/README.md`](../site/brand/README.md).
+See [`site/brand/README.md`](../site/brand/README.md). LinkedIn Page kit: [`linkedin-page.md`](linkedin-page.md).

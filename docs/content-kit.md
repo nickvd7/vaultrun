@@ -1,6 +1,6 @@
 # VaultRun content kit
 
-Ready-to-paste copy for launches, sales, and social. Pair with [`site/brand/`](../site/brand/) assets and [`launch-post.md`](launch-post.md).
+Ready-to-paste copy for launches, sales, and social. Pair with [`site/brand/`](../site/brand/) assets, [`linkedin-page.md`](linkedin-page.md), and [`launch-post.md`](launch-post.md).
 
 **Rule:** no fake customers, star counts, or “used by …” claims until real.
 
@@ -25,6 +25,7 @@ When agents need to execute code, query databases, or touch cloud APIs, the blas
 |---------|------|
 | GitHub about | Self-hosted secure runtime for AI agents — Docker sandboxes, MCP, audit trail |
 | LinkedIn headline add-on | Building VaultRun — self-hosted agent runtime |
+| LinkedIn Page tagline | Self-hosted secure runtime for AI agents. Docker sandboxes, MCP, signed audit trail. |
 | Email signature | VaultRun — self-hosted secure runtime for AI agents · vaultrun.dev |
 | HN title | Show HN: VaultRun – self-hosted Docker sandboxes + MCP for AI agents |
 | Discord / Slack | VaultRun = agent tools in isolated Docker on your box (MCP + audit) |
@@ -44,6 +45,8 @@ When agents need to execute code, query databases, or touch cloud APIs, the blas
 ---
 
 ## Social captions (with assets)
+
+LinkedIn **company Page** (logo, cover, About, first post, settings): [`linkedin-page.md`](linkedin-page.md).
 
 ### Link post (use `og.png` as preview / attach `social-square.png`)
 
@@ -112,8 +115,10 @@ VaultRun is an open-core, self-hosted secure runtime for AI agents. It executes 
 
 ## Asset checklist before posting
 
-- [ ] Correct logo variant (dark vs light)  
-- [ ] `og.png` or `social-square.png` attached / linked  
-- [ ] Link to vaultrun.dev (and GitHub if technical audience)  
-- [ ] No invented social proof  
-- [ ] Enterprise vs open core not conflated  
+- [ ] Correct logo variant (dark vs light)
+- [ ] LinkedIn Page: `linkedin-logo.png` + `linkedin-cover.png` (not the lockup)
+- [ ] `og.png` or `social-square.png` / `linkedin-first-post.png` attached
+- [ ] LinkedIn: URL in the **first comment**, not the post body
+- [ ] Link to vaultrun.dev (and GitHub if technical audience)
+- [ ] No invented social proof
+- [ ] Enterprise vs open core not conflated 

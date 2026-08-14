@@ -93,19 +93,13 @@ https://vaultrun.dev · https://github.com/nickvd7/vaultrun
 Reply **from Nick’s personal profile**, not the Page. Keep it under the comment; don’t start a new post.
 
 ```
-Yes — the HMAC trail records the actual inputs, not just that a call happened.
+That’s the right question — once the model has fired, the trail matters more than the box.
 
-On a sandbox run we write command.started with the command + args into metadata JSON, then HMAC-SHA256 over that payload (id, timestamp, actor, action, session/run ids, metadata). So a model that invents rm -rf / or a weird flag still shows up as those exact args. Credential-looking flags (--token, --password, --api-key, …) are replaced with *** before the row is signed. Secret-broker values never land in audit metadata.
+We log the actual command + args (HMAC-signed), not just that a call happened. A hallucinated rm -rf / or a weird flag still shows up as those args. Credential-looking flags (--token, --password, …) become *** before we sign.
 
-What it does not capture: full stdout, or a “the model meant X” reconstruction. command.finished is exit status + duration.
+We don’t keep full stdout, and we don’t reconstruct “what the model meant.”
 
-The container is still the blast radius. The log is how you prove what crossed it. GET /api/v1/audit on your own instance — or the source in internal/audit + internal/runner.
-```
-
-Shorter variant if the thread is already long:
-
-```
-Actual inputs. command.started stores command + args in the signed metadata (credential-looking flags redacted). Not just “a call happened,” and not full stdout. Container = blast radius; HMAC log = what crossed it. GET /api/v1/audit on your box.
+Happy to walk through a sample row if useful — GET /api/v1/audit on your own instance.
 ```
 
 Indie Hackers launch post + product listing: [`indiehackers.md`](indiehackers.md).

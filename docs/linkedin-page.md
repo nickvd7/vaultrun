@@ -12,7 +12,7 @@ Pair with [`site/brand/`](../site/brand/) (upload files) and [`launch-post.md`](
 
 | LinkedIn field | File | Size | Notes |
 |----------------|------|------|--------|
-| **Logo** | [`linkedin-logo.png`](../site/brand/linkedin-logo.png) | 400×400 | Dark mark with fill — reads on light *and* dark LinkedIn UI. Do not use the wide lockup; it becomes illegible at feed size. |
+| **Logo** | [`linkedin-logo.png`](../site/brand/linkedin-logo.png) | 1024×1024 | Square mark only (`>_`). Not `lockup.png`. If the tile shows the word VAULTRUN inside the logo, you uploaded the lockup. |
 | **Cover / header** | [`linkedin-cover.jpg`](../site/brand/linkedin-cover.jpg) | 4200×700 | **Upload the JPEG.** Type is on the **right** so the page logo (bottom-left overlay) does not cover VAULTRUN. Two lines only. In the cropper: don’t zoom. Check **Bekijken als lid**, not the tiny left preview. |
 | **First post image** | [`linkedin-first-post.png`](../site/brand/linkedin-first-post.png) | 1080×1080 | Attach as a native image. Do **not** also paste a URL in the post body (algorithm throttles link posts). |
 | **Link preview** (later) | [`og.png`](../site/brand/og.png) | 1200×630 | Used when someone shares vaultrun.dev. Already referenced by the site. |

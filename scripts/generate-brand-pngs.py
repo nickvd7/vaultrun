@@ -67,28 +67,114 @@ def text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFon
     return w + tracking * max(0, len(text) - 1)
 
 
+def _vsub(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float]:
+    return (a[0] - b[0], a[1] - b[1])
+
+
+def _vadd(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float]:
+    return (a[0] + b[0], a[1] + b[1])
+
+
+def _vmul(a: tuple[float, float], s: float) -> tuple[float, float]:
+    return (a[0] * s, a[1] * s)
+
+
+def _vnorm(a: tuple[float, float]) -> tuple[float, float]:
+    length = (a[0] ** 2 + a[1] ** 2) ** 0.5 or 1.0
+    return (a[0] / length, a[1] / length)
+
+
+def _vperp(a: tuple[float, float]) -> tuple[float, float]:
+    return (-a[1], a[0])
+
+
+def _intersect(
+    p: tuple[float, float],
+    r: tuple[float, float],
+    q: tuple[float, float],
+    s: tuple[float, float],
+) -> tuple[float, float] | None:
+    cross = r[0] * s[1] - r[1] * s[0]
+    if abs(cross) < 1e-9:
+        return None
+    t = ((q[0] - p[0]) * s[1] - (q[1] - p[1]) * s[0]) / cross
+    return _vadd(p, _vmul(r, t))
+
+
+def _mitered_chevron(p0: tuple[float, float], p1: tuple[float, float], p2: tuple[float, float], width: float) -> list[tuple[float, float]]:
+    """Stroke polygon for SVG path M p0 L p1 L p2 (square cap, miter join)."""
+    hw = width / 2.0
+    d1 = _vnorm(_vsub(p1, p0))
+    d2 = _vnorm(_vsub(p2, p1))
+    n1 = _vperp(d1)
+    n2 = _vperp(d2)
+    start = _vsub(p0, _vmul(d1, hw))
+    end = _vadd(p2, _vmul(d2, hw))
+    start_l = _vadd(start, _vmul(n1, hw))
+    start_r = _vadd(start, _vmul(n1, -hw))
+    end_l = _vadd(end, _vmul(n2, hw))
+    end_r = _vadd(end, _vmul(n2, -hw))
+    o1l = _vadd(p0, _vmul(n1, hw))
+    o1r = _vadd(p0, _vmul(n1, -hw))
+    o2l = _vadd(p1, _vmul(n2, hw))
+    o2r = _vadd(p1, _vmul(n2, -hw))
+    miter_l = _intersect(o1l, d1, o2l, d2) or _vadd(p1, _vmul(n1, hw))
+    miter_r = _intersect(o1r, d1, o2r, d2) or _vadd(p1, _vmul(n1, -hw))
+    return [start_l, miter_l, end_l, end_r, miter_r, start_r]
+
+
 def draw_mark(draw: ImageDraw.ImageDraw, x: float, y: float, size: float, fg, *, stroke_scale: float | None = None) -> None:
-    """Terminal prompt >_ inside a square frame (SVG viewBox 64)."""
+    """Terminal prompt >_ inside a square frame (SVG viewBox 64).
+
+    Chevron is a mitered stroke polygon (not two overlapping PIL lines) so the
+    tip stays sharp.
+    """
     s = size / 64.0
-    sw = max(1.0, (2.5 if stroke_scale is None else stroke_scale) * s)
-    # outer frame
-    inset = 8 * s
-    draw.rectangle(
-        [x + inset, y + inset, x + size - inset, y + size - inset],
-        outline=fg,
-        width=max(1, round(sw)),
-    )
-    # chevron >
-    p1 = (x + 20 * s, y + 22 * s)
-    p2 = (x + 34 * s, y + 32 * s)
-    p3 = (x + 20 * s, y + 42 * s)
-    draw.line([p1, p2, p3], fill=fg, width=max(1, round(3.2 * s)), joint="miter")
-    # cursor block _
-    bx0 = x + 38 * s
-    by0 = y + 28 * s
-    bx1 = x + 48 * s
-    by1 = y + 36 * s
-    draw.rectangle([bx0, by0, bx1, by1], fill=fg)
+    frame_sw = (2.5 if stroke_scale is None else stroke_scale) * s
+    half = frame_sw / 2.0
+    o0x, o0y = x + 8 * s - half, y + 8 * s - half
+    o1x, o1y = x + 56 * s + half, y + 56 * s + half
+    i0x, i0y = x + 8 * s + half, y + 8 * s + half
+    i1x, i1y = x + 56 * s - half, y + 56 * s - half
+    draw.rectangle([o0x, o0y, o1x, i0y], fill=fg)
+    draw.rectangle([o0x, i1y, o1x, o1y], fill=fg)
+    draw.rectangle([o0x, o0y, i0x, o1y], fill=fg)
+    draw.rectangle([i1x, o0y, o1x, o1y], fill=fg)
+
+    chev = _mitered_chevron((20.0, 22.0), (34.0, 32.0), (20.0, 42.0), 3.2)
+    # Push the outer miter a hair past the geometric join so PIL's polygon
+    # rasterizer doesn't flatten the tip into a vertical stub.
+    tip = chev[4]
+    p1 = (34.0, 32.0)
+    outward = _vnorm(_vsub(tip, p1))
+    chev[4] = _vadd(tip, _vmul(outward, 0.55))
+    pts = [(x + px * s, y + py * s) for px, py in chev]
+    draw.polygon(pts, fill=fg)
+
+    draw.rectangle([x + 38 * s, y + 28 * s, x + 48 * s, y + 36 * s], fill=fg)
+
+
+def render_mark(size: int, *, light: bool = False, pad: int = 0) -> Image.Image:
+    """Supersample 8× then Lanczos-down so diagonals stay sharp at logo sizes."""
+    bg, fg = (WHITE, BLACK) if light else (BG, FG)
+    inner = max(8, size - 2 * pad)
+    ss = 8
+    big = inner * ss
+    img = Image.new("RGBA", (big, big), bg)
+    draw = ImageDraw.Draw(img)
+    draw_mark(draw, 0, 0, big, fg)
+    small = img.resize((inner, inner), Image.Resampling.LANCZOS)
+    small = small.filter(ImageFilter.UnsharpMask(radius=1.4, percent=160, threshold=1))
+    if pad <= 0:
+        return small
+    out = Image.new("RGBA", (size, size), bg)
+    out.paste(small, (pad, pad))
+    return out
+
+
+def paste_mark(img: Image.Image, xy: tuple[int, int], size: int) -> None:
+    mark = render_mark(size)
+    img.paste(mark, (int(xy[0]), int(xy[1])))
 
 
 def save(img: Image.Image, name: str) -> None:
@@ -136,60 +222,54 @@ def draw_grid(draw: ImageDraw.ImageDraw, w: int, h: int, step: int, color=LINE) 
 
 
 def mark_square(size: int, *, light: bool = False) -> Image.Image:
-    bg, fg = (WHITE, BLACK) if light else (BG, FG)
-    img = Image.new("RGBA", (size, size), bg)
-    draw = ImageDraw.Draw(img)
-    draw_mark(draw, 0, 0, size, fg)
-    return img
+    return render_mark(size, light=light)
 
 
 def lockup(width: int, height: int, *, light: bool = False) -> Image.Image:
     bg, fg = (WHITE, BLACK) if light else (BG, FG)
     img = Image.new("RGBA", (width, height), bg)
+    mark = render_mark(height, light=light)
+    img.paste(mark, (0, 0))
     draw = ImageDraw.Draw(img)
-    mark = int(height)
-    draw_mark(draw, 0, 0, mark, fg)
     f = load_font(BOLD, max(18, int(height * 0.44)))
     tracking = max(1.0, height * 0.04)
-    tx = mark + int(height * 0.12)
+    tx = height + int(height * 0.12)
     ty = (height - f.size) / 2 - height * 0.06
     draw_spaced(draw, (tx, ty), "VAULTRUN", f, fg, tracking=tracking)
     return img
 
 
 def linkedin_logo() -> Image.Image:
-    """400×400 page logo. Self-contained dark mark so it reads on light and dark UI."""
-    return mark_square(400, light=False)
+    """1024×1024 page logo. Square mark only, supersampled, padded for rounded crop."""
+    return render_mark(1024, light=False, pad=64)
 
 
 def linkedin_cover() -> Image.Image:
-    """4200×700 company cover (6:1). Type sits in the RIGHT half: LinkedIn overlays
-    the page logo on the bottom-left of the live Page (and in the editor sidebar).
-    Two lines only — a third line and a right-side watermark collapse at ~191px."""
-    w, h = 4200, 700
+    """4200×700 company cover (6:1). Type sits in the RIGHT half; tagline is
+    centered under VAULTRUN so it reads as one lockup. Rendered 2× then down."""
+    scale = 2
+    w, h = 4200 * scale, 700 * scale
     img = Image.new("RGBA", (w, h), BG)
-    img = apply_glow(img, [(w * 0.62, -40, 820, 18)])
+    img = apply_glow(img, [(w * 0.62, -40 * scale, 820 * scale, 18)])
     draw = ImageDraw.Draw(img)
-    draw_grid(draw, w, h, 70, (22, 22, 22, 255))
-    draw.line([(0, 2), (w, 2)], fill=LINE, width=3)
-    draw.line([(0, h - 3), (w, h - 3)], fill=LINE, width=3)
+    draw_grid(draw, w, h, 70 * scale, (22, 22, 22, 255))
+    draw.line([(0, 2 * scale), (w, 2 * scale)], fill=LINE, width=3 * scale)
+    draw.line([(0, h - 3 * scale), (w, h - 3 * scale)], fill=LINE, width=3 * scale)
 
-    word = load_font(BOLD, 200)
-    tag = load_font(REG, 64)
-    tracking = 16
+    word = load_font(BOLD, 200 * scale)
+    tag = load_font(REG, 64 * scale)
+    tracking = 16 * scale
     tag_line = "Self-hosted secure runtime for AI agents"
     word_w = text_width(draw, "VAULTRUN", word, tracking)
     tag_w = draw.textlength(tag_line, font=tag)
-    block_w = max(word_w, tag_w)
-    # Right-weighted, but not flush: 560px right margin (~64px on the 1128-wide
-    # editor preview) so it sits off the edge without sliding back over the logo.
-    tx = w - 560 - int(block_w)
-    block_h = 200 + 24 + 64
+    # Right-weighted block; tagline is the widest line. VAULTRUN centered on it.
+    tx_tag = w - 560 * scale - int(tag_w)
+    tx_word = tx_tag + (tag_w - word_w) / 2
+    block_h = 200 * scale + 36 * scale + 64 * scale
     ty = (h - block_h) // 2
-    draw_spaced(draw, (tx, ty), "VAULTRUN", word, FG, tracking=tracking)
-    # Tagline shares the same left edge as the wordmark (left-aligned block on the right).
-    draw.text((tx, ty + 200 + 24), tag_line, font=tag, fill=DIM)
-    return img
+    draw_spaced(draw, (tx_word, ty), "VAULTRUN", word, FG, tracking=tracking)
+    draw.text((tx_tag, ty + 200 * scale + 36 * scale), tag_line, font=tag, fill=(196, 196, 196, 255))
+    return img.resize((4200, 700), Image.Resampling.LANCZOS)
 
 
 def linkedin_profile_banner() -> Image.Image:
@@ -201,7 +281,7 @@ def linkedin_profile_banner() -> Image.Image:
     draw_grid(draw, w, h, 44, (22, 22, 22, 255))
     mark_size = 168
     mx, my = 72, (h - mark_size) // 2
-    draw_mark(draw, mx, my, mark_size, FG)
+    paste_mark(img, (mx, my), mark_size)
     title = load_font(BOLD, 54)
     sub = load_font(REG, 26)
     tx = mx + mark_size + 40
@@ -222,7 +302,7 @@ def og_image() -> Image.Image:
     draw_grid(draw, w, h, 48, (22, 22, 22, 255))
     draw.rectangle([0, 0, w - 1, h - 1], outline=LINE, width=2)
     mark_size = 96
-    draw_mark(draw, 80, 72, mark_size, FG)
+    paste_mark(img, (80, 72), mark_size)
     word = load_font(BOLD, 36)
     draw_spaced(draw, (80 + mark_size + 24, 98), "VAULTRUN", word, FG, tracking=4)
     title = load_font(BOLD, 44)
@@ -244,7 +324,7 @@ def social_square() -> Image.Image:
     draw_grid(draw, w, h, 54, (22, 22, 22, 255))
     draw.rectangle([48, 48, w - 49, h - 49], outline=LINE, width=2)
     mark_size = 160
-    draw_mark(draw, (w - mark_size) // 2, 160, mark_size, FG)
+    paste_mark(img, ((w - mark_size) // 2, 160), mark_size)
     word = load_font(BOLD, 56)
     tw = text_width(draw, "VAULTRUN", word, tracking=8)
     draw_spaced(draw, ((w - tw) / 2, 360), "VAULTRUN", word, FG, tracking=8)
@@ -281,7 +361,7 @@ def first_post() -> Image.Image:
     draw_spaced(draw, (88, 88), "NOW OPEN", kicker, FAINT, tracking=6)
 
     mark_size = 120
-    draw_mark(draw, 80, 160, mark_size, FG)
+    paste_mark(img, (80, 160), mark_size)
     word = load_font(BOLD, 48)
     draw_spaced(draw, (80 + mark_size + 28, 196), "VAULTRUN", word, FG, tracking=6)
 
@@ -315,7 +395,7 @@ def video_endcard() -> Image.Image:
     draw = ImageDraw.Draw(img)
     draw_grid(draw, w, h, 60, (22, 22, 22, 255))
     mark_size = 140
-    draw_mark(draw, 160, 280, mark_size, FG)
+    paste_mark(img, (160, 280), mark_size)
     word = load_font(BOLD, 64)
     draw_spaced(draw, (160 + mark_size + 36, 318), "VAULTRUN", word, FG, tracking=8)
     sub = load_font(REG, 32)

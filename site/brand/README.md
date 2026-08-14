@@ -31,7 +31,7 @@ Terminal prompt inside a square frame: `>_`
 | `og.png` | 1200×630 | Open Graph / LinkedIn / X link preview |
 | `social-square.png` | 1080×1080 | Profile / square posts |
 | `video-endcard.png` | 1920×1080 | Demo video end card |
-| `linkedin-logo.png` | 400×400 | Company Page logo |
+| `linkedin-logo.png` | 1024×1024 | Company Page logo (square mark only) |
 | `linkedin-cover.png` / `linkedin-cover.jpg` | 4200×700 | Company Page cover. **Upload the JPEG.** Type is right-weighted. |
 | `linkedin-profile-banner.png` | 1584×396 | Founder personal-profile banner |
 | `linkedin-first-post.png` | 1080×1080 | Attach to the Page launch post |

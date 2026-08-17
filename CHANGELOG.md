@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Agent memory MCP tools** — `memory_set` / `memory_get` / `memory_list` / `memory_delete` persist notes under `.vaultrun/memory/` in the session workspace; see `docs/features/agent-memory.md`
 
 ### Fixed
+- Dashboard Next.js 15.5.18 → 15.5.23 (patched App Router / Server Actions advisories)
 - MCP tool dispatch accepts typed JSON arguments (bools, numbers, nested objects/arrays) via shared `coerceToolArgs` — hosts no longer need all-string maps
 
 ### Fixed

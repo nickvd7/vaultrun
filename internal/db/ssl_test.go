@@ -85,3 +85,16 @@ func TestInjectSSLParamsInvalidDSNReturnedAsIs(t *testing.T) {
 		t.Error("expected non-empty result for unparseable DSN")
 	}
 }
+
+func TestConnectRejectsUnsupportedSSLMode(t *testing.T) {
+	_, err := Connect(config.DatabaseConfig{
+		DSN:     "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable",
+		SSLMode: "prefer",
+	})
+	if err == nil {
+		t.Fatal("Connect should reject sslmode prefer")
+	}
+	if !strings.Contains(err.Error(), "prefer") {
+		t.Errorf("error should mention prefer, got %v", err)
+	}
+}

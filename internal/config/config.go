@@ -48,7 +48,7 @@ type DatabaseConfig struct {
 	// TLS / SSL configuration for the PostgreSQL connection.
 	// These take effect via injectSSLParams in internal/db/db.go and override
 	// any sslmode already present in the DSN.
-	SSLMode     string // DB_SSL_MODE: disable|allow|prefer|require|verify-ca|verify-full
+	SSLMode     string // DB_SSL_MODE: disable|require|verify-ca|verify-full (empty = use DATABASE_URL)
 	SSLRootCert string // DB_SSL_ROOT_CERT: path to CA certificate file
 	SSLCert     string // DB_SSL_CERT: path to client certificate file
 	SSLKey      string // DB_SSL_KEY: path to client private key file
@@ -196,17 +196,15 @@ func Load() (*Config, error) {
 			ACMEEmail:       getEnv("ACME_EMAIL", ""),
 		},
 		Database: DatabaseConfig{
-			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=prefer"),
+			DSN:             getEnv("DATABASE_URL", "postgres://vaultrun:vaultrun@localhost:5432/vaultrun?sslmode=disable"),
 			MaxOpenConns:    dbMaxOpen,
 			MaxIdleConns:    dbMaxIdle,
 			ConnMaxLifetime: 5 * time.Minute,
-			// SSL/TLS: these env vars override whatever is in the DSN.
-			// DB_SSL_MODE defaults to "prefer" so that a stray sslmode=disable in a
-			// custom DATABASE_URL is upgraded to an encrypted connection where the
-			// server supports it (prefer still falls back to plaintext if it does
-			// not, so connectivity is preserved). Operators must explicitly set
-			// DB_SSL_MODE=disable to opt out.
-			SSLMode:     getEnv("DB_SSL_MODE", "prefer"),
+			// SSL/TLS: these env vars override whatever is in the DSN when set.
+			// Empty DB_SSL_MODE leaves the DSN sslmode unchanged (typically
+			// disable in local .env / compose). lib/pq does not implement
+			// libpq's "prefer"/"allow" modes — setting them prevents startup.
+			SSLMode:     getEnv("DB_SSL_MODE", ""),
 			SSLRootCert: getEnv("DB_SSL_ROOT_CERT", ""),
 			SSLCert:     getEnv("DB_SSL_CERT", ""),
 			SSLKey:      getEnv("DB_SSL_KEY", ""),
@@ -290,7 +288,26 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if err := ValidateDBSSLMode(cfg.Database.SSLMode); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// ValidateDBSSLMode checks DB_SSL_MODE against the modes implemented by lib/pq.
+// Empty mode is allowed and means "leave DATABASE_URL's sslmode unchanged".
+// libpq's "prefer" and "allow" are not implemented by lib/pq and would make
+// sqlx.Open / Ping fail with "unsupported sslmode".
+func ValidateDBSSLMode(mode string) error {
+	switch mode {
+	case "", "disable", "require", "verify-ca", "verify-full":
+		return nil
+	case "allow", "prefer":
+		return fmt.Errorf("DB_SSL_MODE=%q is not supported by the Go postgres driver (lib/pq); use disable, require, verify-ca, or verify-full", mode)
+	default:
+		return fmt.Errorf("DB_SSL_MODE=%q is invalid; supported: disable, require, verify-ca, verify-full", mode)
+	}
 }
 
 // TLSEnabled returns true when static TLS cert+key files are configured.

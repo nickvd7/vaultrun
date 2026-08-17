@@ -58,11 +58,14 @@ mutual TLS or self-signed CA validation.
 
 **`DB_SSL_MODE` values:**
 
+The Go postgres driver (`lib/pq`) only implements a subset of libpq modes.
+`allow` and `prefer` are **not supported** and the API refuses to start if they
+are set.
+
 | Mode | Encrypted | Cert verified | Use when |
 |---|---|---|---|
+| *(unset)* | follows `DATABASE_URL` | — | Default; local `.env` typically uses `sslmode=disable` |
 | `disable` | No | — | Local dev only |
-| `allow` | Maybe | No | Not recommended |
-| `prefer` | When possible | No | Default if unset (no hard guarantee) |
 | `require` | Yes | No | Traffic is encrypted but server identity is not verified |
 | `verify-ca` | Yes | CA checked | Server cert signed by a trusted CA |
 | `verify-full` | Yes | CA + hostname | **Production recommendation** |

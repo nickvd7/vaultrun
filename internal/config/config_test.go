@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -117,5 +118,41 @@ func TestServerAddrFormat(t *testing.T) {
 	c := &Config{Server: ServerConfig{Host: "0.0.0.0", Port: 8080}}
 	if addr := c.ServerAddr(); addr != "0.0.0.0:8080" {
 		t.Fatalf("unexpected addr: %s", addr)
+	}
+}
+
+func TestValidateDBSSLMode(t *testing.T) {
+	ok := []string{"", "disable", "require", "verify-ca", "verify-full"}
+	for _, mode := range ok {
+		if err := ValidateDBSSLMode(mode); err != nil {
+			t.Errorf("ValidateDBSSLMode(%q) unexpected error: %v", mode, err)
+		}
+	}
+	for _, mode := range []string{"prefer", "allow", "bogus"} {
+		if err := ValidateDBSSLMode(mode); err == nil {
+			t.Errorf("ValidateDBSSLMode(%q) expected error", mode)
+		}
+	}
+}
+
+func TestLoadDefaultDatabaseSSLLeavesDSN(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("DB_SSL_MODE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Database.SSLMode != "" {
+		t.Fatalf("default SSLMode should be empty so DSN sslmode is used, got %q", cfg.Database.SSLMode)
+	}
+	if !strings.Contains(cfg.Database.DSN, "sslmode=disable") {
+		t.Fatalf("default DSN should use sslmode=disable, got %q", cfg.Database.DSN)
+	}
+}
+
+func TestLoadRejectsPreferSSLMode(t *testing.T) {
+	t.Setenv("DB_SSL_MODE", "prefer")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load should reject DB_SSL_MODE=prefer")
 	}
 }

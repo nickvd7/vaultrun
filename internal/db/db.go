@@ -18,6 +18,10 @@ import (
 )
 
 func Connect(cfg config.DatabaseConfig) (*sqlx.DB, error) {
+	if err := config.ValidateDBSSLMode(cfg.SSLMode); err != nil {
+		return nil, err
+	}
+
 	dsn := injectSSLParams(cfg.DSN, cfg)
 
 	db, err := sqlx.Open("postgres", dsn)

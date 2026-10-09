@@ -177,6 +177,12 @@ func (g *Gateway) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set(headerSessionID, result.SessionID)
+	if result.Stream {
+		if err := writeSSEFinal(w, result.Response); err != nil {
+			slog.Warn("localgateway: sse write failed", "err", err)
+		}
+		return
+	}
 	writeJSON(w, http.StatusOK, result.Response)
 }
 

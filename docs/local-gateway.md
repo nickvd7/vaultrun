@@ -89,6 +89,19 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 | `LOCAL_GATEWAY_UPSTREAM_TIMEOUT_SEC` | `120` | Upstream chat timeout |
 | `LOCAL_GATEWAY_RUN_TIMEOUT_SEC` | `60` | Default sandbox run timeout |
 | `LOCAL_GATEWAY_MAX_RUN_TIMEOUT_SEC` | `300` | Hard cap for run timeouts |
+| `LOCAL_GATEWAY_CAPTURE_MISSIONS` | `true` | Persist successful VaultRun tool sequences as missions |
+
+## Streaming
+
+`stream: true` is supported for the **final assistant answer** (OpenAI SSE). Tool rounds always call the upstream non-streaming, then the gateway emits `text/event-stream` chunks ending with `data: [DONE]`.
+
+## Mission capture
+
+When at least one VaultRun tool succeeds in a loop, the gateway creates a published mission (`local-…` slug) and records a mission run linked to the session. Disable with `LOCAL_GATEWAY_CAPTURE_MISSIONS=false`.
+
+## Client recipes
+
+See [`examples/local-gateway/`](../examples/local-gateway/) for Open WebUI, Continue.dev, and LiteLLM.
 
 ## Headers
 
@@ -107,7 +120,7 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 - `X-Forwarded-For` is **not** trusted by default
 - Upstream URL is **config-only** (clients cannot redirect inference)
 - Upstream redirects are never followed
-- Streaming (`stream: true`) rejected in v1 (avoids half-baked SSE)
+- Streaming: tool rounds buffered; only the final answer is SSE-streamed
 - Workspace paths sanitized against traversal; tool JSON rejects unknown fields
 - Commands passed as argv to VaultRun (no shell)
 - Tool loop + body/file/result size caps
@@ -118,7 +131,6 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 - Hosting or downloading models
 - SQLite / zero-Postgres laptop mode
 - Dashboard chat UI
-- SSE streaming completions
 
 ## Related
 

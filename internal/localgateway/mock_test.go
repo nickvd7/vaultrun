@@ -175,5 +175,28 @@ func testConfig() Config {
 		DefaultModel:         "llama",
 		RunTimeoutSeconds:    30,
 		MaxRunTimeoutSeconds: 60,
+		CaptureMissions:      true,
 	}
+}
+
+type mockMissions struct {
+	created []createMissionRequest
+	runs    []string
+	err     error
+}
+
+func (m *mockMissions) CreateMission(_ context.Context, req createMissionRequest) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	m.created = append(m.created, req)
+	return fmt.Sprintf("mission-%d", len(m.created)), nil
+}
+
+func (m *mockMissions) RecordMissionRun(_ context.Context, missionID, sessionID string) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.runs = append(m.runs, missionID+"|"+sessionID)
+	return nil
 }

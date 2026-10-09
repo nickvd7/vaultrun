@@ -23,6 +23,7 @@ type Gateway struct {
 	cfg      Config
 	vr       VaultRunClient
 	upstream ChatUpstream
+	missions MissionAPI
 	sessions *SessionStore
 	limiter  *ipRateLimiter
 }
@@ -38,9 +39,19 @@ func New(cfg Config, vr VaultRunClient, upstream ChatUpstream) *Gateway {
 	}
 }
 
+// WithMissions attaches a mission capture backend (optional).
+func (g *Gateway) WithMissions(m MissionAPI) *Gateway {
+	g.missions = m
+	return g
+}
+
 // NewFromConfig builds VaultRun + upstream clients from config.
 func NewFromConfig(cfg Config) *Gateway {
 	vr := vaultrun.New(cfg.VaultRunBaseURL, cfg.VaultRunAPIKey)
 	up := NewHTTPUpstream(cfg.UpstreamURL, cfg.UpstreamTimeout)
-	return New(cfg, vr, up)
+	g := New(cfg, vr, up)
+	if cfg.CaptureMissions {
+		g.WithMissions(newHTTPMissionAPI(cfg.VaultRunBaseURL, cfg.VaultRunAPIKey))
+	}
+	return g
 }

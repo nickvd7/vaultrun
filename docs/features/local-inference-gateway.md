@@ -10,12 +10,14 @@ Additive OpenAI-compatible HTTP gateway that sits between local inference (Ollam
 
 ## Scope (v1)
 
-- `POST /v1/chat/completions` (non-streaming) with injected VaultRun tools
+- `POST /v1/chat/completions` with injected VaultRun tools (JSON or final-answer SSE)
 - `GET /v1/models` (proxy or default-model fallback)
 - `GET /healthz`
 - Auto session create / sticky conversation / explicit session pin
+- Optional mission auto-capture from successful tool loops
 - Bearer auth, per-IP rate limit, body/tool/loop caps, path & command validation
+- Client recipes: `examples/local-gateway/`
 
 ## Non-goals
 
-- Model hosting, SQLite lite mode, dashboard chat, SSE streaming
+- Model hosting, SQLite lite mode, dashboard chat UI

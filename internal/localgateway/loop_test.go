@@ -58,15 +58,18 @@ func TestRunChatLoopExecutesToolThenFinishes(t *testing.T) {
 	}
 }
 
-func TestRunChatLoopRejectsStream(t *testing.T) {
+func TestRunChatLoopAllowsStreamFlag(t *testing.T) {
 	g := New(testConfig(), newMockVR(), &mockUpstream{})
-	_, err := g.RunChatLoop(context.Background(), ChatRequest{
+	res, err := g.RunChatLoop(context.Background(), ChatRequest{
 		Model:    "llama",
 		Stream:   true,
 		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
 	}, "", "")
-	if err == nil || !strings.Contains(err.Error(), "streaming") {
-		t.Fatalf("expected stream error, got %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Stream {
+		t.Fatal("expected Stream=true on result")
 	}
 }
 

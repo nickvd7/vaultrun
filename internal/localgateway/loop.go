@@ -14,14 +14,14 @@ import (
 type LoopResult struct {
 	Response  *ChatResponse
 	SessionID string
+	Stream    bool
 }
 
 // RunChatLoop proxies the request to the upstream model, executes VaultRun
 // tools for each tool_calls round, and returns the final assistant message.
+// Upstream tool rounds are always non-streaming; req.Stream only affects how
+// the HTTP handler delivers the final answer (JSON vs SSE).
 func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversationKey, explicitSessionID string) (*LoopResult, error) {
-	if req.Stream {
-		return nil, &GatewayError{Status: 400, Code: "stream_not_supported", Message: "streaming is not supported; set stream=false"}
-	}
 	if len(req.Messages) == 0 {
 		return nil, &GatewayError{Status: 400, Code: "invalid_request", Message: "messages must be non-empty"}
 	}
@@ -44,13 +44,14 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 
 	messages := append([]ChatMessage(nil), req.Messages...)
 	tools := mergeTools(req.Tools)
+	var captured []capturedStep
 
 	for i := 0; i < g.cfg.MaxToolLoops; i++ {
 		upReq := ChatRequest{
 			Model:       model,
 			Messages:    messages,
 			Tools:       tools,
-			Stream:      false,
+			Stream:      false, // always buffer upstream; stream only the final answer
 			Temperature: req.Temperature,
 			MaxTokens:   req.MaxTokens,
 			TopP:        req.TopP,
@@ -64,7 +65,6 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 		}
 		msg := resp.Choices[0].Message
 		if len(msg.ToolCalls) == 0 {
-			// Final answer.
 			if resp.ID == "" {
 				resp.ID = "chatcmpl-" + uuid.NewString()
 			}
@@ -77,10 +77,10 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 			if resp.Model == "" {
 				resp.Model = model
 			}
-			return &LoopResult{Response: resp, SessionID: sessionID}, nil
+			g.captureMissionBestEffort(ctx, conversationKey, sessionID, captured)
+			return &LoopResult{Response: resp, SessionID: sessionID, Stream: req.Stream}, nil
 		}
 
-		// Append assistant message with tool_calls, then tool results.
 		messages = append(messages, ChatMessage{
 			Role:      "assistant",
 			Content:   msg.Content,
@@ -100,7 +100,6 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 
 			var result string
 			if !isVaultRunTool(name) {
-				// Client-supplied tools are advertised but not executed here.
 				result = fmt.Sprintf(`{"error":"tool %q is not executed by VaultRun local gateway"}`, name)
 			} else {
 				out, execErr := g.executeTool(ctx, sessionID, name, args)
@@ -110,6 +109,12 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 					result = fmt.Sprintf(`{"error":%q}`, execErr.Error())
 				} else {
 					result = out
+					captured = append(captured, capturedStep{
+						Name:     name,
+						Tool:     name,
+						ArgsJSON: args,
+						ResultOK: true,
+					})
 				}
 			}
 			messages = append(messages, ChatMessage{

@@ -48,6 +48,8 @@ type Config struct {
 	RunTimeoutSeconds int
 	// MaxRunTimeoutSeconds hard cap for per-run timeouts.
 	MaxRunTimeoutSeconds int
+	// CaptureMissions saves successful VaultRun tool sequences as missions.
+	CaptureMissions bool
 }
 
 // LoadConfigFromEnv reads configuration from environment variables.
@@ -71,6 +73,8 @@ func LoadConfigFromEnv() (Config, error) {
 		DefaultModel:         os.Getenv("LOCAL_GATEWAY_DEFAULT_MODEL"),
 		RunTimeoutSeconds:    envInt("LOCAL_GATEWAY_RUN_TIMEOUT_SEC", 60),
 		MaxRunTimeoutSeconds: envInt("LOCAL_GATEWAY_MAX_RUN_TIMEOUT_SEC", 300),
+		// Default on — local AI workflows become owned assets. Disable with =false.
+		CaptureMissions: envOr("LOCAL_GATEWAY_CAPTURE_MISSIONS", "true") != "false",
 	}
 	cfg.ListenAddr = normalizeListenAddr(cfg.ListenAddr)
 	return cfg, cfg.Validate()

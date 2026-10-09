@@ -50,6 +50,9 @@ ps:
 test:
 	$(GO) test ./internal/... ./sdk/go/... ./cmd/local/... -v -race -timeout 60s
 
+test-local-gateway:
+	./scripts/local-gateway-smoke.sh
+
 test-integration:
 	$(GO) test -tags=integration ./tests/integration/... -v -timeout 300s
 
@@ -99,6 +102,7 @@ help:
 	@echo ""
 	@echo "  make build           Build API server, CLI, and local gateway"
 	@echo "  make build-local     Build OpenAI-compat local inference gateway"
+	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
 	@echo "  make down            Stop all services"
 	@echo "  make logs            Tail API logs"

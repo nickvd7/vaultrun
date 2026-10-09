@@ -1,6 +1,6 @@
 # VaultRun — full summary for AI systems
 
-VaultRun is a self-hosted secure runtime for AI agents. It runs agent workflows inside isolated Docker sandboxes on the operator’s infrastructure so code execution, file access, database queries, and cloud API calls stay inside a blast radius that the operator controls. There is no VaultRun SaaS dependency and no product telemetry. Positioning is local-first: successful agent tool sequences can become owned workflow assets (missions) with verify checkpoints, sandbox memory, multi-agent swarm topology, and cost attribution on replay — without sending plans or spend data to a vendor cloud.
+VaultRun is a self-hosted secure runtime for AI agents. It runs agent workflows inside isolated Docker sandboxes on the operator’s infrastructure so code execution, file access, database queries, and cloud API calls stay inside a blast radius that the operator controls. There is no VaultRun SaaS dependency and no product telemetry. Positioning is local-first: successful agent tool sequences can become owned workflow assets (missions) with verify checkpoints, sealed evidence digests, optional OpenJEV/TypeSafe Jev claim-vs-evidence gates, sandbox memory, multi-agent swarm topology, and cost attribution on replay — without sending plans or spend data to a vendor cloud.
 
 ## Problem it solves
 
@@ -9,7 +9,7 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 ## Core components (Apache 2.0)
 
 1. **API server** (`cmd/api`) — Gin REST API for sessions, runs, files, keys, audit, snapshots, artifacts
-2. **MCP server** (`sdk/mcp`) — 53+ Model Context Protocol tools over stdio and HTTP (optional Flowd bridge: +6 tools)
+2. **MCP server** (`sdk/mcp`) — 53+ Model Context Protocol tools over stdio and HTTP (optional Flowd +6, optional Jev/OpenJEV +2)
 3. **CLI** (`cmd/cli`) — `vaultrun` command-line tool
 4. **CI runner** (`cmd/ci-runner`) — GitHub webhook → sandbox tests → PR comment + Slack/Teams
 5. **Local gateway** (`cmd/local`) — OpenAI-compatible action plane for local inference (Ollama/LM Studio/vLLM); proxies chat and executes VaultRun sandbox tools on `tool_calls` (see `docs/local-gateway.md`)
@@ -44,6 +44,7 @@ VaultRun can persist agent work as inspectable resources on the operator’s dep
 - **Verify checkpoints** — `exit_code_zero` / `stdout_contains` / `file_exists` (`POST /api/v1/verify`, MCP `verify_checkpoint`)
 - **Verify controls** — frozen pos/neg suite (v2 anti-shortcut) certifying the evaluator (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`)
 - **Verify evidence** — sealed export with content digest + optional HMAC (`POST /api/v1/verify/evidence`, MCP `verify_evidence`)
+- **Jev / OpenJEV gates** — opt-in claim-vs-evidence checks via [OpenJEV](https://openjev.sh/) (`api.openjev.sh`) or TypeSafe; MCP `jev_verify` / `jev_gate`, mission step `jev_on_fail`, local-gateway completion gate (`docs/features/jev-integration.md`)
 - **Agent memory** — MCP `memory_*` under `.vaultrun/memory/` in the session workspace
 - **Swarm graph** — directed agent edges on collaborative sessions (`/sessions/:id/graph`)
 - **Cost attribution** — snapshot session cost metrics onto a mission run without mutating immutable `cost_metrics`

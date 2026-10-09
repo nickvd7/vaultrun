@@ -4,14 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun — self-hosted secure runtime for AI agents</title>
-<meta name="description" content="Self-hosted secure runtime for AI agents — including local models. Sandboxed actions on your infra, workflow assets, verified and audited. No SaaS, no telemetry.">
-<meta name="keywords" content="AI agents, local AI, Ollama, LM Studio, MCP server, Docker sandbox, code execution, self-hosted, workflow as asset, missions, Claude, OpenAI, audit trail">
+<meta name="description" content="Self-hosted secure runtime for AI agents — local models, sandboxed actions, verify evidence, OpenJEV/Jev claim gates. Workflows as assets. No SaaS, no telemetry.">
+<meta name="keywords" content="AI agents, local AI, Ollama, LM Studio, MCP server, Docker sandbox, self-hosted, workflow as asset, missions, verify checkpoints, sealed evidence, OpenJEV, Jev, TypeSafe, claim verification, Claude, Cursor, audit trail">
 <meta name="author" content="VaultRun">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://vaultrun.dev/">
 <link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
+<link rel="alternate" type="text/plain" title="llms-full.txt" href="https://vaultrun.dev/llms-full.txt">
 <meta property="og:title" content="VaultRun — self-hosted secure runtime for AI agents">
-<meta property="og:description" content="Local-first runtime for AI agents — cloud or local models. Isolated Docker sandboxes, MCP tools, missions, verify checkpoints with sealed evidence, signed audit trail.">
+<meta property="og:description" content="Local-first runtime for AI agents. Sandboxes, MCP, missions, sealed verify evidence, optional OpenJEV/Jev claim gates. Signed audit trail.">
 <meta property="og:url" content="https://vaultrun.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VaultRun">
@@ -22,7 +23,7 @@
 <meta property="og:image:alt" content="VaultRun — self-hosted secure runtime for AI agents">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="VaultRun — self-hosted secure runtime for AI agents">
-<meta name="twitter:description" content="Self-hosted sandboxes for AI agents — including local models. MCP, missions, verify. No SaaS, no telemetry.">
+<meta name="twitter:description" content="Self-hosted sandboxes for AI agents — local models, verify evidence, OpenJEV gates. MCP, missions. No SaaS.">
 <meta name="twitter:image" content="https://vaultrun.dev/brand/og.png">
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
@@ -52,7 +53,17 @@
       "url": "https://vaultrun.dev/",
       "downloadUrl": "https://github.com/nickvd7/vaultrun",
       "codeRepository": "https://github.com/nickvd7/vaultrun",
-      "description": "Self-hosted secure runtime for AI agents — including local models — with isolated Docker sandboxes, a 53-tool MCP server, local inference gateway, verify checkpoints with sealed evidence exports, Python and Go SDKs, and an HMAC-signed audit trail.",
+      "description": "Self-hosted secure runtime for AI agents — including local models — with isolated Docker sandboxes, a 53-tool MCP server, local inference gateway, verify checkpoints with sealed evidence exports, optional OpenJEV/Jev claim gates, Python and Go SDKs, and an HMAC-signed audit trail.",
+      "featureList": [
+        "Isolated Docker sandboxes per agent session",
+        "MCP server (stdio + HTTP) with 53+ tools",
+        "Local inference action gateway for Ollama / LM Studio / vLLM",
+        "Verify checkpoints, control suite, sealed evidence digests",
+        "Optional OpenJEV or TypeSafe Jev claim-vs-evidence gates",
+        "Missions (workflow-as-asset), agent memory, swarm graph",
+        "HMAC-signed audit trail",
+        "Enterprise OIDC + SAML SSO (commercial)"
+      ],
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -62,7 +73,7 @@
         "https://github.com/nickvd7/vaultrun",
         "https://pypi.org/project/vaultrun-sdk/"
       ],
-      "keywords": "AI agents, MCP, Docker sandbox, self-hosted, LLM, code execution, security"
+      "keywords": "AI agents, MCP, Docker sandbox, self-hosted, LLM, OpenJEV, Jev, verify evidence, local AI, code execution, security"
     },
     {
       "@type": "Organization",
@@ -75,6 +86,44 @@
         "contactType": "sales"
       },
       "sameAs": ["https://github.com/nickvd7/vaultrun"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://vaultrun.dev/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is VaultRun?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "VaultRun is a self-hosted secure runtime for AI agents. Agents execute code and tools inside isolated Docker sandboxes on your infrastructure, with an MCP server, verify checkpoints, sealed evidence exports, and an HMAC-signed audit trail. There is no VaultRun SaaS and no product telemetry."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does VaultRun support local AI models like Ollama?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The local inference action gateway (vaultrun-local) is OpenAI-compatible. Chat goes to Ollama, LM Studio, or vLLM; tool calls run in VaultRun sandboxes. Optional mission capture and OpenJEV/Jev completion gates are available."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is verify evidence and OpenJEV integration?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Verify checkpoints assert exit codes, stdout, and files. Sealed evidence exports add content digests and optional HMAC. Opt-in OpenJEV (openjev.sh) or TypeSafe Jev gates check whether an agent claim is backed by that evidence before completion."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where can AI systems read a machine-readable summary?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "https://vaultrun.dev/llms.txt and https://vaultrun.dev/llms-full.txt — also linked from the site footer and robots-friendly sitemap."
+          }
+        }
+      ]
     }
   ]
 }
@@ -517,7 +566,7 @@
       <span>mode <b>local-first</b></span>
       <span>local ai <b>ollama · lm studio</b></span>
       <span>mcp <b>53+ tools</b></span>
-      <span>assets <b>missions · verify · memory</b></span>
+      <span>assets <b>missions · verify · evidence</b></span>
     </div>
     <div class="cta">
       <a class="btn primary" href="#local">local ai →</a>
@@ -657,7 +706,7 @@
       <div class="cell"><span class="idx">07 / sdk/go + sdk/python</span><h3>SDKs</h3><p>Typed Go client and a Python client. Same API, your language.</p></div>
       <div class="cell"><span class="idx">08 / enterprise</span><h3>Enterprise SSO</h3><p>OIDC (PKCE) + SAML 2.0 with org-aware RBAC. Okta, Azure AD, Google, Keycloak. <em>VaultRun Enterprise.</em></p></div>
       <div class="cell"><span class="idx">09 / internal/audit</span><h3>Audit trail</h3><p>Every action HMAC-signed and queryable. Tamper-evident by design.</p></div>
-      <div class="cell"><span class="idx">10 / internal/verify</span><h3>Verify + evidence</h3><p>Post-run checkpoints, a frozen control suite that certifies the evaluator, and sealed digests you can export.</p></div>
+      <div class="cell"><span class="idx">10 / internal/verify</span><h3>Verify + evidence</h3><p>Post-run checkpoints, anti-shortcut controls, sealed digests — plus opt-in OpenJEV / Jev claim gates.</p></div>
       <div class="cell"><span class="idx">11 / internal/policy</span><h3>Policy hook</h3><p>Pluggable policy layer, OPA-ready. Decide what agents may run, centrally.</p></div>
     </div>
   </div>
@@ -669,12 +718,12 @@
     <p class="h2-big">Save the plan. Replay it. Own the trail.</p>
     <p class="sub wf-lede">Successful agent work should not evaporate into chat history. VaultRun treats
     reusable tool sequences as first-class <em>missions</em> on your infra — verified, remembered, and cost-aware when you replay.</p>
-    <p class="wf-flow" aria-hidden="true"><b>mission</b> → verify → memory → swarm → cost → <b>yours</b></p>
+    <p class="wf-flow" aria-hidden="true"><b>mission</b> → verify → evidence → jev → memory → <b>yours</b></p>
     <div class="wf-rail" role="list">
       <div class="cell" role="listitem"><span class="idx">01 / missions</span><h3>Named sequences</h3><p>Versioned tool steps you can inspect, share in an org, and re-run — including auto-capture from local-model tool loops.</p></div>
-      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files. Anti-shortcut controls certify the evaluator; export sealed digests (+ optional HMAC) as portable evidence.</p></div>
-      <div class="cell" role="listitem"><span class="idx">03 / memory</span><h3>Sandbox notes</h3><p>Persist agent scratch under <code>.vaultrun/memory/</code>; snapshots carry it forward.</p></div>
-      <div class="cell" role="listitem"><span class="idx">04 / swarm</span><h3>Agent graph</h3><p>Directed edges between agents (lead / review / handoff) on collaborative sessions.</p></div>
+      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files. Anti-shortcut controls certify the evaluator; export sealed digests (+ optional HMAC).</p></div>
+      <div class="cell" role="listitem"><span class="idx">03 / jev</span><h3>Claim gates</h3><p>Optional <a href="https://openjev.sh/">OpenJEV</a> or TypeSafe Jev: is the agent’s claim backed by VaultRun evidence? Fail or hold under threshold.</p></div>
+      <div class="cell" role="listitem"><span class="idx">04 / memory</span><h3>Sandbox notes</h3><p>Persist agent scratch under <code>.vaultrun/memory/</code>; snapshots carry it forward.</p></div>
       <div class="cell" role="listitem"><span class="idx">05 / cost</span><h3>Replay spend</h3><p>Attribute session cost metrics to a mission run without mutating immutable billing rows.</p></div>
       <div class="cell" role="listitem"><span class="idx">06 / local-first</span><h3>Your network</h3><p>No VaultRun cloud. Data, audit HMAC, and workflow assets stay where you deploy.</p></div>
     </div>
@@ -799,7 +848,8 @@ fmt.Println(*run.Stdout)</pre>
     <p class="h2-big">Ollama thinks. VaultRun acts.</p>
     <p class="sub">Point Open WebUI, Continue, or any OpenAI-compatible client at
     <code>vaultrun-local</code>. Chat goes to your local model; tool calls run in
-    isolated Docker sandboxes on your infra — with optional mission capture when a loop succeeds.</p>
+    isolated Docker sandboxes on your infra — with optional mission capture and
+    OpenJEV / Jev completion gates when a loop claims it is done.</p>
 <pre class="diagram desktop-only">
   <b>Open WebUI / Continue</b>     <b>vaultrun-local</b>              <b>Ollama / LM Studio</b>
   OpenAI-compat client    →    /v1/chat/completions    →    local model
@@ -875,6 +925,7 @@ fmt.Println(*run.Stdout)</pre>
       <li>API keys stored as SHA-256 hashes, never plaintext</li>
       <li>HMAC-signed audit trail for every action</li>
       <li>Sealed verify evidence — content digests, optional <code>AUDIT_HMAC_KEY</code> signatures</li>
+      <li>Optional OpenJEV / Jev claim gates — opt-in, SSRF-safe, secrets redacted before leave-host</li>
       <li>OIDC with PKCE + state validation; SAML XMLDSig verification</li>
       <li>Session cookies: HttpOnly, Secure, HS256-signed</li>
       <li>Rate limiting + security headers on the MCP HTTP transport</li>
@@ -1080,12 +1131,14 @@ fmt.Println(*run.Stdout)</pre>
 
 <footer>
   <div class="wrap">
-    <div class="copy">© 2026 VaultRun · Apache 2.0 core · <a href="#contact">contact</a></div>
+    <div class="copy">© 2026 VaultRun · Apache 2.0 core · <a href="#contact">contact</a>
+      · <a href="/llms.txt">llms.txt</a> · <a href="/llms-full.txt">llms-full</a></div>
     <nav aria-label="Footer">
       <a href="https://github.com/nickvd7/vaultrun">GitHub</a>
       <a href="https://pypi.org/project/vaultrun-sdk/">PyPI</a>
       <a href="/use-cases.html">Use cases</a>
       <a href="/flowd.html">Flowd</a>
+      <a href="#workflows">Workflows</a>
       <a href="#enterprise">Enterprise</a>
       <a href="#contact">Contact</a>
     </nav>

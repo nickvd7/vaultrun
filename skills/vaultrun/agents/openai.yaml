@@ -2,7 +2,7 @@ interface:
   display_name: VaultRun
   short_description: Self-hosted secure runtime for AI agents
   brand_color: "#0a0a0a"
-  default_prompt: "Help me work on VaultRun — sandboxes, MCP, or Flowd integration."
+  default_prompt: "Help me work on VaultRun — sandboxes, MCP, verify evidence, OpenJEV/Jev gates, or Flowd."
 
 policy:
   allow_implicit_invocation: true

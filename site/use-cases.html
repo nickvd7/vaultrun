@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun use cases — how teams run AI agents safely</title>
-<meta name="description" content="Reference use cases for VaultRun: platform sandboxes, regulated AI agents, and PR CI in isolated Docker sessions. Patterns, not customer logos.">
+<meta name="description" content="Reference use cases for VaultRun: platform sandboxes, regulated AI agents, local AI with OpenJEV gates, verify evidence, and PR CI in isolated Docker sessions.">
 <link rel="canonical" href="https://vaultrun.dev/use-cases.html">
-<meta name="robots" content="index, follow">
+<link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta property="og:title" content="VaultRun use cases">
-<meta property="og:description" content="Platform sandboxes, regulated agent tooling, and self-hosted PR CI — without a SaaS dependency.">
+<meta property="og:description" content="Platform sandboxes, local AI + OpenJEV gates, verify evidence, regulated agents, and self-hosted PR CI — no SaaS dependency.">
 <meta property="og:url" content="https://vaultrun.dev/use-cases.html">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://vaultrun.dev/brand/og.png">
@@ -126,6 +127,7 @@
     <ul>
       <li>Missions API — named, versioned steps you own</li>
       <li>Verify — exit / stdout / file assertions, anti-shortcut control suite, sealed evidence export</li>
+      <li>Optional OpenJEV / Jev — claim-vs-evidence gate (fail or hold) on mission steps</li>
       <li>Local-first — no SaaS; audit + assets stay on your network</li>
     </ul>
     <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets with exportable proof, not disposable transcripts.</p>
@@ -135,13 +137,26 @@
     <div class="tag">05 / local AI</div>
     <h2>Local models that can act — without a SaaS runner</h2>
     <p><strong style="color:var(--fg)">Problem.</strong> Ollama / LM Studio can chat. Giving them shell or tools on the host is an open blast radius; shipping execution to a cloud sandbox fights the reason you went local.</p>
-    <p><strong style="color:var(--fg)">Pattern.</strong> Run <code>vaultrun-local</code> as an OpenAI-compatible gateway. Clients (Open WebUI, Continue, LiteLLM) talk to your local model; tool calls execute in VaultRun sandboxes. Successful loops can auto-capture as missions.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Run <code>vaultrun-local</code> as an OpenAI-compatible gateway. Clients (Open WebUI, Continue, LiteLLM) talk to your local model; tool calls execute in VaultRun sandboxes. Successful loops can auto-capture as missions; optional OpenJEV completion gates block “done” without evidence.</p>
     <ul>
       <li>Model stays local; actions stay sandboxed on your infra</li>
       <li>Network off by default; signed audit on every tool call</li>
       <li>Recipes for Open WebUI / Continue / LiteLLM in <code>examples/local-gateway/</code></li>
     </ul>
     <p><strong style="color:var(--fg)">Outcome.</strong> Local AI with a controlled action plane — think local, act contained.</p>
+  </article>
+
+  <article>
+    <div class="tag">06 / verify / OpenJEV</div>
+    <h2>Stop agents from declaring victory without evidence</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> Agents narrate success. Deterministic checks catch missing files and bad exits; they do not judge whether a natural-language claim matches the artifacts.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Run VaultRun verify → export sealed evidence → gate with <a href="https://openjev.sh/">OpenJEV</a> or TypeSafe Jev (<code>jev_gate</code> / mission step <code>jev_on_fail</code>). Threshold miss → fail or hold.</p>
+    <ul>
+      <li>Evidence from sandboxes you own — digests + optional HMAC</li>
+      <li>Opt-in System One providers (OpenJEV hosted or self-hosted)</li>
+      <li>MCP, API, and local-gateway surfaces</li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Completion only when claims survive evidence — not when the model sounds confident.</p>
   </article>
 
   <div class="cta">
@@ -153,6 +168,7 @@
   <footer>
     <a href="/">VaultRun</a>
     <a href="/#enterprise">Enterprise</a>
+    <a href="/llms.txt">llms.txt</a>
     <a href="/#contact">Contact</a>
     <a href="mailto:mail@030.dev">mail@030.dev</a>
   </footer>

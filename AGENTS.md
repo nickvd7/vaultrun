@@ -1,6 +1,6 @@
 # VaultRun — agent guide
 
-Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, MCP server (stdio + HTTP), HMAC audit trail. Apache 2.0 open core.
+Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, MCP server (stdio + HTTP), HMAC audit trail, verify evidence, optional OpenJEV/Jev claim gates. Apache 2.0 open core.
 
 ## For AI coding assistants
 
@@ -33,10 +33,14 @@ Dashboard: http://localhost:3000 · API: http://localhost:8080
 |------|---------|
 | `cmd/api/` | REST API |
 | `cmd/local/` | OpenAI-compat local inference gateway (Ollama/LM Studio → sandboxes) |
-| `sdk/mcp/` | MCP server (53+ tools; +6 Flowd when enabled) |
+| `sdk/mcp/` | MCP server (53+ tools; +6 Flowd / +2 Jev when enabled) |
 | `apps/frontend/` | Dashboard |
-| `site/` | Marketing static site |
-| `docs/` | Architecture, security, OpenAPI |
+| `site/` | Marketing static site + `llms.txt` / `llms-full.txt` |
+| `docs/` | Architecture, security, OpenAPI, features/* |
+
+## Verify / OpenJEV
+
+Sealed evidence + opt-in claim gates: [docs/features/verify-evidence.md](docs/features/verify-evidence.md), [docs/features/jev-integration.md](docs/features/jev-integration.md). OpenJEV: https://openjev.sh/
 
 ## Flowd integration
 

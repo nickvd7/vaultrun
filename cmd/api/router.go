@@ -266,12 +266,14 @@ func newRouter(
 	authGroup.POST("/orgs/:id/budget", costH.SetBudget)
 	authGroup.GET("/costs/rates", costH.GetRates)
 
-	// Verify checkpoints — post-run / post-step assertions
+	// Verify checkpoints — post-run / post-step assertions + evidence export
 	verifyStore := verify.NewStore(db)
 	verifyH := handlers.NewVerifyHandler(hub, verifyStore)
 	authGroup.POST("/verify", verifyH.Evaluate)
 	authGroup.GET("/verify/controls", verifyH.Controls)
 	authGroup.POST("/verify/controls", verifyH.Controls)
+	authGroup.POST("/verify/evidence", verifyH.Evidence)
+	authGroup.GET("/verifications/:id/evidence", verifyH.GetEvidence)
 	authGroup.GET("/sessions/:id/verifications", verifyH.ListBySession)
 
 	// Natural Language Policy endpoints — LLM-powered policy generation

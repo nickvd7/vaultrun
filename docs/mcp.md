@@ -14,6 +14,7 @@ and speaks **MCP `2026-07-28`** (stateless Streamable HTTP) with fallback for ol
 | Tasks extension | `async=true` → `taskId`; poll/update/cancel via tools `get_task` / `update_task` / `cancel_task` (also custom methods `tasks/*`); `input_required` via `inputRequests`/`inputResponses`; optional `confirm=true` |
 | Verify checkpoints | MCP `verify_checkpoint` + `POST /api/v1/verify` (`exit_code_zero`, `stdout_contains`, `file_exists`) |
 | Verify controls | MCP `verify_controls` + `GET|POST /api/v1/verify/controls` (frozen pos/neg evaluator self-check) |
+| Verify evidence | MCP `verify_evidence` + `POST /api/v1/verify/evidence` (sealed digest/HMAC export) |
 | Agent memory | `memory_set` / `memory_get` / `memory_list` / `memory_delete` → `.vaultrun/memory/` in session workspace |
 | MCP Apps | `ui://vaultrun/session-panel` (+ tool UI meta); disable with `MCP_APPS_ENABLED=false` |
 | OAuth / EMA (server) | PRM at `/.well-known/oauth-protected-resource` when `MCP_OAUTH_ISSUERS` is set; optional introspection |

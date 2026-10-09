@@ -1,7 +1,8 @@
 .PHONY: all build test lint clean up down logs help
 
-BINARY_API  := bin/vaultrun-api
-BINARY_CLI  := bin/vaultrun
+BINARY_API   := bin/vaultrun-api
+BINARY_CLI   := bin/vaultrun
+BINARY_LOCAL := bin/vaultrun-local
 
 GO          := go
 MODULE      := github.com/nickvd7/vaultrun
@@ -10,7 +11,7 @@ MODULE      := github.com/nickvd7/vaultrun
 all: build
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-build: build-api build-cli
+build: build-api build-cli build-local
 
 build-api:
 	@mkdir -p bin
@@ -19,6 +20,10 @@ build-api:
 build-cli:
 	@mkdir -p bin
 	$(GO) build -ldflags="-s -w" -o $(BINARY_CLI) ./cmd/cli
+
+build-local:
+	@mkdir -p bin
+	$(GO) build -ldflags="-s -w" -o $(BINARY_LOCAL) ./cmd/local
 
 # Enterprise features (SSO/SAML) live in the separate vaultrun-enterprise
 # repository and are built from there as an overlay on this checkout.
@@ -43,7 +48,10 @@ ps:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
-	$(GO) test ./internal/... ./sdk/go/... -v -race -timeout 60s
+	$(GO) test ./internal/... ./sdk/go/... ./cmd/local/... -v -race -timeout 60s
+
+test-local-gateway:
+	./scripts/local-gateway-smoke.sh
 
 test-integration:
 	$(GO) test -tags=integration ./tests/integration/... -v -timeout 300s
@@ -92,7 +100,9 @@ clean:
 help:
 	@echo "VaultRun Makefile targets:"
 	@echo ""
-	@echo "  make build           Build API server and CLI"
+	@echo "  make build           Build API server, CLI, and local gateway"
+	@echo "  make build-local     Build OpenAI-compat local inference gateway"
+	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
 	@echo "  make down            Stop all services"
 	@echo "  make logs            Tail API logs"

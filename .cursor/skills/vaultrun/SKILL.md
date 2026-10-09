@@ -25,7 +25,8 @@ Self-hosted secure runtime for AI agents. Agents execute code, query databases, 
 | `cmd/api/` | Gin REST API — sessions, runs, files, audit, keys |
 | `cmd/cli/` | `vaultrun` CLI |
 | `cmd/ci-runner/` | GitHub webhook → sandbox CI |
-| `internal/` | auth, docker, workspace, audit, policy, db |
+| `cmd/local/` | OpenAI-compat local inference action gateway |
+| `internal/` | auth, docker, workspace, audit, policy, db, localgateway |
 | `sdk/mcp/` | MCP server — build with `go build -o vaultrun-mcp ./sdk/mcp/` |
 | `sdk/go/`, `sdk/python/` | Client SDKs |
 | `apps/frontend/` | Next.js dashboard (`Sidebar`, `AppShell`, `api.ts`) |

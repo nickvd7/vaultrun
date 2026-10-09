@@ -12,8 +12,9 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 2. **MCP server** (`sdk/mcp`) — 53+ Model Context Protocol tools over stdio and HTTP (optional Flowd bridge: +6 tools)
 3. **CLI** (`cmd/cli`) — `vaultrun` command-line tool
 4. **CI runner** (`cmd/ci-runner`) — GitHub webhook → sandbox tests → PR comment + Slack/Teams
-5. **Dashboard** (`apps/frontend`) — Next.js UI with server-side API proxy
-6. **SDKs** — Go (`sdk/go`) and Python (`pip install vaultrun-sdk`)
+5. **Local gateway** (`cmd/local`) — OpenAI-compatible action plane for local inference (Ollama/LM Studio/vLLM); proxies chat and executes VaultRun sandbox tools on `tool_calls` (see `docs/local-gateway.md`)
+6. **Dashboard** (`apps/frontend`) — Next.js UI with server-side API proxy
+7. **SDKs** — Go (`sdk/go`) and Python (`pip install vaultrun-sdk`)
 
 ## Security defaults
 

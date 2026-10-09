@@ -32,6 +32,7 @@ Dashboard: http://localhost:3000 · API: http://localhost:8080
 | Path | Purpose |
 |------|---------|
 | `cmd/api/` | REST API |
+| `cmd/local/` | OpenAI-compat local inference gateway (Ollama/LM Studio → sandboxes) |
 | `sdk/mcp/` | MCP server (53+ tools; +6 Flowd when enabled) |
 | `apps/frontend/` | Dashboard |
 | `site/` | Marketing static site |

@@ -1,0 +1,19 @@
+# Snippet for ~/.continue/config.yaml (Continue.dev)
+# Docs: https://docs.continue.dev
+
+name: VaultRun local gateway
+version: 0.0.1
+schema: v1
+
+models:
+  - name: VaultRun Local
+    provider: openai
+    model: llama3.2   # or LOCAL_GATEWAY_DEFAULT_MODEL
+    apiBase: http://127.0.0.1:8091/v1
+    apiKey: replace-with-LOCAL_GATEWAY_AUTH_TOKEN
+    roles:
+      - chat
+      - edit
+    requestOptions:
+      headers:
+        X-VaultRun-Conversation-Id: continue-default

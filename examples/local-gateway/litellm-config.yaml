@@ -1,0 +1,11 @@
+# LiteLLM proxy model that forwards to VaultRun local gateway.
+# litellm --config examples/local-gateway/litellm-config.yaml
+
+model_list:
+  - model_name: vaultrun-local
+    litellm_params:
+      model: openai/llama3.2
+      api_base: http://127.0.0.1:8091/v1
+      api_key: replace-with-LOCAL_GATEWAY_AUTH_TOKEN
+      extra_headers:
+        X-VaultRun-Conversation-Id: litellm-default

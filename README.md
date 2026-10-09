@@ -65,6 +65,7 @@ Open `http://localhost:3000` for the dashboard.
 | **CLI** (`cmd/cli`) | `vaultrun` command-line tool |
 | **MCP server** (`sdk/mcp`) | 61-tool MCP server (stdio + HTTP, +8 browser tools) |
 | **CI runner** (`cmd/ci-runner`) | GitHub webhook → sandbox CI + Slack/Teams notify |
+| **Local gateway** (`cmd/local`) | OpenAI-compat action plane for Ollama / LM Studio / vLLM → VaultRun tools ([docs](docs/local-gateway.md) · [recipes](examples/local-gateway/)) |
 | **Dashboard** (`apps/frontend`) | Next.js management UI |
 | **Go SDK** (`sdk/go`) | Typed Go client |
 | **Python SDK** (`sdk/python`) | Python client — [`pip install vaultrun-sdk`](https://pypi.org/project/vaultrun-sdk/) |

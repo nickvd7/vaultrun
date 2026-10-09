@@ -716,6 +716,9 @@ func toolDefinitions() []mcpTool {
 	if flowdEnabled() {
 		tools = append(tools, flowdToolDefinitions()...)
 	}
+	if jevEnabled() {
+		tools = append(tools, jevToolDefinitions()...)
+	}
 
 	// Tasks poll/update/cancel as ordinary tools (hosts that lack custom methods).
 	tools = append(tools, taskToolDefinitions()...)
@@ -867,6 +870,10 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolVerifyControls(ctx, args)
 	case "verify_evidence":
 		return s.toolVerifyEvidence(ctx, args)
+	case "jev_verify":
+		return s.toolJevVerify(ctx, args)
+	case "jev_gate":
+		return s.toolJevGate(ctx, args)
 	case "memory_set":
 		return s.toolMemorySet(ctx, args)
 	case "memory_get":

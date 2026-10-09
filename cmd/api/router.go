@@ -276,6 +276,11 @@ func newRouter(
 	authGroup.GET("/verifications/:id/evidence", verifyH.GetEvidence)
 	authGroup.GET("/sessions/:id/verifications", verifyH.ListBySession)
 
+	// Jev (TypeSafe) claim/evidence gate — opt-in via VAULTRUN_JEV_ENABLED
+	jevH := handlers.NewJevHandler(hub, verifyStore, missionsManager)
+	authGroup.POST("/verify/jev", jevH.VerifyClaims)
+	authGroup.POST("/verify/jev-gate", jevH.Gate)
+
 	// Natural Language Policy endpoints — LLM-powered policy generation
 	nlPolicyH := handlers.NewNLPolicyHandler(hub)
 	authGroup.POST("/policies/parse", nlPolicyH.ParsePolicy)
@@ -311,6 +316,7 @@ func newRouter(
 		authGroup.POST("/missions/:id/runs/:run_id/attribute-costs", missionsH.AttributeRunCosts)
 		authGroup.GET("/missions/:id/runs/:run_id/costs", missionsH.GetRunCosts)
 		authGroup.GET("/missions/:id/costs", missionsH.GetMissionCosts)
+		authGroup.POST("/missions/:id/steps/verify", jevH.MissionStepVerify)
 	}
 
 	// Replay endpoints — checkpoint creation, restore, fork (time-travel debugging)

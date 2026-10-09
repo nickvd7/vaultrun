@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Jev / OpenJEV gate** — opt-in claim-vs-evidence checks via TypeSafe or [OpenJEV](https://openjev.sh/) (`api.openjev.sh`); MCP `jev_verify` / `jev_gate`, `POST /api/v1/verify/jev(-gate)`, mission step verify fail/hold, local-gateway completion gate; see `docs/features/jev-integration.md`
 - **Verify evidence** — sealed verification export (`content_digest` + optional `AUDIT_HMAC_KEY` HMAC); `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`, MCP `verify_evidence`; control-suite **v2** anti-shortcut cases; see `docs/features/verify-evidence.md`
 - **Site** — homepage + use-cases + `llms.txt` surface verify evidence / sealed digests alongside local inference gateway and verify controls
 - **Verify controls** — frozen positive/negative suite certifying the verify evaluator (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`, `pipeline_discriminates` + suite fingerprint); see `docs/features/verify-controls.md`

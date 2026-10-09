@@ -27,6 +27,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - [Local inference gateway](https://github.com/nickvd7/vaultrun/blob/main/docs/local-gateway.md): OpenAI-compat action plane for Ollama / LM Studio / vLLM (SSE final answer, mission capture, [client recipes](https://github.com/nickvd7/vaultrun/blob/main/examples/local-gateway/README.md))
 - [Verify evidence](https://github.com/nickvd7/vaultrun/blob/main/docs/features/verify-evidence.md): Sealed checkpoint/controls export (`content_digest` + optional HMAC)
 - [Verify controls](https://github.com/nickvd7/vaultrun/blob/main/docs/features/verify-controls.md): Frozen pos/neg suite certifying the evaluator (v2 anti-shortcut)
+- [Jev / OpenJEV](https://github.com/nickvd7/vaultrun/blob/main/docs/features/jev-integration.md): Opt-in claim-vs-evidence gates ([OpenJEV](https://openjev.sh/) or TypeSafe)
 - [Agent plugin](https://github.com/nickvd7/vaultrun/blob/main/docs/plugin-publish.md): Cursor / Claude Code marketplace skill
 - [OpenAPI](https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml): REST API schema
 - [Roadmap](https://github.com/nickvd7/vaultrun/blob/main/docs/roadmap.md): Planned work

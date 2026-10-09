@@ -865,6 +865,8 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolVerifyCheckpoint(ctx, args)
 	case "verify_controls":
 		return s.toolVerifyControls(ctx, args)
+	case "verify_evidence":
+		return s.toolVerifyEvidence(ctx, args)
 	case "memory_set":
 		return s.toolMemorySet(ctx, args)
 	case "memory_get":

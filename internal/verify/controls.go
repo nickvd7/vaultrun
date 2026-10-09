@@ -8,7 +8,8 @@ import (
 )
 
 // SuiteID is the frozen identity of the built-in verify control suite.
-const SuiteID = "vaultrun-verify-controls-v1"
+// Bump when control cases change (also update pinned fingerprint in tests).
+const SuiteID = "vaultrun-verify-controls-v2"
 
 // ControlKind is positive (must pass) or negative (must fail).
 type ControlKind string
@@ -122,13 +123,85 @@ func builtInControls() []controlDef {
 			ExpectedPassed: false,
 		},
 		{
-			ID:          "nonzero-required",
-			Kind:        ControlPositive,
-			Name:        "Expected Failure Exit",
-			Description: "Spec requires non-zero exit; observation has exit 2. Evaluator must accept.",
-			Spec:        Spec{ExitCodeZero: boolPtr(false)},
-			Observation: Observation{ExitCode: intPtr(2)},
+			ID:             "nonzero-required",
+			Kind:           ControlPositive,
+			Name:           "Expected Failure Exit",
+			Description:    "Spec requires non-zero exit; observation has exit 2. Evaluator must accept.",
+			Spec:           Spec{ExitCodeZero: boolPtr(false)},
+			Observation:    Observation{ExitCode: intPtr(2)},
 			ExpectedPassed: true,
+		},
+		// ── v2 anti-shortcut negatives ───────────────────────────────────
+		{
+			ID:   "file-missing-despite-green",
+			Kind: ControlNegative,
+			Name: "Green Exit, Missing Artifact",
+			Description: "Exit 0 and success stdout, but required file absent — " +
+				"anti-shortcut: evaluator must not accept stdout alone.",
+			Spec: Spec{
+				ExitCodeZero:   boolPtr(true),
+				StdoutContains: "Successfully",
+				FileExists:     "out/done.txt",
+			},
+			Observation: Observation{
+				ExitCode: intPtr(0),
+				Stdout:   "Successfully installed package",
+			},
+			Files:          map[string]bool{"out/done.txt": false},
+			ExpectedPassed: false,
+		},
+		{
+			ID:   "stderr-only-success",
+			Kind: ControlNegative,
+			Name: "Success Token in Stderr Only",
+			Description: "Required stdout marker appears only on stderr — " +
+				"anti-shortcut against claiming success via the wrong stream.",
+			Spec: Spec{
+				ExitCodeZero:   boolPtr(true),
+				StdoutContains: "Successfully",
+			},
+			Observation: Observation{
+				ExitCode: intPtr(0),
+				Stdout:   "",
+				Stderr:   "Successfully installed package",
+			},
+			ExpectedPassed: false,
+		},
+		{
+			ID:   "exit-nonzero-with-file",
+			Kind: ControlNegative,
+			Name: "Artifact Present, Non-Zero Exit",
+			Description: "File and stdout look good but exit code is 1 — " +
+				"anti-shortcut against ignoring process failure.",
+			Spec: Spec{
+				ExitCodeZero:   boolPtr(true),
+				StdoutContains: "Successfully",
+				FileExists:     "out/done.txt",
+			},
+			Observation: Observation{
+				ExitCode: intPtr(1),
+				Stdout:   "Successfully installed package",
+			},
+			Files:          map[string]bool{"out/done.txt": true},
+			ExpectedPassed: false,
+		},
+		{
+			ID:   "wrong-filename",
+			Kind: ControlNegative,
+			Name: "Wrong Artifact Name",
+			Description: "A similar file exists but not the required path — " +
+				"anti-shortcut against loose path matching.",
+			Spec: Spec{
+				ExitCodeZero:   boolPtr(true),
+				StdoutContains: "Successfully",
+				FileExists:     "out/done.txt",
+			},
+			Observation: Observation{
+				ExitCode: intPtr(0),
+				Stdout:   "Successfully installed package",
+			},
+			Files:          map[string]bool{"out/done.txt.bak": true},
+			ExpectedPassed: false,
 		},
 	}
 }

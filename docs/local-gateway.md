@@ -92,7 +92,7 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 | `LOCAL_GATEWAY_CAPTURE_MISSIONS` | `true` | Persist successful VaultRun tool sequences as missions |
 | `LOCAL_GATEWAY_JEV_ENABLED` | `false` | Opt-in completion gate via OpenJEV / TypeSafe (`OPENJEV_API_KEY` or `TYPESAFE_API_KEY`) |
 | `LOCAL_GATEWAY_JEV_MIN_NOUL` | `0.7` | Minimum noul for claim + evidence_backed |
-| `LOCAL_GATEWAY_JEV_ON_FAIL` | `hold` | `hold` (retry then 409) or `fail` (409) |
+| `LOCAL_GATEWAY_JEV_ON_FAIL` | `hold` | Threshold reject: `hold` (retry then 409) or `fail` (409). Upstream/config errors always fail-closed. |
 | `LOCAL_GATEWAY_JEV_MAX_RETRIES` | `1` | Extra tool-loop rounds after a failed gate |
 | `JEV_PROVIDER` | *(auto)* | `openjev` or `typesafe` — see [jev-integration.md](features/jev-integration.md) |
 

@@ -72,6 +72,32 @@ func TestMaybeJevGateDisabled(t *testing.T) {
 	}
 }
 
+func TestMaybeJevGateFailClosedWhenClientNil(t *testing.T) {
+	g := &Gateway{cfg: Config{JevEnabled: true}, jev: nil}
+	err := g.maybeJevCompletionGate(context.Background(), "done", nil, nil, nil)
+	ge, ok := err.(*GatewayError)
+	if !ok || ge.Code != "jev_unavailable" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMaybeJevGateUpstreamErrorFailClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(503)
+		_, _ = w.Write([]byte(`busy`))
+	}))
+	defer srv.Close()
+	g := &Gateway{
+		cfg: Config{JevEnabled: true, JevOnFail: "hold"}, // hold must NOT fail-open on infra errors
+		jev: &jev.Client{BaseURL: srv.URL, APIKey: "k", HTTP: srv.Client()},
+	}
+	err := g.maybeJevCompletionGate(context.Background(), "done", nil, nil, nil)
+	ge, ok := err.(*GatewayError)
+	if !ok || ge.Code != "jev_error" {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestBuildJevEvidenceRedactsNothingLocally(t *testing.T) {
 	raw := buildJevEvidenceFromLoop(
 		[]ChatMessage{{Role: "tool", Content: "ok"}},

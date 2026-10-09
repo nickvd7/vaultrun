@@ -66,7 +66,8 @@ func NewFromConfig(cfg Config) *Gateway {
 	if cfg.JevEnabled {
 		jc, err := jev.ConfigFromEnv(os.Getenv)
 		if err != nil {
-			slog.Warn("localgateway: Jev enabled but client not configured", "err", err)
+			// Fail closed at request time via maybeJevCompletionGate when jev==nil && enabled.
+			slog.Error("localgateway: LOCAL_GATEWAY_JEV_ENABLED=true but Jev client not configured — completions will be blocked", "err", err)
 		} else {
 			g.WithJev(jc)
 			slog.Info("localgateway: Jev completion gate enabled",

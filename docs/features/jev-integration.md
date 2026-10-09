@@ -49,9 +49,10 @@ Self-hosted OpenJev (loopback): `JEV_ALLOW_PRIVATE_BASE=true`.
 
 - Opt-in only; no ambient activation
 - Public HTTPS bases by default (SSRF-safe dialer); OpenJEV/TypeSafe hosts allowlisted
-- Outbound state truncated + secret redaction (`vr_`, `sk-`, `ts_`, `oj_`)
+- Outbound state truncated + secret redaction (`vr_`, `sk-`, `ts_`, `oj_`) — including `state.claims`
 - Claim / evidence size caps; API key never logged
 - Base URL never taken from request bodies
+- Local gateway: misconfigured or unreachable Jev **fail-closed** (503/502); `on_fail=hold` only applies to threshold rejects, not infra errors
 
 ## Docs
 

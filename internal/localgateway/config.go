@@ -180,6 +180,10 @@ func (c Config) Validate() error {
 		if c.JevMaxRetries < 0 || c.JevMaxRetries > 3 {
 			return fmt.Errorf("LOCAL_GATEWAY_JEV_MAX_RETRIES must be between 0 and 3")
 		}
+		// Require a key env so misconfigured gate fails at startup, not silently.
+		if os.Getenv("OPENJEV_API_KEY") == "" && os.Getenv("TYPESAFE_API_KEY") == "" && os.Getenv("JEV_API_KEY") == "" {
+			return fmt.Errorf("LOCAL_GATEWAY_JEV_ENABLED requires OPENJEV_API_KEY or TYPESAFE_API_KEY")
+		}
 	}
 	return nil
 }

@@ -122,25 +122,29 @@ func (c *Client) VerifyClaims(ctx context.Context, evidence string, claims []str
 	if len(claims) > 20 {
 		return nil, fmt.Errorf("too many claims (max 20)")
 	}
-	state := map[string]any{
-		"evidence": SanitizeState(evidence),
-		"claims":   claims,
-	}
-	questions := make(map[string]Question, len(claims))
+	safeClaims := make([]string, len(claims))
 	for i, claim := range claims {
 		if err := ValidateClaim(claim); err != nil {
 			return nil, fmt.Errorf("claims[%d]: %w", i, err)
 		}
+		safeClaims[i] = SanitizeState(claim)
+	}
+	state := map[string]any{
+		"evidence": SanitizeState(evidence),
+		"claims":   safeClaims,
+	}
+	questions := make(map[string]Question, len(safeClaims))
+	for i, claim := range safeClaims {
 		key := fmt.Sprintf("claim_%d", i)
 		questions[key] = Question{
 			Type: "choice",
 			Instructions: map[string]any{
-				"claim":    SanitizeState(claim),
+				"claim":    claim,
 				"question": "Relative to `evidence`, does the evidence support, contradict, or say nothing about `claim`?",
 			},
 			Criteria: map[string]any{
-				"supports":    "Evidence clearly supports the claim",
-				"contradicts": "Evidence contradicts the claim",
+				"supports":     "Evidence clearly supports the claim",
+				"contradicts":  "Evidence contradicts the claim",
 				"says_nothing": "Evidence is silent or insufficient",
 			},
 		}

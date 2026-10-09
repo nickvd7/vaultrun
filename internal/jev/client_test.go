@@ -217,6 +217,32 @@ func TestVerifyClaimsBound(t *testing.T) {
 	}
 }
 
+func TestVerifyClaimsRedactsStateClaims(t *testing.T) {
+	var saw string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		saw = string(b)
+		_ = json.NewEncoder(w).Encode(Response{
+			Answers: map[string]Answer{
+				"claim_0": {Type: "choice", Choice: "supports", Confidence: 0.9},
+			},
+		})
+	}))
+	defer srv.Close()
+	secret := "vr_abcdefghijklmnopqrstuvwxyz0123456789abcd"
+	c := &Client{BaseURL: srv.URL, APIKey: "k", HTTP: srv.Client()}
+	_, err := c.VerifyClaims(context.Background(), "evidence ok", []string{"token " + secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(saw, secret) {
+		t.Fatal("raw claim secret leaked in state.claims")
+	}
+	if !strings.Contains(saw, "vr_[REDACTED]") {
+		t.Fatalf("expected redaction: %s", saw)
+	}
+}
+
 func TestEvaluateHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(401)

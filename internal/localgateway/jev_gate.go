@@ -27,8 +27,12 @@ func anyContentString(v any) string {
 }
 
 func (g *Gateway) maybeJevCompletionGate(ctx context.Context, claim any, messages []ChatMessage, steps []capturedStep, retries *int) error {
-	if g == nil || !g.cfg.JevEnabled || g.jev == nil {
+	if g == nil || !g.cfg.JevEnabled {
 		return nil
+	}
+	if g.jev == nil {
+		// Enabled but misconfigured — fail closed (do not silently skip the gate).
+		return &GatewayError{Status: 503, Code: "jev_unavailable", Message: "completion gate enabled but Jev client not configured"}
 	}
 	claimStr := strings.TrimSpace(anyContentString(claim))
 	if claimStr == "" {
@@ -45,11 +49,8 @@ func (g *Gateway) maybeJevCompletionGate(ctx context.Context, claim any, message
 	})
 	if err != nil {
 		slog.Warn("localgateway: jev gate error", "err", err)
-		// Fail closed when on_fail=fail; otherwise allow answer (hold soft).
-		if jev.ParseOnFail(g.cfg.JevOnFail) == jev.OnFailFail {
-			return &GatewayError{Status: 502, Code: "jev_error", Message: "completion gate unavailable"}
-		}
-		return nil
+		// Upstream / infra errors always fail closed; threshold "hold" only applies to reject-with-hold.
+		return &GatewayError{Status: 502, Code: "jev_error", Message: "completion gate unavailable"}
 	}
 	if res.Passed {
 		return nil

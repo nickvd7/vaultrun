@@ -24,6 +24,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - [SSO setup](https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md): OIDC and SAML (Enterprise)
 - [CI runner](https://github.com/nickvd7/vaultrun/blob/main/docs/ci-runner.md): GitHub webhook → sandboxed CI
 - [Flowd integration](https://github.com/nickvd7/vaultrun/blob/main/docs/flowd-integration.md): MCP bridge to local flowctl (opt-in)
+- [Local inference gateway](https://github.com/nickvd7/vaultrun/blob/main/docs/local-gateway.md): OpenAI-compat action plane for Ollama / LM Studio / vLLM
 - [Agent plugin](https://github.com/nickvd7/vaultrun/blob/main/docs/plugin-publish.md): Cursor / Claude Code marketplace skill
 - [OpenAPI](https://github.com/nickvd7/vaultrun/blob/main/docs/openapi.yaml): REST API schema
 - [Roadmap](https://github.com/nickvd7/vaultrun/blob/main/docs/roadmap.md): Planned work

@@ -270,6 +270,8 @@ func newRouter(
 	verifyStore := verify.NewStore(db)
 	verifyH := handlers.NewVerifyHandler(hub, verifyStore)
 	authGroup.POST("/verify", verifyH.Evaluate)
+	authGroup.GET("/verify/controls", verifyH.Controls)
+	authGroup.POST("/verify/controls", verifyH.Controls)
 	authGroup.GET("/sessions/:id/verifications", verifyH.ListBySession)
 
 	// Natural Language Policy endpoints — LLM-powered policy generation

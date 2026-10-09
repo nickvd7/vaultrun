@@ -182,6 +182,24 @@ func truncateVerifyBytes(s string, max int) string {
 	return s[:max]
 }
 
+// Controls POST /api/v1/verify/controls
+// Runs the frozen positive/negative control suite against the in-process
+// evaluator (no Docker / session required). Certifies that verify discriminates
+// known-good from known-bad observations — FaultWright-style evaluator check.
+func (vh *VerifyHandler) Controls(c *gin.Context) {
+	if c.Request.Method != http.MethodPost && c.Request.Method != http.MethodGet {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{"error": "GET or POST only"})
+		return
+	}
+	report := verify.RunControls()
+	status := http.StatusOK
+	if !report.Passed {
+		// Suite failure is a product/invariant break, not a client error.
+		status = http.StatusInternalServerError
+	}
+	c.JSON(status, report)
+}
+
 // ListBySession GET /api/v1/sessions/:id/verifications
 func (vh *VerifyHandler) ListBySession(c *gin.Context) {
 	sessionID, ok := parseUUID(c, "id")

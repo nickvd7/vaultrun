@@ -59,6 +59,16 @@ func verifyToolDefinitions() []mcpTool {
 				},
 			},
 		},
+		{
+			Name: "verify_controls",
+			Description: "Run the frozen positive/negative verify control suite (no session required). " +
+				"Certifies that the VaultRun evaluator accepts known-good observations and rejects " +
+				"known-bad ones (pipeline_discriminates). Calls GET/POST /api/v1/verify/controls.",
+			InputSchema: inputSchema{
+				Type:       "object",
+				Properties: map[string]schemaProp{},
+			},
+		},
 	}
 }
 
@@ -128,6 +138,20 @@ func (s *server) toolVerifyCheckpoint(ctx context.Context, args map[string]strin
 		status = "PASSED"
 	}
 	return textResult(fmt.Sprintf("verify_checkpoint: %s\n%s", status, string(raw))), nil
+}
+
+func (s *server) toolVerifyControls(ctx context.Context, _ map[string]string) (mcpToolResult, error) {
+	var result map[string]any
+	if err := s.client.doJSON(ctx, "POST", "/api/v1/verify/controls", map[string]any{}, &result); err != nil {
+		return mcpToolResult{}, err
+	}
+	raw, _ := json.MarshalIndent(result, "", "  ")
+	ok, _ := result["pipeline_discriminates"].(bool)
+	status := "FAILED"
+	if ok {
+		status = "PASSED"
+	}
+	return textResult(fmt.Sprintf("verify_controls: %s\n%s", status, string(raw))), nil
 }
 
 func parseStrictToolBool(v string) (bool, error) {

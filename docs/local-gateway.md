@@ -79,7 +79,7 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 | `VAULTRUN_BASE_URL` | *(required)* | VaultRun API base URL |
 | `VAULTRUN_API_KEY` | *(required)* | VaultRun API key (`vr_…`) |
 | `LOCAL_GATEWAY_UPSTREAM_URL` | `http://127.0.0.1:11434` | OpenAI-compat upstream (operator-only; never from request body) |
-| `LOCAL_GATEWAY_PORT` | `:8091` | Listen address |
+| `LOCAL_GATEWAY_PORT` | `127.0.0.1:8091` | Listen address (loopback by default; set `:8091` only if LAN bind is intentional) |
 | `LOCAL_GATEWAY_DEFAULT_MODEL` | — | Used when client omits `model` |
 | `LOCAL_GATEWAY_DEFAULT_IMAGE` | `python:3.12-slim` | Sandbox image for auto sessions |
 | `LOCAL_GATEWAY_NETWORK_ENABLED` | `false` | Enable sandbox network |
@@ -101,6 +101,7 @@ Auto-created sessions use `LOCAL_GATEWAY_DEFAULT_IMAGE` (default `python:3.12-sl
 
 ## Security posture
 
+- Default bind is **loopback only** (`127.0.0.1:8091`); startup warns on non-loopback binds
 - Bearer auth required for all `/v1/*` (healthz is open)
 - Rate limit runs **before** auth (brute-force resistant)
 - `X-Forwarded-For` is **not** trusted by default

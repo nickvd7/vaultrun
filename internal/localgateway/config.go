@@ -53,7 +53,9 @@ type Config struct {
 // LoadConfigFromEnv reads configuration from environment variables.
 func LoadConfigFromEnv() (Config, error) {
 	cfg := Config{
-		ListenAddr:           envOr("LOCAL_GATEWAY_PORT", ":8091"),
+		// Default to loopback only — sandbox-capable API must not be LAN-exposed
+		// unless the operator explicitly binds a non-loopback address.
+		ListenAddr:           envOr("LOCAL_GATEWAY_PORT", "127.0.0.1:8091"),
 		AuthToken:            os.Getenv("LOCAL_GATEWAY_AUTH_TOKEN"),
 		UpstreamURL:          strings.TrimRight(envOr("LOCAL_GATEWAY_UPSTREAM_URL", "http://127.0.0.1:11434"), "/"),
 		UpstreamTimeout:      time.Duration(envInt("LOCAL_GATEWAY_UPSTREAM_TIMEOUT_SEC", 120)) * time.Second,
@@ -70,10 +72,46 @@ func LoadConfigFromEnv() (Config, error) {
 		RunTimeoutSeconds:    envInt("LOCAL_GATEWAY_RUN_TIMEOUT_SEC", 60),
 		MaxRunTimeoutSeconds: envInt("LOCAL_GATEWAY_MAX_RUN_TIMEOUT_SEC", 300),
 	}
-	if !strings.HasPrefix(cfg.ListenAddr, ":") && !strings.Contains(cfg.ListenAddr, ":") {
-		cfg.ListenAddr = ":" + cfg.ListenAddr
-	}
+	cfg.ListenAddr = normalizeListenAddr(cfg.ListenAddr)
 	return cfg, cfg.Validate()
+}
+
+// normalizeListenAddr accepts ":8091", "8091", or "host:port".
+// A bare port becomes 127.0.0.1:<port> (loopback), not 0.0.0.0.
+func normalizeListenAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "127.0.0.1:8091"
+	}
+	// Bare port → loopback.
+	if !strings.Contains(addr, ":") {
+		return "127.0.0.1:" + addr
+	}
+	// ":8091" → all interfaces (explicit operator choice via leading colon).
+	// Keep as-is so operators who want LAN bind can set LOCAL_GATEWAY_PORT=:8091.
+	return addr
+}
+
+// ListenAddrExposesNonLoopback reports whether the listen address is likely
+// reachable from outside the host (used for a startup warning).
+func ListenAddrExposesNonLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// ":8091" form — SplitHostPort needs a host; try with placeholder.
+		if strings.HasPrefix(addr, ":") {
+			return true
+		}
+		return false
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// Hostname — treat as potentially non-loopback.
+		return !strings.EqualFold(host, "localhost")
+	}
+	return !ip.IsLoopback()
 }
 
 // Validate checks required fields and security-sensitive bounds.

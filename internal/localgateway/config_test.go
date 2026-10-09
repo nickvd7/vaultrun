@@ -58,3 +58,33 @@ func TestConfigBounds(t *testing.T) {
 		t.Fatal("expected upstream timeout lower bound")
 	}
 }
+
+func TestNormalizeListenAddrDefaultsToLoopback(t *testing.T) {
+	cases := map[string]string{
+		"8091":            "127.0.0.1:8091",
+		"127.0.0.1:8091":  "127.0.0.1:8091",
+		":8091":           ":8091", // explicit all-interfaces
+		"0.0.0.0:8091":    "0.0.0.0:8091",
+		"":                "127.0.0.1:8091",
+	}
+	for in, want := range cases {
+		if got := normalizeListenAddr(in); got != want {
+			t.Errorf("normalizeListenAddr(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestListenAddrExposesNonLoopback(t *testing.T) {
+	if ListenAddrExposesNonLoopback("127.0.0.1:8091") {
+		t.Fatal("loopback should not warn")
+	}
+	if ListenAddrExposesNonLoopback("localhost:8091") {
+		t.Fatal("localhost should not warn")
+	}
+	if !ListenAddrExposesNonLoopback(":8091") {
+		t.Fatal(":port should warn")
+	}
+	if !ListenAddrExposesNonLoopback("0.0.0.0:8091") {
+		t.Fatal("0.0.0.0 should warn")
+	}
+}

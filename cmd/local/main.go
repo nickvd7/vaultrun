@@ -42,6 +42,12 @@ func main() {
 	defer stop()
 
 	go func() {
+		if localgateway.ListenAddrExposesNonLoopback(cfg.ListenAddr) {
+			slog.Warn("local-gateway: listening on a non-loopback address — "+
+				"this exposes a sandbox-capable API to the network; "+
+				"prefer LOCAL_GATEWAY_PORT=127.0.0.1:8091 unless intentional",
+				"addr", cfg.ListenAddr)
+		}
 		slog.Info("local-gateway: listening",
 			"addr", cfg.ListenAddr,
 			"upstream", cfg.UpstreamURL,

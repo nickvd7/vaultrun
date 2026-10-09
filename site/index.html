@@ -11,7 +11,7 @@
 <link rel="canonical" href="https://vaultrun.dev/">
 <link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
 <meta property="og:title" content="VaultRun — self-hosted secure runtime for AI agents">
-<meta property="og:description" content="Local-first runtime for AI agents — cloud or local models. Isolated Docker sandboxes, MCP tools, missions, verify checkpoints, signed audit trail.">
+<meta property="og:description" content="Local-first runtime for AI agents — cloud or local models. Isolated Docker sandboxes, MCP tools, missions, verify checkpoints with sealed evidence, signed audit trail.">
 <meta property="og:url" content="https://vaultrun.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VaultRun">
@@ -52,7 +52,7 @@
       "url": "https://vaultrun.dev/",
       "downloadUrl": "https://github.com/nickvd7/vaultrun",
       "codeRepository": "https://github.com/nickvd7/vaultrun",
-      "description": "Self-hosted secure runtime for AI agents — including local models — with isolated Docker sandboxes, a 53-tool MCP server, local inference gateway, Python and Go SDKs, and an HMAC-signed audit trail.",
+      "description": "Self-hosted secure runtime for AI agents — including local models — with isolated Docker sandboxes, a 53-tool MCP server, local inference gateway, verify checkpoints with sealed evidence exports, Python and Go SDKs, and an HMAC-signed audit trail.",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -657,7 +657,7 @@
       <div class="cell"><span class="idx">07 / sdk/go + sdk/python</span><h3>SDKs</h3><p>Typed Go client and a Python client. Same API, your language.</p></div>
       <div class="cell"><span class="idx">08 / enterprise</span><h3>Enterprise SSO</h3><p>OIDC (PKCE) + SAML 2.0 with org-aware RBAC. Okta, Azure AD, Google, Keycloak. <em>VaultRun Enterprise.</em></p></div>
       <div class="cell"><span class="idx">09 / internal/audit</span><h3>Audit trail</h3><p>Every action HMAC-signed and queryable. Tamper-evident by design.</p></div>
-      <div class="cell"><span class="idx">10 / internal/verify</span><h3>Verify + controls</h3><p>Post-run checkpoints, plus a frozen suite that certifies the evaluator itself.</p></div>
+      <div class="cell"><span class="idx">10 / internal/verify</span><h3>Verify + evidence</h3><p>Post-run checkpoints, a frozen control suite that certifies the evaluator, and sealed digests you can export.</p></div>
       <div class="cell"><span class="idx">11 / internal/policy</span><h3>Policy hook</h3><p>Pluggable policy layer, OPA-ready. Decide what agents may run, centrally.</p></div>
     </div>
   </div>
@@ -672,7 +672,7 @@
     <p class="wf-flow" aria-hidden="true"><b>mission</b> → verify → memory → swarm → cost → <b>yours</b></p>
     <div class="wf-rail" role="list">
       <div class="cell" role="listitem"><span class="idx">01 / missions</span><h3>Named sequences</h3><p>Versioned tool steps you can inspect, share in an org, and re-run — including auto-capture from local-model tool loops.</p></div>
-      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files — and run frozen controls that prove the evaluator itself discriminates.</p></div>
+      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files. Anti-shortcut controls certify the evaluator; export sealed digests (+ optional HMAC) as portable evidence.</p></div>
       <div class="cell" role="listitem"><span class="idx">03 / memory</span><h3>Sandbox notes</h3><p>Persist agent scratch under <code>.vaultrun/memory/</code>; snapshots carry it forward.</p></div>
       <div class="cell" role="listitem"><span class="idx">04 / swarm</span><h3>Agent graph</h3><p>Directed edges between agents (lead / review / handoff) on collaborative sessions.</p></div>
       <div class="cell" role="listitem"><span class="idx">05 / cost</span><h3>Replay spend</h3><p>Attribute session cost metrics to a mission run without mutating immutable billing rows.</p></div>
@@ -874,6 +874,7 @@ fmt.Println(*run.Stdout)</pre>
       <li>Path traversal prevention at the workspace layer</li>
       <li>API keys stored as SHA-256 hashes, never plaintext</li>
       <li>HMAC-signed audit trail for every action</li>
+      <li>Sealed verify evidence — content digests, optional <code>AUDIT_HMAC_KEY</code> signatures</li>
       <li>OIDC with PKCE + state validation; SAML XMLDSig verification</li>
       <li>Session cookies: HttpOnly, Secure, HS256-signed</li>
       <li>Rate limiting + security headers on the MCP HTTP transport</li>

@@ -122,13 +122,13 @@
     <div class="tag">04 / platform / workflows</div>
     <h2>Workflow-as-asset: save, verify, replay</h2>
     <p><strong style="color:var(--fg)">Problem.</strong> Agent wins live in ephemeral chats. Teams cannot re-run a proven plan, prove what passed, or attribute spend to a named workflow.</p>
-    <p><strong style="color:var(--fg)">Pattern.</strong> Capture successful tool sequences as VaultRun <em>missions</em> on your infra. Attach verify checkpoints after runs, keep agent notes in sandbox memory, optionally describe swarm edges for multi-agent sessions, and snapshot cost attribution when you replay.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Capture successful tool sequences as VaultRun <em>missions</em> on your infra. Attach verify checkpoints after runs, export sealed evidence digests when you need a portable proof, keep agent notes in sandbox memory, optionally describe swarm edges for multi-agent sessions, and snapshot cost attribution when you replay.</p>
     <ul>
       <li>Missions API — named, versioned steps you own</li>
-      <li>Verify — exit code / stdout / file assertions (+ control suite for the evaluator)</li>
+      <li>Verify — exit / stdout / file assertions, anti-shortcut control suite, sealed evidence export</li>
       <li>Local-first — no SaaS; audit + assets stay on your network</li>
     </ul>
-    <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets, not disposable transcripts.</p>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets with exportable proof, not disposable transcripts.</p>
   </article>
 
   <article>

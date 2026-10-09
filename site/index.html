@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun — self-hosted secure runtime for AI agents</title>
-<meta name="description" content="Self-hosted secure runtime for AI agents. Local-first workflow assets — missions, verify, memory, swarm graph — in Docker sandboxes on your infra. No SaaS, no telemetry.">
-<meta name="keywords" content="AI agents, MCP server, Docker sandbox, code execution, self-hosted, workflow as asset, missions, Claude, OpenAI, audit trail">
+<meta name="description" content="Self-hosted secure runtime for AI agents — including local models. Sandboxed actions on your infra, workflow assets, verified and audited. No SaaS, no telemetry.">
+<meta name="keywords" content="AI agents, local AI, Ollama, LM Studio, MCP server, Docker sandbox, code execution, self-hosted, workflow as asset, missions, Claude, OpenAI, audit trail">
 <meta name="author" content="VaultRun">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://vaultrun.dev/">
 <link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
 <meta property="og:title" content="VaultRun — self-hosted secure runtime for AI agents">
-<meta property="og:description" content="Local-first workflow assets for AI agents. Isolated Docker sandboxes, MCP tools, missions, verify checkpoints, signed audit trail.">
+<meta property="og:description" content="Local-first runtime for AI agents — cloud or local models. Isolated Docker sandboxes, MCP tools, missions, verify checkpoints, signed audit trail.">
 <meta property="og:url" content="https://vaultrun.dev/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VaultRun">
@@ -22,7 +22,7 @@
 <meta property="og:image:alt" content="VaultRun — self-hosted secure runtime for AI agents">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="VaultRun — self-hosted secure runtime for AI agents">
-<meta name="twitter:description" content="Isolated Docker sandboxes and a 53-tool MCP server for AI agents. Self-hosted, no SaaS, no telemetry.">
+<meta name="twitter:description" content="Self-hosted sandboxes for AI agents — including local models. MCP, missions, verify. No SaaS, no telemetry.">
 <meta name="twitter:image" content="https://vaultrun.dev/brand/og.png">
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
@@ -52,7 +52,7 @@
       "url": "https://vaultrun.dev/",
       "downloadUrl": "https://github.com/nickvd7/vaultrun",
       "codeRepository": "https://github.com/nickvd7/vaultrun",
-      "description": "Self-hosted secure runtime for AI agents with isolated Docker sandboxes, a 53-tool MCP server, Python and Go SDKs, and an HMAC-signed audit trail.",
+      "description": "Self-hosted secure runtime for AI agents — including local models — with isolated Docker sandboxes, a 53-tool MCP server, local inference gateway, Python and Go SDKs, and an HMAC-signed audit trail.",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -489,6 +489,7 @@
     <a href="#workflows">workflows</a>
     <a href="#mcp">mcp</a>
     <a href="#sdk">sdk</a>
+    <a href="#local">local ai</a>
     <a href="#flowd">flowd</a>
     <a href="#security">security</a>
     <a href="/enterprise.html">enterprise</a>
@@ -510,16 +511,16 @@
   ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
 </pre>
     <p class="tagline cursor">VaultRun</p>
-    <p class="sub">Self-hosted secure runtime for AI agents. Save workflows as assets on
-    <em>your</em> infra — sandboxed, verified, audited. No SaaS. No telemetry.</p>
+    <p class="sub">Self-hosted secure runtime for AI agents — cloud or <em>local</em> models.
+    Sandboxed actions on <em>your</em> infra. Workflows as assets. No SaaS. No telemetry.</p>
     <div class="badges">
       <span>mode <b>local-first</b></span>
-      <span>license <b>apache-2.0 core</b></span>
+      <span>local ai <b>ollama · lm studio</b></span>
       <span>mcp <b>53+ tools</b></span>
       <span>assets <b>missions · verify · memory</b></span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#workflows">see workflows →</a>
+      <a class="btn primary" href="#local">local ai →</a>
       <a class="btn ghost" href="#quickstart">$ install</a>
       <a class="btn ghost" href="https://github.com/nickvd7/vaultrun">github ↗</a>
     </div>
@@ -602,7 +603,7 @@
     <p class="h2-big">One API between your agent and the blast radius.</p>
 <pre class="diagram desktop-only">
 ┌──────────────────────────────────────────────────────────────┐
-│  <b>Your AI agent</b>  (Claude, GPT, custom, …)                     │
+│  <b>Your AI agent</b>  (Claude, GPT, Ollama, custom, …)              │
 │                                                              │
 │  result = client.run(session_id,                             │
 │      command="python", args=["analyze.py"])                  │
@@ -623,7 +624,7 @@
     <div class="flow-stack" aria-label="How VaultRun works">
       <div class="flow-card">
         <strong>Your AI agent</strong>
-        Claude, GPT, or custom — calls <code>client.run(session_id, …)</code> with a command.
+        Claude, GPT, Ollama, or custom — calls <code>client.run(session_id, …)</code> with a command.
       </div>
       <div class="flow-arrow">↓ API key</div>
       <div class="flow-card">
@@ -645,17 +646,19 @@
 <section id="features">
   <div class="wrap">
     <h2>what's in the box</h2>
-    <p class="h2-big">Nine components, one repo.</p>
+    <p class="h2-big">Eleven components, one repo.</p>
     <div class="grid">
       <div class="cell"><span class="idx">01 / cmd/api</span><h3>API server</h3><p>Gin-based REST API — sessions, runs, files, audit logs, key management.</p></div>
       <div class="cell"><span class="idx">02 / sdk/mcp</span><h3>MCP server</h3><p>53 tools over stdio <em>and</em> HTTP. Claude, OpenAI, OpenRouter, custom agents.</p></div>
-      <div class="cell"><span class="idx">03 / cmd/cli</span><h3>CLI</h3><p>The <code>vaultrun</code> command-line tool for sessions, files, runs and logs.</p></div>
-      <div class="cell"><span class="idx">04 / cmd/ci-runner</span><h3>CI runner</h3><p>GitHub webhook → sandboxed CI with Slack / Teams notifications.</p></div>
-      <div class="cell"><span class="idx">05 / apps/frontend</span><h3>Dashboard</h3><p>Next.js management UI with a server-side API proxy — keys never reach the browser.</p></div>
-      <div class="cell"><span class="idx">06 / sdk/go + sdk/python</span><h3>SDKs</h3><p>Typed Go client and a Python client. Same API, your language.</p></div>
-      <div class="cell"><span class="idx">07 / enterprise</span><h3>Enterprise SSO</h3><p>OIDC (PKCE) + SAML 2.0 with org-aware RBAC. Okta, Azure AD, Google, Keycloak. <em>VaultRun Enterprise.</em></p></div>
-      <div class="cell"><span class="idx">08 / internal/audit</span><h3>Audit trail</h3><p>Every action HMAC-signed and queryable. Tamper-evident by design.</p></div>
-      <div class="cell"><span class="idx">09 / internal/policy</span><h3>Policy hook</h3><p>Pluggable policy layer, OPA-ready. Decide what agents may run, centrally.</p></div>
+      <div class="cell"><span class="idx">03 / cmd/local</span><h3>Local gateway</h3><p>OpenAI-compat action plane for Ollama / LM Studio / vLLM — tool calls land in sandboxes.</p></div>
+      <div class="cell"><span class="idx">04 / cmd/cli</span><h3>CLI</h3><p>The <code>vaultrun</code> command-line tool for sessions, files, runs and logs.</p></div>
+      <div class="cell"><span class="idx">05 / cmd/ci-runner</span><h3>CI runner</h3><p>GitHub webhook → sandboxed CI with Slack / Teams notifications.</p></div>
+      <div class="cell"><span class="idx">06 / apps/frontend</span><h3>Dashboard</h3><p>Next.js management UI with a server-side API proxy — keys never reach the browser.</p></div>
+      <div class="cell"><span class="idx">07 / sdk/go + sdk/python</span><h3>SDKs</h3><p>Typed Go client and a Python client. Same API, your language.</p></div>
+      <div class="cell"><span class="idx">08 / enterprise</span><h3>Enterprise SSO</h3><p>OIDC (PKCE) + SAML 2.0 with org-aware RBAC. Okta, Azure AD, Google, Keycloak. <em>VaultRun Enterprise.</em></p></div>
+      <div class="cell"><span class="idx">09 / internal/audit</span><h3>Audit trail</h3><p>Every action HMAC-signed and queryable. Tamper-evident by design.</p></div>
+      <div class="cell"><span class="idx">10 / internal/verify</span><h3>Verify + controls</h3><p>Post-run checkpoints, plus a frozen suite that certifies the evaluator itself.</p></div>
+      <div class="cell"><span class="idx">11 / internal/policy</span><h3>Policy hook</h3><p>Pluggable policy layer, OPA-ready. Decide what agents may run, centrally.</p></div>
     </div>
   </div>
 </section>
@@ -668,8 +671,8 @@
     reusable tool sequences as first-class <em>missions</em> on your infra — verified, remembered, and cost-aware when you replay.</p>
     <p class="wf-flow" aria-hidden="true"><b>mission</b> → verify → memory → swarm → cost → <b>yours</b></p>
     <div class="wf-rail" role="list">
-      <div class="cell" role="listitem"><span class="idx">01 / missions</span><h3>Named sequences</h3><p>Versioned tool steps you can inspect, share in an org, and re-run against a fresh sandbox.</p></div>
-      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files after a run — fail closed before the next step.</p></div>
+      <div class="cell" role="listitem"><span class="idx">01 / missions</span><h3>Named sequences</h3><p>Versioned tool steps you can inspect, share in an org, and re-run — including auto-capture from local-model tool loops.</p></div>
+      <div class="cell" role="listitem"><span class="idx">02 / verify</span><h3>Checkpoints</h3><p>Assert exit codes, stdout, and files — and run frozen controls that prove the evaluator itself discriminates.</p></div>
       <div class="cell" role="listitem"><span class="idx">03 / memory</span><h3>Sandbox notes</h3><p>Persist agent scratch under <code>.vaultrun/memory/</code>; snapshots carry it forward.</p></div>
       <div class="cell" role="listitem"><span class="idx">04 / swarm</span><h3>Agent graph</h3><p>Directed edges between agents (lead / review / handoff) on collaborative sessions.</p></div>
       <div class="cell" role="listitem"><span class="idx">05 / cost</span><h3>Replay spend</h3><p>Attribute session cost metrics to a mission run without mutating immutable billing rows.</p></div>
@@ -786,6 +789,45 @@ run, _ := client.Run(ctx, s.ID,
 fmt.Println(*run.Stdout)</pre>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section id="local">
+  <div class="wrap">
+    <h2>local inference</h2>
+    <p class="h2-big">Ollama thinks. VaultRun acts.</p>
+    <p class="sub">Point Open WebUI, Continue, or any OpenAI-compatible client at
+    <code>vaultrun-local</code>. Chat goes to your local model; tool calls run in
+    isolated Docker sandboxes on your infra — with optional mission capture when a loop succeeds.</p>
+<pre class="diagram desktop-only">
+  <b>Open WebUI / Continue</b>     <b>vaultrun-local</b>              <b>Ollama / LM Studio</b>
+  OpenAI-compat client    →    /v1/chat/completions    →    local model
+                                      │ tool_calls
+                                      ▼
+                               <b>VaultRun sandbox</b>
+                               run · files · audit · mission
+</pre>
+    <div class="flow-stack" aria-label="Local inference gateway">
+      <div class="flow-card">
+        <strong>Local model</strong>
+        Ollama, LM Studio, vLLM, … — stays on your machine.
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-card">
+        <strong>vaultrun-local</strong>
+        OpenAI-compat gateway — injects sandbox tools, streams the final answer.
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-card">
+        <strong>VaultRun sandbox</strong>
+        Isolated Docker session — network off by default, signed audit.
+      </div>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/nickvd7/vaultrun/blob/main/docs/local-gateway.md">gateway docs ↗</a>
+      <a class="btn ghost" href="https://github.com/nickvd7/vaultrun/tree/main/examples/local-gateway">client recipes ↗</a>
+      <a class="btn ghost" href="#quickstart">$ install</a>
     </div>
   </div>
 </section>

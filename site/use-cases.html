@@ -76,7 +76,7 @@
 
 <div class="wrap">
   <h1>Use cases</h1>
-  <p class="lede">How teams typically deploy VaultRun. These are reference patterns — not named customer case studies — based on the product’s real capabilities (sandboxes, MCP, CI runner, Enterprise SSO).</p>
+  <p class="lede">How teams typically deploy VaultRun. These are reference patterns — not named customer case studies — based on the product’s real capabilities (sandboxes, MCP, local inference gateway, CI runner, Enterprise SSO).</p>
   <div class="note">Want a walkthrough on your infra? <a href="/#contact">Propose call times</a>.</div>
 
   <article>
@@ -125,10 +125,23 @@
     <p><strong style="color:var(--fg)">Pattern.</strong> Capture successful tool sequences as VaultRun <em>missions</em> on your infra. Attach verify checkpoints after runs, keep agent notes in sandbox memory, optionally describe swarm edges for multi-agent sessions, and snapshot cost attribution when you replay.</p>
     <ul>
       <li>Missions API — named, versioned steps you own</li>
-      <li>Verify — exit code / stdout / file assertions</li>
+      <li>Verify — exit code / stdout / file assertions (+ control suite for the evaluator)</li>
       <li>Local-first — no SaaS; audit + assets stay on your network</li>
     </ul>
     <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets, not disposable transcripts.</p>
+  </article>
+
+  <article>
+    <div class="tag">05 / local AI</div>
+    <h2>Local models that can act — without a SaaS runner</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> Ollama / LM Studio can chat. Giving them shell or tools on the host is an open blast radius; shipping execution to a cloud sandbox fights the reason you went local.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Run <code>vaultrun-local</code> as an OpenAI-compatible gateway. Clients (Open WebUI, Continue, LiteLLM) talk to your local model; tool calls execute in VaultRun sandboxes. Successful loops can auto-capture as missions.</p>
+    <ul>
+      <li>Model stays local; actions stay sandboxed on your infra</li>
+      <li>Network off by default; signed audit on every tool call</li>
+      <li>Recipes for Open WebUI / Continue / LiteLLM in <code>examples/local-gateway/</code></li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Local AI with a controlled action plane — think local, act contained.</p>
   </article>
 
   <div class="cta">

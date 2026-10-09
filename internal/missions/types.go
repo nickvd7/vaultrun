@@ -21,6 +21,10 @@ type StepVerify struct {
 	ExitCodeZero   *bool  `json:"exit_code_zero,omitempty"`
 	StdoutContains string `json:"stdout_contains,omitempty"`
 	FileExists     string `json:"file_exists,omitempty"`
+	// Optional Jev (TypeSafe) claim gate — requires VAULTRUN_JEV_ENABLED + TYPESAFE_API_KEY.
+	JevClaim   string  `json:"jev_claim,omitempty"`
+	JevMinNoul float64 `json:"jev_min_noul,omitempty"` // default 0.7
+	JevOnFail  string  `json:"jev_on_fail,omitempty"`  // fail | hold
 }
 
 // Mission is a reusable, versioned tool sequence.

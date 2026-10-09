@@ -6,6 +6,8 @@ package main
 
 import (
 	"encoding/json"
+
+	"github.com/nickvd7/vaultrun/internal/jev"
 )
 
 // ---------------------------------------------------------------------------
@@ -113,6 +115,7 @@ type server struct {
 	awsBundle    *awsBundle   // nil when AWS is not configured
 	db           *dbBundle    // nil when no DB is configured
 	flowd        *flowdConfig // nil when Flowd is not enabled
+	jev          *jev.Client  // nil when Jev is not enabled
 }
 
 func newServer(client *vaultRunClient, defaultImage, githubToken string, fs fsConfig) *server {

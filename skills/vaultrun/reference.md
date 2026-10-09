@@ -15,6 +15,7 @@
 | `MCP_AUTH_TOKEN` | Bearer token for HTTP transport |
 | `MCP_AWS_ENABLED` | `true` → 14 AWS tools |
 | `MCP_FLOWD_ENABLED` | `true` → 6 Flowd tools |
+| `MCP_JEV_ENABLED` | `true` → `jev_verify`, `jev_gate` |
 | `FLOWCTL_PATH` | Path to flowctl (default: `flowctl`) |
 | `FLOWD_CONFIG` | flowctl `--config` path |
 | `MCP_FS_ALLOWED_PATHS` | Comma-separated absolute paths for fs_* tools |
@@ -23,12 +24,25 @@
 | `MCP_MONGO_URI` / `MCP_MONGO_DB` | MongoDB tools |
 | `GITHUB_TOKEN` | GitHub clone/comment tools |
 
+## Jev / OpenJEV env (outside MCP)
+
+| Variable | Description |
+|----------|-------------|
+| `OPENJEV_API_KEY` | OpenJEV (`api.openjev.sh`) |
+| `TYPESAFE_API_KEY` | TypeSafe Jev |
+| `JEV_PROVIDER` | `openjev` \| `typesafe` (optional auto-detect) |
+| `VAULTRUN_JEV_ENABLED` | API claim gates |
+| `LOCAL_GATEWAY_JEV_ENABLED` | Local-gateway completion gate |
+| `LOCAL_GATEWAY_JEV_ON_FAIL` | `hold` \| `fail` |
+| `JEV_ALLOW_PRIVATE_BASE` | Allow loopback/self-hosted OpenJev base |
+
 ## Tool counts
 
-- Core: 53 tools (always)
+- Core: 53 tools (always) — includes `verify_checkpoint`, `verify_controls`, `verify_evidence`
 - + AWS: 14 (when `MCP_AWS_ENABLED=true`)
 - + DB: varies by configured databases
 - + Flowd: 6 (when `MCP_FLOWD_ENABLED=true`)
+- + Jev: 2 (when `MCP_JEV_ENABLED=true`)
 
 ## Makefile targets
 
@@ -48,5 +62,7 @@
 ## Links
 
 - Repository: https://github.com/nickvd7/vaultrun
+- Product / LLM index: https://vaultrun.dev/llms.txt
 - PyPI SDK: https://pypi.org/project/vaultrun-sdk/
 - Plugin publish guide: https://github.com/nickvd7/vaultrun/blob/main/docs/plugin-publish.md
+- OpenJEV: https://openjev.sh/

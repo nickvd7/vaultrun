@@ -266,13 +266,20 @@ func newRouter(
 	authGroup.POST("/orgs/:id/budget", costH.SetBudget)
 	authGroup.GET("/costs/rates", costH.GetRates)
 
-	// Verify checkpoints — post-run / post-step assertions
+	// Verify checkpoints — post-run / post-step assertions + evidence export
 	verifyStore := verify.NewStore(db)
 	verifyH := handlers.NewVerifyHandler(hub, verifyStore)
 	authGroup.POST("/verify", verifyH.Evaluate)
 	authGroup.GET("/verify/controls", verifyH.Controls)
 	authGroup.POST("/verify/controls", verifyH.Controls)
+	authGroup.POST("/verify/evidence", verifyH.Evidence)
+	authGroup.GET("/verifications/:id/evidence", verifyH.GetEvidence)
 	authGroup.GET("/sessions/:id/verifications", verifyH.ListBySession)
+
+	// Jev (TypeSafe) claim/evidence gate — opt-in via VAULTRUN_JEV_ENABLED
+	jevH := handlers.NewJevHandler(hub, verifyStore, missionsManager)
+	authGroup.POST("/verify/jev", jevH.VerifyClaims)
+	authGroup.POST("/verify/jev-gate", jevH.Gate)
 
 	// Natural Language Policy endpoints — LLM-powered policy generation
 	nlPolicyH := handlers.NewNLPolicyHandler(hub)
@@ -309,6 +316,7 @@ func newRouter(
 		authGroup.POST("/missions/:id/runs/:run_id/attribute-costs", missionsH.AttributeRunCosts)
 		authGroup.GET("/missions/:id/runs/:run_id/costs", missionsH.GetRunCosts)
 		authGroup.GET("/missions/:id/costs", missionsH.GetMissionCosts)
+		authGroup.POST("/missions/:id/steps/verify", jevH.MissionStepVerify)
 	}
 
 	// Replay endpoints — checkpoint creation, restore, fork (time-travel debugging)

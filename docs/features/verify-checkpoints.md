@@ -49,9 +49,17 @@ Frozen positive/negative suite that certifies the evaluator itself:
 - MCP: `verify_controls`
 - Spec: [verify-controls.md](verify-controls.md)
 
+## Evidence export
+
+Sealed digests (+ optional HMAC) for checkpoints and/or controls:
+
+- API: `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`
+- MCP: `verify_evidence`
+- Spec: [verify-evidence.md](verify-evidence.md)
+
 ## Code
 
-- `internal/verify` — evaluate + store + controls
+- `internal/verify` — evaluate + store + controls + evidence
 - `cmd/api/handlers/verify.go`
 - Migration `018_run_verifications`
 - `sdk/mcp/verify.go`

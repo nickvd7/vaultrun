@@ -1,7 +1,7 @@
 {
   "name": "vaultrun",
-  "description": "Self-hosted secure runtime for AI agents — repo map, MCP setup, Flowd integration, and VaultRun conventions for coding assistants.",
-  "version": "1.0.0",
+  "description": "Self-hosted secure runtime for AI agents — sandboxes, MCP, verify evidence, OpenJEV/Jev gates, Flowd, and VaultRun conventions.",
+  "version": "1.1.0",
   "author": {
     "name": "VaultRun",
     "email": "mail@030.dev",
@@ -10,6 +10,6 @@
   "homepage": "https://vaultrun.dev",
   "repository": "https://github.com/nickvd7/vaultrun",
   "license": "Apache-2.0",
-  "keywords": ["vaultrun", "mcp", "ai-agents", "sandbox", "self-hosted", "docker", "flowd"],
+  "keywords": ["vaultrun", "mcp", "ai-agents", "sandbox", "self-hosted", "docker", "flowd", "openjev", "verify", "jev"],
   "skills": ["./skills/vaultrun"]
 }

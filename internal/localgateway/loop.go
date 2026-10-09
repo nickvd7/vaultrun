@@ -45,6 +45,7 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 	messages := append([]ChatMessage(nil), req.Messages...)
 	tools := mergeTools(req.Tools)
 	var captured []capturedStep
+	jevRetries := 0
 
 	for i := 0; i < g.cfg.MaxToolLoops; i++ {
 		upReq := ChatRequest{
@@ -65,6 +66,17 @@ func (g *Gateway) RunChatLoop(ctx context.Context, req ChatRequest, conversation
 		}
 		msg := resp.Choices[0].Message
 		if len(msg.ToolCalls) == 0 {
+			if gateErr := g.maybeJevCompletionGate(ctx, msg.Content, messages, captured, &jevRetries); gateErr != nil {
+				if gateErr == errJevContinue {
+					// Push a system nudge and continue the tool loop.
+					messages = append(messages, ChatMessage{
+						Role:    "user",
+						Content: "Your previous answer failed the completion evidence gate. Continue working: gather stronger evidence with tools, then answer again only when claims are backed by tool results.",
+					})
+					continue
+				}
+				return nil, gateErr
+			}
 			if resp.ID == "" {
 				resp.ID = "chatcmpl-" + uuid.NewString()
 			}

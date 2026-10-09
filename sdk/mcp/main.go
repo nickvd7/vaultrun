@@ -57,6 +57,14 @@
 //	MCP_FLOWD_ENABLED  Set to "true" to expose flowd_* tools via local flowctl
 //	FLOWCTL_PATH       Path to flowctl binary (default: flowctl)
 //	FLOWD_CONFIG       Optional config file for flowctl (--config)
+//
+// Jev environment variables (optional — TypeSafe / OpenJEV claim/evidence gate):
+//
+//	MCP_JEV_ENABLED    Set to "true" to expose jev_verify / jev_gate
+//	JEV_PROVIDER       typesafe | openjev (https://openjev.sh)
+//	OPENJEV_API_KEY    OpenJEV API key (api.openjev.sh)
+//	TYPESAFE_API_KEY   TypeSafe API key (or JEV_API_KEY)
+//	JEV_MODEL          Optional model override
 package main
 
 import (
@@ -125,6 +133,14 @@ func main() {
 	initFlowd(srv)
 	if srv.flowd != nil {
 		slog.Info("vaultrun-mcp: Flowd tools enabled", "flowctl", srv.flowd.flowctlPath)
+	}
+
+	initJev(srv)
+	if srv.jev != nil {
+		slog.Info("vaultrun-mcp: Jev tools enabled",
+			"provider", srv.jev.Provider, "base_url", srv.jev.BaseURL, "model", srv.jev.Model)
+	} else if jevEnabled() {
+		slog.Warn("vaultrun-mcp: MCP_JEV_ENABLED=true but Jev client not configured (check OPENJEV_API_KEY or TYPESAFE_API_KEY)")
 	}
 
 	switch os.Getenv("MCP_TRANSPORT") {

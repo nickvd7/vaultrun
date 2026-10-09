@@ -3,7 +3,10 @@ package localgateway
 import (
 	"context"
 	"io"
+	"log/slog"
+	"os"
 
+	"github.com/nickvd7/vaultrun/internal/jev"
 	vaultrun "github.com/nickvd7/vaultrun/sdk/go"
 )
 
@@ -24,6 +27,7 @@ type Gateway struct {
 	vr       VaultRunClient
 	upstream ChatUpstream
 	missions MissionAPI
+	jev      *jev.Client // nil when completion gate disabled
 	sessions *SessionStore
 	limiter  *ipRateLimiter
 }
@@ -45,6 +49,12 @@ func (g *Gateway) WithMissions(m MissionAPI) *Gateway {
 	return g
 }
 
+// WithJev attaches a TypeSafe Jev client for completion gating (optional).
+func (g *Gateway) WithJev(c *jev.Client) *Gateway {
+	g.jev = c
+	return g
+}
+
 // NewFromConfig builds VaultRun + upstream clients from config.
 func NewFromConfig(cfg Config) *Gateway {
 	vr := vaultrun.New(cfg.VaultRunBaseURL, cfg.VaultRunAPIKey)
@@ -52,6 +62,17 @@ func NewFromConfig(cfg Config) *Gateway {
 	g := New(cfg, vr, up)
 	if cfg.CaptureMissions {
 		g.WithMissions(newHTTPMissionAPI(cfg.VaultRunBaseURL, cfg.VaultRunAPIKey))
+	}
+	if cfg.JevEnabled {
+		jc, err := jev.ConfigFromEnv(os.Getenv)
+		if err != nil {
+			// Fail closed at request time via maybeJevCompletionGate when jev==nil && enabled.
+			slog.Error("localgateway: LOCAL_GATEWAY_JEV_ENABLED=true but Jev client not configured — completions will be blocked", "err", err)
+		} else {
+			g.WithJev(jc)
+			slog.Info("localgateway: Jev completion gate enabled",
+				"provider", jc.Provider, "base_url", jc.BaseURL, "min_noul", cfg.JevMinNoul, "on_fail", cfg.JevOnFail)
+		}
 	}
 	return g
 }

@@ -18,6 +18,8 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 | Agent memory (sandbox) | ✅ Shipped | MCP `memory_*` → `.vaultrun/memory/` |
 | Local Inference Gateway | ✅ Shipped | `cmd/local`, `internal/localgateway` |
 | Verify controls | ✅ Shipped | `internal/verify/controls.go`, `/verify/controls` |
+| Verify evidence | ✅ Shipped | `internal/verify/evidence.go`, `/verify/evidence` |
+| Jev / OpenJEV gate | ✅ Shipped (opt-in) | `internal/jev`, OpenJEV + TypeSafe providers |
 
 **Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1. Verify checkpoints, agent memory, and the local inference gateway added later as workflow / local-AI foundation.
 
@@ -37,6 +39,8 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 9. **[workflow-as-asset.md](workflow-as-asset.md)** — local-first positioning for missions / verify / memory / swarm / cost
 10. **[local-inference-gateway.md](local-inference-gateway.md)** — OpenAI-compat action plane for Ollama/LM Studio · also [../local-gateway.md](../local-gateway.md)
 11. **[verify-controls.md](verify-controls.md)** — frozen pos/neg suite certifying the verify evaluator
+12. **[verify-evidence.md](verify-evidence.md)** — sealed verification export (`content_digest` + optional HMAC)
+13. **[jev-integration.md](jev-integration.md)** — TypeSafe / OpenJEV claim-vs-evidence gates
 
 ## Supporting documentation
 

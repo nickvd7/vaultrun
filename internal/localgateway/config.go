@@ -50,6 +50,14 @@ type Config struct {
 	MaxRunTimeoutSeconds int
 	// CaptureMissions saves successful VaultRun tool sequences as missions.
 	CaptureMissions bool
+	// JevEnabled runs an optional TypeSafe completion gate before the final answer.
+	JevEnabled bool
+	// JevMinNoul threshold for complete + evidence_backed (default 0.7).
+	JevMinNoul float64
+	// JevOnFail is fail (block final answer) or hold (return 202-style error to retry).
+	JevOnFail string
+	// JevMaxRetries extra tool-loop rounds after a failed gate before hard-fail.
+	JevMaxRetries int
 }
 
 // LoadConfigFromEnv reads configuration from environment variables.
@@ -75,6 +83,10 @@ func LoadConfigFromEnv() (Config, error) {
 		MaxRunTimeoutSeconds: envInt("LOCAL_GATEWAY_MAX_RUN_TIMEOUT_SEC", 300),
 		// Default on — local AI workflows become owned assets. Disable with =false.
 		CaptureMissions: envOr("LOCAL_GATEWAY_CAPTURE_MISSIONS", "true") != "false",
+		JevEnabled:      envOr("LOCAL_GATEWAY_JEV_ENABLED", "false") == "true",
+		JevMinNoul:      envFloat("LOCAL_GATEWAY_JEV_MIN_NOUL", 0.7),
+		JevOnFail:       envOr("LOCAL_GATEWAY_JEV_ON_FAIL", "hold"),
+		JevMaxRetries:   envInt("LOCAL_GATEWAY_JEV_MAX_RETRIES", 1),
 	}
 	cfg.ListenAddr = normalizeListenAddr(cfg.ListenAddr)
 	return cfg, cfg.Validate()
@@ -156,6 +168,23 @@ func (c Config) Validate() error {
 	if c.DefaultImage == "" {
 		return fmt.Errorf("LOCAL_GATEWAY_DEFAULT_IMAGE must not be empty")
 	}
+	if c.JevEnabled {
+		if c.JevMinNoul < 0 || c.JevMinNoul > 1 {
+			return fmt.Errorf("LOCAL_GATEWAY_JEV_MIN_NOUL must be between 0 and 1")
+		}
+		switch strings.ToLower(c.JevOnFail) {
+		case "fail", "hold":
+		default:
+			return fmt.Errorf("LOCAL_GATEWAY_JEV_ON_FAIL must be fail or hold")
+		}
+		if c.JevMaxRetries < 0 || c.JevMaxRetries > 3 {
+			return fmt.Errorf("LOCAL_GATEWAY_JEV_MAX_RETRIES must be between 0 and 3")
+		}
+		// Require a key env so misconfigured gate fails at startup, not silently.
+		if os.Getenv("OPENJEV_API_KEY") == "" && os.Getenv("TYPESAFE_API_KEY") == "" && os.Getenv("JEV_API_KEY") == "" {
+			return fmt.Errorf("LOCAL_GATEWAY_JEV_ENABLED requires OPENJEV_API_KEY or TYPESAFE_API_KEY")
+		}
+	}
 	return nil
 }
 
@@ -211,6 +240,18 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func envFloat(key string, fallback float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseFloat(v, 64)
 	if err != nil {
 		return fallback
 	}

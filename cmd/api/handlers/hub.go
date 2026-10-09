@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -156,8 +157,8 @@ func parseUUID(c *gin.Context, param string) (uuid.UUID, bool) {
 //
 // Pattern: session, ok := h.checkSessionAccess(c, id, models.OrgRoleViewer)
 func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID, minRole string) (*models.Session, bool) {
-	session, err := dbpkg.GetSession(c.Request.Context(), h.db, sessionID)
-	if err == sql.ErrNoRows {
+	session, err := h.sessionIfAccessible(c, sessionID, minRole)
+	if err == errSessionAccessDenied {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return nil, false
 	}
@@ -165,23 +166,35 @@ func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID, minRole st
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return nil, false
 	}
+	return session, true
+}
+
+// errSessionAccessDenied is returned by sessionIfAccessible when the session
+// is missing or the caller lacks minRole (callers map this to a uniform 404).
+var errSessionAccessDenied = errors.New("session access denied")
+
+// sessionIfAccessible returns the session when the caller may access it.
+// Does not write an HTTP response — use when the caller needs a custom error body.
+func (h *Hub) sessionIfAccessible(c *gin.Context, sessionID uuid.UUID, minRole string) (*models.Session, error) {
+	session, err := dbpkg.GetSession(c.Request.Context(), h.db, sessionID)
+	if err == sql.ErrNoRows {
+		return nil, errSessionAccessDenied
+	}
+	if err != nil {
+		return nil, err
+	}
 	actor := middleware.Actor(c)
-	// Master key sees everything.
 	if actor == "master" {
-		return session, true
+		return session, nil
 	}
-	// Session owner always has full access regardless of role.
 	if session.CreatedBy == actor {
-		return session, true
+		return session, nil
 	}
-	// Org membership check: actor must be a member with sufficient role.
 	if session.OrgID != nil {
 		role, err := dbpkg.GetOrgMemberRole(c.Request.Context(), h.db, *session.OrgID, actor)
 		if err == nil && models.RoleAtLeast(role, minRole) {
-			return session, true
+			return session, nil
 		}
 	}
-	// Always return 404 (never 403) to avoid leaking session existence.
-	c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
-	return nil, false
+	return nil, errSessionAccessDenied
 }

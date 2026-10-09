@@ -297,19 +297,7 @@ func (vh *VerifyHandler) Evidence(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "spec must include at least one check"})
 			return
 		}
-		obs := verify.Observation{}
-		if req.Observation != nil {
-			obs = *req.Observation
-		}
-		if len(obs.Stdout) > verifyMaxStdoutBytes {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "observation.stdout too large"})
-			return
-		}
-		if len(obs.Stderr) > verifyMaxStdoutBytes {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "observation.stderr too large"})
-			return
-		}
-
+		var obs verify.Observation
 		sessionID := req.SessionID
 		if req.RunID != nil {
 			run, err := dbpkg.GetRun(c.Request.Context(), vh.h.db, *req.RunID)
@@ -327,23 +315,38 @@ func (vh *VerifyHandler) Evidence(c *gin.Context) {
 			}
 			sid := run.SessionID
 			sessionID = &sid
-			if obs.ExitCode == nil {
+			// Always bind observation to the persisted run — client overrides
+			// must not be HMAC-sealed under a real run_id (trust anchor).
+			if run.ExitCode != nil {
 				obs.ExitCode = run.ExitCode
 			}
-			if obs.Stdout == "" && run.Stdout != nil {
+			if run.Stdout != nil {
 				obs.Stdout = truncateVerifyBytes(*run.Stdout, verifyMaxStdoutBytes)
 			}
-			if obs.Stderr == "" && run.Stderr != nil {
+			if run.Stderr != nil {
 				obs.Stderr = truncateVerifyBytes(*run.Stderr, verifyMaxStdoutBytes)
 			}
 			in.RunID = req.RunID
-		} else if sessionID != nil {
-			if _, ok := vh.h.checkSessionAccess(c, *sessionID, models.OrgRoleViewer); !ok {
+		} else {
+			if req.Observation != nil {
+				obs = *req.Observation
+			}
+			if len(obs.Stdout) > verifyMaxStdoutBytes {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "observation.stdout too large"})
 				return
 			}
-		} else if req.Spec.FileExists != "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "session_id or run_id required for file_exists"})
-			return
+			if len(obs.Stderr) > verifyMaxStdoutBytes {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "observation.stderr too large"})
+				return
+			}
+			if sessionID != nil {
+				if _, ok := vh.h.checkSessionAccess(c, *sessionID, models.OrgRoleViewer); !ok {
+					return
+				}
+			} else if req.Spec.FileExists != "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "session_id or run_id required for file_exists"})
+				return
+			}
 		}
 
 		var probe verify.FileProbe
@@ -435,18 +438,32 @@ func (vh *VerifyHandler) GetEvidence(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// authorizeVerificationRead enforces session ACL. Missing session → master only;
-// unauthorized callers always get 404 (no existence leak).
+// authorizeVerificationRead enforces session ACL. Missing session → master only.
+// All denials use a uniform 404 "verification not found" (no session/ID oracle).
 func (vh *VerifyHandler) authorizeVerificationRead(c *gin.Context, rec *verify.Record) bool {
-	if rec.SessionID != nil {
-		_, ok := vh.h.checkSessionAccess(c, *rec.SessionID, models.OrgRoleViewer)
-		return ok
+	deny := func() bool {
+		c.JSON(http.StatusNotFound, gin.H{"error": "verification not found"})
+		return false
 	}
-	if middleware.Actor(c) == "master" {
-		return true
+	if rec.SessionID == nil {
+		if middleware.Actor(c) == "master" {
+			return true
+		}
+		return deny()
 	}
-	c.JSON(http.StatusNotFound, gin.H{"error": "verification not found"})
-	return false
+	if vh.h == nil {
+		return deny()
+	}
+	_, err := vh.h.sessionIfAccessible(c, *rec.SessionID, models.OrgRoleViewer)
+	if err != nil {
+		if !errors.Is(err, errSessionAccessDenied) {
+			slog.Error("verification ACL session lookup", "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to authorize"})
+			return false
+		}
+		return deny()
+	}
+	return true
 }
 
 func populateEvidenceFromRecord(in *verify.EvidenceInput, rec *verify.Record) error {

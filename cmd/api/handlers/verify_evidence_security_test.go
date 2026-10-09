@@ -191,3 +191,40 @@ func TestEvidenceSecurityActorFromContext(t *testing.T) {
 		t.Fatalf("actor=%q (client must not forge)", rec.Subject.Actor)
 	}
 }
+
+// Security: unauthorized verification reads must not leak "session not found".
+func TestEvidenceSecurityUniformVerification404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	vh := &VerifyHandler{h: &Hub{}}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Set("actor", "outsider")
+	ok := vh.authorizeVerificationRead(c, &verify.Record{})
+	if ok || w.Code != http.StatusNotFound {
+		t.Fatalf("ok=%v code=%d body=%s", ok, w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "verification not found") {
+		t.Fatalf("body=%s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "session not found") {
+		t.Fatal("must not leak session not found")
+	}
+}
+
+func TestEvidenceSecuritySessionLessDenyMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	vh := &VerifyHandler{}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Set("actor", "not-master")
+	if vh.authorizeVerificationRead(c, &verify.Record{SessionID: nil}) {
+		t.Fatal("expected deny")
+	}
+	var body map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "verification not found" {
+		t.Fatalf("error=%q", body["error"])
+	}
+}

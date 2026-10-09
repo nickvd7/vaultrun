@@ -36,9 +36,19 @@ Schema: `vaultrun.verify.evidence.v1`
 
 Provide at least one of: `verification_id`, non-empty `spec`, or `include_controls: true`.
 
+### Trust / observation binding
+
+| Source | Observation trust |
+|--------|-------------------|
+| `verification_id` | Bound to persisted evaluate result |
+| `run_id` | **Always** loaded from the run row (client `observation` ignored) |
+| Inline `spec` + `observation` (no run) | Self-asserted; useful for dry-runs — do not treat HMAC as proof of a VaultRun run |
+| `include_controls` only | Evaluator self-cert (no run data) |
+
 ### ACL
 
-- Reading a persisted verification requires **viewer** access to its session (same 404-on-deny pattern as sessions).
+- Reading a persisted verification requires **viewer** access to its session.
+- Denials always return `404` + `"verification not found"` (no session/ID oracle).
 - Session-less records: **master** only.
 - Controls-only exports need auth but no session.
 

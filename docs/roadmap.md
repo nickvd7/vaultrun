@@ -102,4 +102,5 @@ These remain intentional non-goals until there is clear demand and infrastructur
 - [x] Agent swarm graph foundation (`/sessions/:id/graph`)
 - [x] Agent memory MCP tools (`.vaultrun/memory/`)
 - [x] Local Inference Action Gateway — OpenAI-compat sidecar for Ollama/LM Studio/vLLM (`cmd/local`, `internal/localgateway`); see [local-gateway.md](local-gateway.md)
+- [x] Verify controls suite — frozen pos/neg evaluator self-check (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`); see [features/verify-controls.md](features/verify-controls.md)
 - [ ] Optional public “starting from” commercial packaging — **blocked on pricing**; scaffold lives in the private Enterprise overlay

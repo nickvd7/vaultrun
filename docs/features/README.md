@@ -17,6 +17,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 | Verify checkpoints | ✅ Shipped | `internal/verify`, MCP `verify_checkpoint` |
 | Agent memory (sandbox) | ✅ Shipped | MCP `memory_*` → `.vaultrun/memory/` |
 | Local Inference Gateway | ✅ Shipped | `cmd/local`, `internal/localgateway` |
+| Verify controls | ✅ Shipped | `internal/verify/controls.go`, `/verify/controls` |
 
 **Progress: 6/6 shipped** (v0.3.0), hardened in v0.3.1. Verify checkpoints, agent memory, and the local inference gateway added later as workflow / local-AI foundation.
 
@@ -35,6 +36,7 @@ Roadmap: [../roadmap.md](../roadmap.md) · Security verification: [../security-t
 8. **[agent-memory.md](agent-memory.md)** — sandbox `.vaultrun/memory/` MCP tools
 9. **[workflow-as-asset.md](workflow-as-asset.md)** — local-first positioning for missions / verify / memory / swarm / cost
 10. **[local-inference-gateway.md](local-inference-gateway.md)** — OpenAI-compat action plane for Ollama/LM Studio · also [../local-gateway.md](../local-gateway.md)
+11. **[verify-controls.md](verify-controls.md)** — frozen pos/neg suite certifying the verify evaluator
 
 ## Supporting documentation
 

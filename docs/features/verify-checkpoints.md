@@ -41,9 +41,17 @@ When `run_id` is set, exit code and stdout are loaded from the run. `file_exists
 
 Tool: `verify_checkpoint` — same checks via tools/call (string args; typed JSON also coerced).
 
+## Evaluator controls
+
+Frozen positive/negative suite that certifies the evaluator itself:
+
+- API: `GET|POST /api/v1/verify/controls`
+- MCP: `verify_controls`
+- Spec: [verify-controls.md](verify-controls.md)
+
 ## Code
 
-- `internal/verify` — evaluate + store
+- `internal/verify` — evaluate + store + controls
 - `cmd/api/handlers/verify.go`
 - Migration `018_run_verifications`
 - `sdk/mcp/verify.go`

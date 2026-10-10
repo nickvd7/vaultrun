@@ -5,40 +5,14 @@
   var toggle = nav.querySelector(".nav-toggle");
   var menu = document.getElementById("nav-menu");
   var backdrop = nav.querySelector(".nav-backdrop");
-  var label = nav.querySelector(".nav-toggle-label");
-  var scrollY = 0;
-
-  function lockScroll() {
-    scrollY = window.scrollY || window.pageYOffset || 0;
-    document.body.style.position = "fixed";
-    document.body.style.top = "-" + scrollY + "px";
-    document.body.style.left = "0";
-    document.body.style.right = "0";
-    document.body.style.width = "100%";
-  }
-
-  function unlockScroll() {
-    document.body.style.position = "";
-    document.body.style.top = "";
-    document.body.style.left = "";
-    document.body.style.right = "";
-    document.body.style.width = "";
-    window.scrollTo(0, scrollY);
-  }
 
   function setOpen(open) {
-    var wasOpen = nav.classList.contains("nav-open");
     nav.classList.toggle("nav-open", open);
     document.body.classList.toggle("nav-open", open);
-    if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    if (label) label.textContent = open ? "close" : "menu";
-    if (toggle) toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
-
-    if (open && !wasOpen) {
-      lockScroll();
-      if (menu) menu.scrollTop = 0;
-    } else if (!open && wasOpen) {
-      unlockScroll();
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+      toggle.textContent = open ? "✕" : "☰";
     }
   }
 
@@ -52,9 +26,7 @@
     });
   }
 
-  if (backdrop) {
-    backdrop.addEventListener("click", close);
-  }
+  if (backdrop) backdrop.addEventListener("click", close);
 
   if (menu) {
     menu.querySelectorAll("a").forEach(function (link) {
@@ -63,8 +35,6 @@
   }
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && nav.classList.contains("nav-open")) {
-      close();
-    }
+    if (e.key === "Escape" && nav.classList.contains("nav-open")) close();
   });
 })();

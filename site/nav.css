@@ -1,227 +1,155 @@
-/* Shared sticky nav — include on all vaultrun.dev pages */
+/* Shared sticky nav for vaultrun.dev (matches homepage redesign) */
 :root {
-  --nav-bg: #0a0a0a;
-  --nav-line: #262626;
-  --nav-fg: #e8e8e8;
-  --nav-dim: #8a8a8a;
-  --nav-faint: #555555;
-  --nav-height: 52px;
+  --nav-bg: #000;
+  --nav-fg: #f2f2f2;
+  --nav-muted: #a3a3a3;
+  --nav-line: #1f1f1f;
+  --nav-line2: #333;
+  --nav-panel: #0a0a0a;
+  --nav-bg2: #0d0d0d;
+  --nav-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .site-nav {
-  border-bottom: 1px solid var(--nav-line);
   position: sticky;
   top: 0;
-  background: var(--nav-bg);
-  z-index: 100;
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  z-index: 50;
+  background: color-mix(in srgb, var(--nav-bg) 86%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--nav-line);
+  font-family: var(--nav-mono);
 }
 
-.site-nav .bar {
-  max-width: 980px;
+.site-nav .nav-inner {
+  max-width: 1120px;
   margin: 0 auto;
   padding: 0 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  height: var(--nav-height);
-  position: relative;
-  z-index: 2;
-  background: var(--nav-bg);
+  gap: 20px;
+  height: 60px;
 }
 
-.site-nav .logo {
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-decoration: none;
-  color: var(--nav-fg);
-  flex-shrink: 0;
-  display: inline-flex;
+@media (min-width: 760px) {
+  .site-nav .nav-inner {
+    padding: 0 28px;
+  }
+}
+
+.site-nav .brand {
+  display: flex;
   align-items: center;
   gap: 10px;
+  text-decoration: none;
+  color: var(--nav-fg);
+  font: 700 16px/1 var(--nav-mono);
+  white-space: nowrap;
 }
 
-.site-nav .logo-mark {
-  width: 20px;
-  height: 20px;
-  display: block;
-  flex-shrink: 0;
+.site-nav .brand .mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1.5px solid var(--nav-fg);
+  display: grid;
+  place-items: center;
+  font: 700 12px/1 var(--nav-mono);
 }
 
-.site-nav .logo span {
-  color: var(--nav-dim);
+.site-nav .nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.site-nav .nav-links a {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--nav-muted);
+  text-decoration: none;
+  font: 500 14px/1 var(--nav-mono);
+}
+
+.site-nav .nav-links a:hover,
+.site-nav .nav-links a[aria-current="page"] {
+  color: var(--nav-fg);
+  background: var(--nav-bg2);
+}
+
+.site-nav .nav-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--nav-line2);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--nav-fg);
+  font: 500 14px/1 var(--nav-mono);
+  white-space: nowrap;
+}
+
+.site-nav .nav-gh:hover {
+  border-color: var(--nav-fg);
 }
 
 .site-nav .nav-toggle {
   display: none;
   margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--nav-line);
+  background: none;
+  border: 1px solid var(--nav-line2);
   color: var(--nav-fg);
-  font-family: inherit;
-  font-size: 13px;
-  padding: 6px 12px;
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-
-.site-nav .nav-toggle:hover {
-  border-color: var(--nav-fg);
+  font-size: 18px;
+  font-family: inherit;
 }
 
 .site-nav .nav-backdrop {
   display: none;
 }
 
-.site-nav .links {
-  display: none;
-}
-
-.site-nav .links a {
-  color: var(--nav-dim);
-  text-decoration: none;
-}
-
-.site-nav .links a:hover {
-  color: var(--nav-fg);
-}
-
-body.nav-open {
-  overflow: hidden;
-  touch-action: none;
-}
-
-/* Desktop: logo + links on one row via overlapping grid */
-@media (min-width: 961px) {
-  .site-nav {
-    display: grid;
-    grid-template-columns: minmax(0, 980px);
-    justify-content: center;
-    padding: 0 16px;
-  }
-
-  .site-nav .bar,
-  .site-nav .links {
-    grid-row: 1;
-    grid-column: 1;
-    width: 100%;
-    max-width: 980px;
-    height: var(--nav-height);
-    margin: 0;
-    padding: 0;
-  }
-
-  .site-nav .bar {
-    display: flex;
-    align-items: center;
-    z-index: 2;
-    pointer-events: none;
-    background: transparent;
-  }
-
-  .site-nav .bar .logo {
-    pointer-events: auto;
-  }
-
-  .site-nav .nav-toggle {
-    display: none !important;
-  }
-
-  .site-nav .links {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 16px;
-    font-size: 13px;
-    z-index: 1;
-  }
-
-  .site-nav .links a {
-    white-space: nowrap;
-  }
-}
-
-/* Mobile: full-width drawer under sticky bar */
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .site-nav .nav-toggle {
     display: block;
   }
 
-  .site-nav.nav-open {
-    position: fixed;
-    top: 0;
+  .site-nav .nav-links {
+    display: none;
+    position: absolute;
+    top: 60px;
     left: 0;
     right: 0;
-    bottom: 0;
-    width: 100%;
-    max-width: 100vw;
-    height: 100%;
-    height: 100dvh;
-    border-bottom: none;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    background: var(--nav-bg);
-  }
-
-  .site-nav.nav-open .bar {
-    flex-shrink: 0;
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border-bottom: 1px solid var(--nav-line);
-  }
-
-  .site-nav .links {
-    display: none;
     flex-direction: column;
     align-items: stretch;
-    justify-content: flex-start;
-    gap: 0;
-    width: 100%;
-    margin: 0;
-    padding: 8px 20px calc(24px + env(safe-area-inset-bottom, 0px));
     background: var(--nav-bg);
-    overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-  }
-
-  .site-nav.nav-open .links {
-    display: flex;
-    flex: 1 1 auto;
-    min-height: 0;
-    align-self: stretch;
-  }
-
-  .site-nav .links a {
-    display: block;
-    width: 100%;
-    padding: 14px 0;
     border-bottom: 1px solid var(--nav-line);
-    font-size: 15px;
-    white-space: normal;
+    padding: 8px 16px 16px;
+    gap: 2px;
   }
 
-  .site-nav .links a:last-child {
-    border-bottom: none;
+  .site-nav.nav-open .nav-links {
+    display: flex;
   }
 
-  .site-nav .nav-backdrop {
-    display: none;
+  .site-nav .nav-links a {
+    padding: 12px 8px;
+  }
+
+  .site-nav .nav-gh {
+    margin: 8px 0 0;
+    justify-content: center;
   }
 
   .site-nav.nav-open .nav-backdrop {
-    display: none; /* full-screen menu covers page; no need for separate dimmer */
-  }
-}
-
-@media print {
-  .site-nav .nav-toggle,
-  .site-nav .links,
-  .site-nav .nav-backdrop {
-    display: none !important;
+    display: block;
+    position: fixed;
+    inset: 60px 0 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
   }
 }

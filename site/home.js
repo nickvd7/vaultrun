@@ -69,14 +69,16 @@
     {
       t: "01",
       n: "agent asks",
-      o: `<span class="c-dim"># agent calls run_command via MCP</span>
-POST /api/v1/sessions/<span class="c-info">s_3f8a2c1e</span>/run
+      o: `<span class="c-dim"># MCP → run_command</span>
+POST …/sessions/<span class="c-info">s_3f8a</span>/run
 Authorization: Bearer vr_…
 
-{ "command": "python",
-  "args": ["analyze.py", "--input", "sales.csv"] }
+{
+  "command": "python",
+  "args": ["analyze.py"]
+}
 
-<span class="c-dim">→ received · handing to policy</span>`,
+<span class="c-dim">→ received · policy next</span>`,
     },
     {
       t: "02",
@@ -106,13 +108,18 @@ rows: 48,211   revenue: €1.92M   top region: NL
     {
       t: "04",
       n: "audit trail",
-      o: `<span class="c-dim"># GET /api/v1/audit?session_id=s_3f8a2c1e</span>
+      o: `<span class="c-dim"># GET …/audit?session_id=s_3f8a</span>
 { "audit_logs": [
-  { "action": "command.requested", "sig": "<span class="c-info">9c1e…a04f</span>" },
-  { "action": "policy.allowed",    "sig": "<span class="c-info">41bd…77e2</span>" },
-  { "action": "command.finished",  "exit": 0,
-    "sig": "<span class="c-info">e83a…1d90</span>" } ] }
-<span class="c-ok">✓ signatures valid</span> — replay this on your own instance`,
+  { "action": "command.requested",
+    "sig": "<span class="c-info">9c1e…a04f</span>" },
+  { "action": "policy.allowed",
+    "sig": "<span class="c-info">41bd…77e2</span>" },
+  { "action": "command.finished",
+    "exit": 0,
+    "sig": "<span class="c-info">e83a…1d90</span>" }
+] }
+<span class="c-ok">✓ signatures valid</span>
+<span class="c-dim">replay on your instance</span>`,
     },
   ];
   const stepsEl = document.getElementById("steps");
@@ -170,8 +177,13 @@ rows: 48,211   revenue: €1.92M   top region: NL
         btns[cur].focus();
       }
     });
-    go(0);
-    if (playing) {
+    const startStep = Math.min(
+      3,
+      Math.max(0, parseInt(new URLSearchParams(location.search).get("demo") || "0", 10) || 0)
+    );
+    go(startStep);
+    if (startStep > 0) stop();
+    else if (playing) {
       const io = new IntersectionObserver(
         (es) => {
           es.forEach((en) => {

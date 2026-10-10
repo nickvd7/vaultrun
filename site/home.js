@@ -8,6 +8,7 @@
   function closeMobile() {
     if (!header || !burger) return;
     header.classList.remove("mobile-open");
+    document.body.classList.remove("nav-lock");
     burger.setAttribute("aria-expanded", "false");
     burger.textContent = "☰";
     if (dd) {
@@ -19,6 +20,7 @@
   if (burger && header) {
     burger.addEventListener("click", () => {
       const o = header.classList.toggle("mobile-open");
+      document.body.classList.toggle("nav-lock", o);
       burger.setAttribute("aria-expanded", o ? "true" : "false");
       burger.textContent = o ? "✕" : "☰";
     });

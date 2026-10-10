@@ -6,7 +6,8 @@
 <title>VaultRun Enterprise — procurement one-pager</title>
 <meta name="description" content="VaultRun Enterprise: OIDC and SAML SSO for the self-hosted AI agent runtime. Evaluation free; production by commercial license. Contact mail@030.dev.">
 <link rel="canonical" href="https://vaultrun.dev/enterprise.html">
-<meta name="robots" content="index, follow">
+<link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta property="og:title" content="VaultRun Enterprise">
 <meta property="og:description" content="SSO (OIDC + SAML) overlay for VaultRun. Evaluate free; production license on request.">
 <meta property="og:url" content="https://vaultrun.dev/enterprise.html">
@@ -17,12 +18,15 @@
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/site.css">
 <style>
   :root {
-    --bg: #0a0a0a; --bg-alt: #111; --fg: #e8e8e8; --dim: #8a8a8a;
-    --faint: #555; --line: #262626;
+    --bg: #000; --bg-alt: #111; --fg: #f2f2f2; --dim: #a3a3a3;
+    --faint: #555; --line: #1f1f1f;
   }
   * { box-sizing: border-box; }
   html { overflow-x: clip; }
@@ -75,28 +79,24 @@
 </head>
 <body>
 
-<nav class="site-nav" id="site-nav">
-  <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
-  <div class="bar">
-    <a class="logo" href="/"><img class="logo-mark" src="/brand/favicon.svg" width="20" height="20" alt="">vaultrun<span>.dev</span></a>
-    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
-      <span class="nav-toggle-label">menu</span>
-    </button>
+<header class="site-nav" id="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="VaultRun home"><span class="mark" aria-hidden="true">&gt;_</span>VaultRun</a>
+    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">☰</button>
+    <div class="nav-backdrop"></div>
+    <nav class="nav-links" id="nav-menu" aria-label="Main">
+      <a href="/#how">How it works</a>
+      <a href="/#security">Security</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/#local">Local AI</a>
+      <a href="/use-cases.html">Use cases</a>
+      <a href="/flowd.html">Flowd</a>
+      <a href="/enterprise.html" aria-current="page">Enterprise</a>
+      <a href="/#contact">Contact</a>
+      <a class="nav-gh" href="https://github.com/nickvd7/vaultrun">GitHub ↗</a>
+    </nav>
   </div>
-  <div class="links" id="nav-menu">
-    <a href="/#quickstart">quickstart</a>
-    <a href="/#features">features</a>
-    <a href="/#mcp">mcp</a>
-    <a href="/#sdk">sdk</a>
-    <a href="/flowd.html">flowd</a>
-    <a href="/#security">security</a>
-    <a href="/enterprise.html">enterprise</a>
-    <a href="/use-cases.html">use cases</a>
-    <a href="/#contact">contact</a>
-    <a href="https://github.com/nickvd7/vaultrun">github ↗</a>
-  </div>
-</nav>
-
+</header>
 <div class="wrap">
   <h1>VaultRun Enterprise</h1>
   <p class="lede">Procurement one-pager. Self-hosted AI agent runtime with identity federation (OIDC + SAML). Core stays Apache 2.0; SSO ships as a commercial overlay.</p>
@@ -143,9 +143,10 @@
     <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/security.md">Security model</a></li>
     <li><a href="https://github.com/nickvd7/vaultrun">Open-core repository</a> (Apache 2.0)</li>
     <li><a href="https://vaultrun.dev/">Product site</a> · <a href="https://vaultrun.dev/#enterprise">Enterprise CTA</a></li>
+    <li><a href="/llms.txt">llms.txt</a> · <a href="/llms-full.txt">llms-full.txt</a> (AI / LLM grounding)</li>
   </ul>
 
-  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-07-16</p>
+  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-10-09</p>
 </div>
 <script src="/nav.js"></script>
 </body>

@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun use cases — how teams run AI agents safely</title>
-<meta name="description" content="Reference use cases for VaultRun: platform sandboxes, regulated AI agents, and PR CI in isolated Docker sessions. Patterns, not customer logos.">
+<meta name="description" content="Reference use cases for VaultRun: platform sandboxes, regulated AI agents, local AI with OpenJEV gates, verify evidence, and PR CI in isolated Docker sessions.">
 <link rel="canonical" href="https://vaultrun.dev/use-cases.html">
-<meta name="robots" content="index, follow">
+<link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta property="og:title" content="VaultRun use cases">
-<meta property="og:description" content="Platform sandboxes, regulated agent tooling, and self-hosted PR CI — without a SaaS dependency.">
+<meta property="og:description" content="Platform sandboxes, local AI + OpenJEV gates, verify evidence, regulated agents, and self-hosted PR CI — no SaaS dependency.">
 <meta property="og:url" content="https://vaultrun.dev/use-cases.html">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://vaultrun.dev/brand/og.png">
@@ -17,13 +18,16 @@
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/site.css">
 <style>
-  :root { --bg:#0a0a0a; --bg-alt:#111; --fg:#e8e8e8; --dim:#8a8a8a; --faint:#555; --line:#262626; }
+  :root { --bg:#000; --bg-alt:#111; --fg:#f2f2f2; --dim:#a3a3a3; --faint:#555; --line:#1f1f1f; }
   * { box-sizing: border-box; }
   html { overflow-x: clip; }
-  body { margin:0; background:var(--bg); color:var(--fg); font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; overflow-x:clip; max-width:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:14.5px; line-height:1.55; overflow-x:clip; max-width:100%; }
   a { color:var(--fg); text-underline-offset:3px; }
   .wrap { max-width:820px; margin:0 auto; padding:32px 16px 72px; width:100%; }
   h1 { font-size:26px; margin:0 0 8px; line-height:1.15; }
@@ -51,29 +55,24 @@
 </head>
 <body>
 
-<nav class="site-nav" id="site-nav">
-  <button type="button" class="nav-backdrop" tabindex="-1" aria-hidden="true"></button>
-  <div class="bar">
-    <a class="logo" href="/"><img class="logo-mark" src="/brand/favicon.svg" width="20" height="20" alt="">vaultrun<span>.dev</span></a>
-    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">
-      <span class="nav-toggle-label">menu</span>
-    </button>
+<header class="site-nav" id="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="VaultRun home"><span class="mark" aria-hidden="true">&gt;_</span>VaultRun</a>
+    <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Open menu">☰</button>
+    <div class="nav-backdrop"></div>
+    <nav class="nav-links" id="nav-menu" aria-label="Main">
+      <a href="/#how">How it works</a>
+      <a href="/#security">Security</a>
+      <a href="/#mcp">MCP</a>
+      <a href="/#local">Local AI</a>
+      <a href="/use-cases.html" aria-current="page">Use cases</a>
+      <a href="/flowd.html">Flowd</a>
+      <a href="/enterprise.html">Enterprise</a>
+      <a href="/#contact">Contact</a>
+      <a class="nav-gh" href="https://github.com/nickvd7/vaultrun">GitHub ↗</a>
+    </nav>
   </div>
-  <div class="links" id="nav-menu">
-    <a href="/#quickstart">quickstart</a>
-    <a href="/#features">features</a>
-    <a href="/#workflows">workflows</a>
-    <a href="/#mcp">mcp</a>
-    <a href="/#sdk">sdk</a>
-    <a href="/flowd.html">flowd</a>
-    <a href="/#security">security</a>
-    <a href="/enterprise.html">enterprise</a>
-    <a href="/use-cases.html">use cases</a>
-    <a href="/#contact">contact</a>
-    <a href="https://github.com/nickvd7/vaultrun">github ↗</a>
-  </div>
-</nav>
-
+</header>
 <div class="wrap">
   <h1>Use cases</h1>
   <p class="lede">How teams typically deploy VaultRun. These are reference patterns — not named customer case studies — based on the product’s real capabilities (sandboxes, MCP, local inference gateway, CI runner, Enterprise SSO).</p>
@@ -122,26 +121,40 @@
     <div class="tag">04 / platform / workflows</div>
     <h2>Workflow-as-asset: save, verify, replay</h2>
     <p><strong style="color:var(--fg)">Problem.</strong> Agent wins live in ephemeral chats. Teams cannot re-run a proven plan, prove what passed, or attribute spend to a named workflow.</p>
-    <p><strong style="color:var(--fg)">Pattern.</strong> Capture successful tool sequences as VaultRun <em>missions</em> on your infra. Attach verify checkpoints after runs, keep agent notes in sandbox memory, optionally describe swarm edges for multi-agent sessions, and snapshot cost attribution when you replay.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Capture successful tool sequences as VaultRun <em>missions</em> on your infra. Attach verify checkpoints after runs, export sealed evidence digests when you need a portable proof, keep agent notes in sandbox memory, optionally describe swarm edges for multi-agent sessions, and snapshot cost attribution when you replay.</p>
     <ul>
       <li>Missions API — named, versioned steps you own</li>
-      <li>Verify — exit code / stdout / file assertions (+ control suite for the evaluator)</li>
+      <li>Verify — exit / stdout / file assertions, anti-shortcut control suite, sealed evidence export</li>
+      <li>Optional OpenJEV / Jev — claim-vs-evidence gate (fail or hold) on mission steps</li>
       <li>Local-first — no SaaS; audit + assets stay on your network</li>
     </ul>
-    <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets, not disposable transcripts.</p>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Workflows become inspectable assets with exportable proof, not disposable transcripts.</p>
   </article>
 
   <article>
     <div class="tag">05 / local AI</div>
     <h2>Local models that can act — without a SaaS runner</h2>
     <p><strong style="color:var(--fg)">Problem.</strong> Ollama / LM Studio can chat. Giving them shell or tools on the host is an open blast radius; shipping execution to a cloud sandbox fights the reason you went local.</p>
-    <p><strong style="color:var(--fg)">Pattern.</strong> Run <code>vaultrun-local</code> as an OpenAI-compatible gateway. Clients (Open WebUI, Continue, LiteLLM) talk to your local model; tool calls execute in VaultRun sandboxes. Successful loops can auto-capture as missions.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Run <code>vaultrun-local</code> as an OpenAI-compatible gateway. Clients (Open WebUI, Continue, LiteLLM) talk to your local model; tool calls execute in VaultRun sandboxes. Successful loops can auto-capture as missions; optional OpenJEV completion gates block “done” without evidence.</p>
     <ul>
       <li>Model stays local; actions stay sandboxed on your infra</li>
       <li>Network off by default; signed audit on every tool call</li>
       <li>Recipes for Open WebUI / Continue / LiteLLM in <code>examples/local-gateway/</code></li>
     </ul>
     <p><strong style="color:var(--fg)">Outcome.</strong> Local AI with a controlled action plane — think local, act contained.</p>
+  </article>
+
+  <article>
+    <div class="tag">06 / verify / OpenJEV</div>
+    <h2>Stop agents from declaring victory without evidence</h2>
+    <p><strong style="color:var(--fg)">Problem.</strong> Agents narrate success. Deterministic checks catch missing files and bad exits; they do not judge whether a natural-language claim matches the artifacts.</p>
+    <p><strong style="color:var(--fg)">Pattern.</strong> Run VaultRun verify → export sealed evidence → gate with <a href="https://openjev.sh/">OpenJEV</a> or TypeSafe Jev (<code>jev_gate</code> / mission step <code>jev_on_fail</code>). Threshold miss → fail or hold.</p>
+    <ul>
+      <li>Evidence from sandboxes you own — digests + optional HMAC</li>
+      <li>Opt-in System One providers (OpenJEV hosted or self-hosted)</li>
+      <li>MCP, API, and local-gateway surfaces</li>
+    </ul>
+    <p><strong style="color:var(--fg)">Outcome.</strong> Completion only when claims survive evidence — not when the model sounds confident.</p>
   </article>
 
   <div class="cta">
@@ -153,6 +166,7 @@
   <footer>
     <a href="/">VaultRun</a>
     <a href="/#enterprise">Enterprise</a>
+    <a href="/llms.txt">llms.txt</a>
     <a href="/#contact">Contact</a>
     <a href="mailto:mail@030.dev">mail@030.dev</a>
   </footer>

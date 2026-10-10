@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Marketing site redesign** — clearer hero promise, problem/compare, honest threat model, progressive contact form, JetBrains Mono; `site/home.css` + `site/home.js`; shared nav refresh
 - **Site** — homepage + use-cases surface local inference gateway and verify controls (`#local`, features grid, local-AI use case)
 - **Verify controls** — frozen positive/negative suite certifying the verify evaluator (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`, `pipeline_discriminates` + suite fingerprint); see `docs/features/verify-controls.md`
 - **Local Inference Action Gateway** — OpenAI-compatible sidecar (`cmd/local`, `internal/localgateway`) that proxies chat to Ollama/LM Studio/vLLM and executes VaultRun sandbox tools on `tool_calls`. Auth, rate limits, loopback-default bind, final-answer SSE streaming, mission auto-capture, client recipes (`examples/local-gateway/`), automated smoke (`make test-local-gateway`); see `docs/local-gateway.md`

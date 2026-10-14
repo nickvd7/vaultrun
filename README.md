@@ -15,7 +15,7 @@
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network. Local-first: treat successful agent plans as **workflow assets** you own (missions, verify checkpoints, sandbox memory, swarm graph, cost-aware replay).
 
-> **Latest v0.3.3:** Housekeeping on top of v0.3.2 (corrected release metadata, Python SDK published to PyPI as 0.3.3).
+> **Latest v0.3.4:** secrets are redacted from run output, opt-in production mode (`VAULTRUN_PRODUCTION`), verify evidence export, `import vaultrun_sdk` for the Python SDK, OOM kills explained. See the [changelog](CHANGELOG.md).
 >
 > **v0.3.2:** The Docker Compose quickstart (`make up` → session → command) now works end to end on a clean Linux host and is covered by a CI workflow; the secrets broker works under Compose, and the API returns `400` for invalid limits and unknown images. It also includes a second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
 >

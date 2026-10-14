@@ -7,88 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
+### Fixed — Docker Compose quickstart (`make up` → session → command)
+- `make up` now runs end to end on a clean Linux host; verified by running the quickstart (Docker 29, socket GID 103): healthy API, dashboard, session `201`, command output returned, Python SDK example and CLI working.
+- **Workspace path.** The API hands the workspace path to the Docker daemon, which resolves it on the *host*. Compose now bind-mounts one host directory (`WORKSPACE_HOST_DIR`, default `/var/lib/vaultrun/workspaces`) at the same path in the API container and passes the same value as `WORKSPACE_BASE_DIR` / `DOCKER_HOST_WORKSPACE_BASE_DIR`. A one-shot `workspace-init` container creates it as `0700` owned by uid 65532, so no `sudo` is needed. The `workspace_data` named volume is removed.
+- **Docker socket GID.** `make up` runs `scripts/detect-docker-gid.sh --write`, which writes the real socket GID into `.env` and fails clearly if it cannot detect it. `DOCKER_GID` is required by Compose (no silent `999` fallback).
+- `DOCKER_HOST_WORKSPACE_BASE_DIR` support in the API (`SandboxConfig.HostWorkspacePath`) for setups where the in-container and host paths differ.
+- API no longer hangs silently when Postgres is unreachable: `connect_timeout=10` is added to the DSN (lib/pq ignores the context while dialing) and startup logs `connecting to database` plus a clear error.
+- `make bootstrap-key` sends its status line to stderr so its stdout is pure JSON, and refuses an empty `MASTER_API_KEY`.
+- `.env.example`: `REDIS_ADDR=redis:6379`, `WORKSPACE_HOST_DIR`, clearer `DOCKER_GID` note. README quickstart lists `curl` and `jq` as prerequisites.
+- Quickstart E2E workflow (`.github/workflows/quickstart-e2e.yml`) rewritten to use the real API (`POST /sessions/:id/run`), assert `201`, exit code and stdout, and dump logs on failure.
+- Earlier unreleased changes in this block that did not work as described: mount propagation was briefly switched to `rshared` and is back to `rprivate`; the `DOCKER_HOST_WORKSPACE_BASE_DIR=/data/workspaces` default pointed at a path that does not exist on the host.
 
-### Fixed
+### Fixed — security and CLI
+- Postgres, Redis, API and dashboard ports are published on `127.0.0.1` only.
+- CLI: `--api-key` default is masked in `--help`; `session list` shows `-` instead of `<nil>`; `session create` rejects non-positive `--cpu`, `--mem`, `--timeout`; usage text is no longer printed on every error.
 
-### Changed
+### Changed — site and docs
+- MCP tool count is 70 everywhere (+6 with Flowd enabled). Google Fonts removed from the site (system monospace stack).
 
----
-
-## [0.3.4] - 2026-10-14
-
-### Fixed
-
-**Critical workspace path fix:**
-- docker-compose.yml: Pass `DOCKER_HOST_WORKSPACE_BASE_DIR` environment variable to API container (was missing)
-- container.go: Change mount propagation from `rprivate` to `rshared` (allows workspace_data volume to work)
-- .env.example: Set `DOCKER_HOST_WORKSPACE_BASE_DIR=/data/workspaces` as default for Docker Compose
-- **Impact**: Sessions can now be created successfully - sandbox containers mount workspaces correctly
-
-**Docker GID detection:**
-- Added `scripts/detect-docker-gid.sh` to automatically find correct Docker group GID
-- .env.example: Better documentation of DOCKER_GID with common values (999/102/991)
-- Makefile: `make up` now runs GID detection script before starting
-- README: Added GID detection step to quickstart
-- **Impact**: Works out-of-box on more Linux distributions (Debian GID=102, Ubuntu GID=999)
-
-### Added
-
-**Quickstart E2E test:**
-- .github/workflows/quickstart-e2e.yml: Full integration test
-- Tests: make up → bootstrap-key → create session → run command
-- Validates complete quickstart flow on every push/PR
-- **Impact**: Catches setup blockers before they reach users
-
-**Related issues:** Addresses tester feedback from third round - workspace path still didn't work, GID was wrong on Debian
-
----
-
-## [0.3.3] - 2026-10-14
-
-### Added
-
-### Fixed
-
-### Changed
-
----
-
-## [0.3.3] - 2026-10-14
-
-### Fixed
-
-**Quickstart blockers:**
-- Dockerfile.api: Go version 1.23 → 1.25 (matches go.mod requirement)
-- Dockerfile.api: Alpine 3.21 runtime with curl for working healthcheck (was distroless without wget)
-- docker-compose.yml: curl-based healthcheck that actually succeeds
-- Makefile: `down`, `logs`, `ps` now load `.env` correctly with `--env-file`
-- Makefile: `bootstrap-key` validates that `.env` exists and `jq` is installed before running
-
-**Security:**
-- docker-compose.yml: All service ports (Postgres, Redis, API, frontend) now bind to `127.0.0.1` instead of `0.0.0.0` (prevents public network exposure)
-- .env.example: Added prominent **CRITICAL SECURITY WARNING** for Redis password with generation command
-- CLI: API key now masked as `***` in `--help` output (prevents leakage via screenshots/CI logs)
-
-**CLI improvements:**
-- `session list`: Display `-` instead of `<nil>` for empty session names
-- `session create`: Validate positive values for `--cpu`, `--mem`, `--timeout` (reject silently-accepted negatives)
-- CLI: `SilenceUsage = true` - stop printing full usage text on every error
-
-### Changed
-
-**Documentation consistency:**
-- Updated tool count from inconsistent 53/61 → accurate **70 tools** across all documentation
-  - Breakdown: 53 core + 8 browser + 4 memory + 2 verify + 3 task control (+6 Flowd opt-in = 76 total)
-  - Updated: README.md, AGENTS.md, sdk/mcp/README.md, docs/mcp.md, docs/flowd-integration.md, site/*.html, llms*.txt
-- Site: Removed Google Fonts (conflicted with "nothing phones home" claim)
-- Site: Use system monospace font stack (ui-monospace, SF Mono, Menlo, Monaco, etc.)
-
-**Related issues:** #66 (secrets filtering), #67 (API error codes), #68 (SDK naming), #69 (docs 404), #70 (production hardening), #71 (PyPI version sync)
-
----
-
-## [0.3.2] - 2026-10-08
+### Still open
+- Unknown image returns 500, OOM-kill has no explanation, `REDIS_PASSWORD` empty by default, open defaults (OPA allow-all, unauthenticated `/metrics`, `0777` workspace dirs), secrets not filtered from stdout, PyPI behind the repo, `/docs/` 404, SDK import name — tracked in #66–#71.
 
 ### Added
 - **Marketing site redesign** — clearer hero promise, problem/compare, honest threat model, progressive contact form, JetBrains Mono; `site/home.css` + `site/home.js`; shared nav refresh

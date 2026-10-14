@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **OOM kills are explained (#67).** A command killed for exceeding the session memory limit now ends with `[vaultrun] command killed: container exceeded its memory limit (N MB)…` in stderr instead of a bare exit code 137. An unknown image already returns 400 (v0.3.2); an unreachable database already fails startup with a log line and `/health` returns 503.
 - **Secrets no longer appear in command output (#66).** The exact values of secrets injected into a run (and their base64 forms) are replaced with `[REDACTED:<NAME>]` in stdout/stderr before the output is stored, returned or streamed, on the sync, async and `/run/stream` paths. Previously `echo $DB_PASSWORD` ended up in the `runs` table and the response. See `docs/secrets.md` for the limits.
 
 ### Changed

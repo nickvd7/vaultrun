@@ -17,7 +17,9 @@ WORKDIR /app
 
 RUN apk add --no-cache ca-certificates curl && \
     addgroup -g 65532 -S nonroot && \
-    adduser -u 65532 -S nonroot -G nonroot
+    adduser -u 65532 -S nonroot -G nonroot && \
+    mkdir -p /data/workspaces && \
+    chown -R nonroot:nonroot /data
 
 COPY --from=builder /app/api         /app/api
 COPY --from=builder /build/migrations /app/migrations

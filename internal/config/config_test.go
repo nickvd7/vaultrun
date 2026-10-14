@@ -156,3 +156,52 @@ func TestLoadRejectsPreferSSLMode(t *testing.T) {
 		t.Fatal("Load should reject DB_SSL_MODE=prefer")
 	}
 }
+
+func hardenedConfig() *Config {
+	return &Config{
+		Auth:       AuthConfig{MasterKey: strings.Repeat("k", 32), OPAPolicyFile: "policy.rego"},
+		Server:     ServerConfig{TLSCertFile: "c.pem", TLSKeyFile: "k.pem"},
+		Production: ProductionConfig{MetricsToken: "t"},
+	}
+}
+
+func TestProductionProblemsHardenedConfigIsClean(t *testing.T) {
+	if p := hardenedConfig().ProductionProblems(); len(p) != 0 {
+		t.Fatalf("unexpected problems: %v", p)
+	}
+}
+
+func TestProductionProblemsQuickstartDefaults(t *testing.T) {
+	c := &Config{Auth: AuthConfig{MasterKey: "short"}}
+	got := strings.Join(c.ProductionProblems(), "\n")
+	for _, want := range []string{"OPA", "TLS", "METRICS_TOKEN", "MASTER_API_KEY"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in problems:\n%s", want, got)
+		}
+	}
+}
+
+func TestProductionProblemsExplicitOptOuts(t *testing.T) {
+	c := hardenedConfig()
+	c.Auth.OPAPolicyFile = ""
+	c.Server.TLSCertFile, c.Server.TLSKeyFile = "", ""
+	if len(c.ProductionProblems()) != 2 {
+		t.Fatalf("expected OPA and TLS problems, got %v", c.ProductionProblems())
+	}
+	c.Production.OPAAllowAll = true
+	c.Production.TLSDisabled = true
+	if p := c.ProductionProblems(); len(p) != 0 {
+		t.Fatalf("explicit opt-outs should satisfy the check: %v", p)
+	}
+}
+
+func TestProductionProblemsRedisPasswordOnlyWhenRedisUsed(t *testing.T) {
+	c := hardenedConfig()
+	if len(c.ProductionProblems()) != 0 {
+		t.Fatal("no redis configured: no problem expected")
+	}
+	c.Redis.Addr = "redis:6379"
+	if len(c.ProductionProblems()) != 1 {
+		t.Fatalf("redis without password should be flagged: %v", c.ProductionProblems())
+	}
+}

@@ -9,7 +9,7 @@ LLM agents often need to run code, touch filesystems, or call external systems. 
 ## Core components (Apache 2.0)
 
 1. **API server** (`cmd/api`) — Gin REST API for sessions, runs, files, keys, audit, snapshots, artifacts
-2. **MCP server** (`sdk/mcp`) — 53+ Model Context Protocol tools over stdio and HTTP (optional Flowd +6, optional Jev/OpenJEV +2)
+2. **MCP server** (`sdk/mcp`) — 70 Model Context Protocol tools over stdio and HTTP (+6 Flowd when enabled)
 3. **CLI** (`cmd/cli`) — `vaultrun` command-line tool
 4. **CI runner** (`cmd/ci-runner`) — GitHub webhook → sandbox tests → PR comment + Slack/Teams
 5. **Local gateway** (`cmd/local`) — OpenAI-compatible action plane for local inference (Ollama/LM Studio/vLLM); proxies chat and executes VaultRun sandbox tools on `tool_calls` (see `docs/local-gateway.md`)

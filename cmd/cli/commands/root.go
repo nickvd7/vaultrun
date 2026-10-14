@@ -17,10 +17,12 @@ func Root() *cobra.Command {
 		Short: "VaultRun CLI — manage sandboxed AI agent sessions",
 		Long: `VaultRun is a self-hosted secure runtime for AI agents.
 Use this CLI to create sessions, upload files, execute commands, and inspect results.`,
+		SilenceUsage: true,
 	}
 
 	root.PersistentFlags().StringVar(&apiURL, "api-url", envOrDefault("VAULTRUN_API_URL", "http://localhost:8080"), "API base URL")
-	root.PersistentFlags().StringVar(&apiKey, "api-key", envOrDefault("VAULTRUN_API_KEY", ""), "API key")
+	apiKeyFlag := root.PersistentFlags().VarPF(newMaskedStringValue(&apiKey, envOrDefault("VAULTRUN_API_KEY", "")), "api-key", "", "API key (set via VAULTRUN_API_KEY or --api-key)")
+	apiKeyFlag.DefValue = "***"
 
 	root.AddCommand(
 		newSessionCmd(),
@@ -44,4 +46,31 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+type maskedStringValue struct {
+	value  *string
+	actual string
+}
+
+func newMaskedStringValue(p *string, val string) *maskedStringValue {
+	*p = val
+	return &maskedStringValue{value: p, actual: val}
+}
+
+func (s *maskedStringValue) Set(val string) error {
+	*s.value = val
+	s.actual = val
+	return nil
+}
+
+func (s *maskedStringValue) Type() string {
+	return "string"
+}
+
+func (s *maskedStringValue) String() string {
+	if s.actual != "" {
+		return "***"
+	}
+	return ""
 }

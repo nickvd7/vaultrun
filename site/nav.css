@@ -7,7 +7,7 @@
   --nav-line2: #333;
   --nav-panel: #0a0a0a;
   --nav-bg2: #0d0d0d;
-  --nav-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --nav-mono: ui-monospace,SFMono-Regular,"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
 }
 
 .site-nav {

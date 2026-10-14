@@ -81,15 +81,17 @@ func main() {
 			"length", len(cfg.Auth.MasterKey))
 	}
 
-	if problems := cfg.ProductionProblems(); cfg.Production.Enabled && len(problems) > 0 {
-		for _, msg := range problems {
-			slog.Error("production check failed", "problem", msg)
+	if problems := cfg.ProductionProblems(); len(problems) > 0 {
+		if !cfg.Production.InsecureDev {
+			for _, msg := range problems {
+				slog.Error("insecure configuration", "problem", msg)
+			}
+			slog.Error("refusing to start with an insecure configuration; fix the problems above, " +
+				"or set VAULTRUN_INSECURE_DEV=true for local development only " +
+				"(see docs/production-hardening.md)")
+			os.Exit(1)
 		}
-		slog.Error("refusing to start with VAULTRUN_PRODUCTION=true; fix the problems above " +
-			"(see docs/production-hardening.md)")
-		os.Exit(1)
-	} else if !cfg.Production.Enabled && len(problems) > 0 {
-		slog.Warn("not production-hardened — fine for local use; set VAULTRUN_PRODUCTION=true to enforce "+
+		slog.Warn("VAULTRUN_INSECURE_DEV=true — running with insecure settings; local development only "+
 			"(see docs/production-hardening.md)", "problems", problems)
 	}
 

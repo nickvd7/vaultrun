@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up down logs help
+.PHONY: all build test lint clean up dev-env down logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -37,7 +37,14 @@ run-api: build-api
 up:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
 	@./scripts/detect-docker-gid.sh --write .env
+	@./scripts/check-env.sh .env
 	docker compose -f deployments/docker-compose.yml --env-file .env up -d --build
+
+# Local development only: opt out of the secure-by-default startup checks.
+dev-env:
+	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
+	@if grep -Eq '^[[:space:]]*VAULTRUN_INSECURE_DEV=' .env; then echo "VAULTRUN_INSECURE_DEV already set in .env"; \
+	else echo "VAULTRUN_INSECURE_DEV=true" >> .env && echo "Added VAULTRUN_INSECURE_DEV=true to .env (local development only)"; fi
 
 down:
 	docker compose -f deployments/docker-compose.yml --env-file .env down
@@ -119,6 +126,7 @@ help:
 	@echo "  make build-local     Build OpenAI-compat local inference gateway"
 	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
+	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
 	@echo "  make down            Stop all services"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"

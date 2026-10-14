@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `make up` prints a note when `.env` lacks `VAULTRUN_INSECURE_DEV` (older `.env` files after the 0.4.0 secure-by-default change), and `make dev-env` adds it for local use.
+
 ---
 
 ## [0.4.0] — 2026-10-14

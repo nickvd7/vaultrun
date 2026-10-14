@@ -34,7 +34,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 
 ## SDKs & clients
 
-- [Python SDK](https://github.com/nickvd7/vaultrun/tree/main/sdk/python): Typed client (`sandbox_sdk.Client`)
+- [Python SDK](https://github.com/nickvd7/vaultrun/tree/main/sdk/python): Typed client (`vaultrun_sdk.Client`)
 - [Go SDK](https://github.com/nickvd7/vaultrun/tree/main/sdk/go): Typed Go client
 - [MCP server source](https://github.com/nickvd7/vaultrun/tree/main/sdk/mcp): Model Context Protocol implementation
 

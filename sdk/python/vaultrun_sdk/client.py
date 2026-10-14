@@ -187,7 +187,7 @@ class Client:
 
     Example::
 
-        from sandbox_sdk import Client
+        from vaultrun_sdk import Client
 
         client = Client("http://localhost:8080", api_key="vr_...")
         session = client.create_session(image="python:3.12-slim")

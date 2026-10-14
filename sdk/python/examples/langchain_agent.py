@@ -20,7 +20,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 
-from sandbox_sdk import Client
+from vaultrun_sdk import Client
 
 # ── VaultRun client ────────────────────────────────────────────────────────────
 vr = Client(

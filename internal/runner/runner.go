@@ -21,6 +21,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/secrets"
 )
 
 const maxOutputBytes = 10 * 1024 * 1024 // 10 MB
@@ -127,6 +128,13 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 	})
 	finishedAt := time.Now().UTC()
 
+	// Secrets that were injected must not end up in stored or returned output.
+	if result != nil {
+		redactor := secrets.NewRedactor(req.SecretEnv)
+		result.Stdout = redactor.Redact(result.Stdout)
+		result.Stderr = redactor.Redact(result.Stderr)
+	}
+
 	status := resolveStatus(execErr, result)
 	var durationMS int64
 	if result != nil {
@@ -220,6 +228,10 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 		}
 	}
 
+	redactor := secrets.NewRedactor(req.SecretEnv)
+	redactedOut := redactor.Writer(stdout)
+	redactedErr := redactor.Writer(stderr)
+
 	startedAt := time.Now().UTC()
 	result, execErr := r.docker.ExecStream(ctx, dockerpkg.ExecConfig{
 		ContainerID:    req.ContainerID,
@@ -229,7 +241,9 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 		WorkingDir:     run.WorkingDir,
 		TimeoutSeconds: run.TimeoutSeconds,
 		MaxOutputBytes: maxOutputBytes,
-	}, stdout, stderr)
+	}, redactedOut, redactedErr)
+	_ = redactedOut.Close()
+	_ = redactedErr.Close()
 	finishedAt := time.Now().UTC()
 
 	status := resolveStatus(execErr, result)

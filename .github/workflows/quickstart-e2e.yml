@@ -73,6 +73,17 @@ jobs:
           [ "$(echo "$RESP" | jq -r '.exit_code')" = "0" ]
           [ "$(echo "$RESP" | jq -r '.stdout' | tr -d '[:space:]')" = "16" ]
 
+      - name: Injected secrets are redacted from output
+        run: |
+          RESP=$(curl -sS -X POST "http://localhost:8080/api/v1/sessions/$SESSION_ID/run" \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"command":"sh","args":["-c","echo token=$E2E_TOKEN"],"secrets":["E2E_TOKEN"]}')
+          echo "$RESP" | jq -r '.stdout'
+          [ "$(echo "$RESP" | jq -r '.stdout')" = "token=[REDACTED:E2E_TOKEN]" ]
+          RUN_ID=$(echo "$RESP" | jq -r '.id')
+          STORED=$(curl -sS "http://localhost:8080/api/v1/runs/$RUN_ID" -H "X-API-Key: $API_KEY" | jq -r '.stdout')
+          ! echo "$STORED" | grep -q "e2e-secret-value"
+
       - name: Invalid session requests return 400
         run: |
           expect400() {

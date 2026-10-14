@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Secrets no longer appear in command output (#66).** The exact values of secrets injected into a run (and their base64 forms) are replaced with `[REDACTED:<NAME>]` in stdout/stderr before the output is stored, returned or streamed, on the sync, async and `/run/stream` paths. Previously `echo $DB_PASSWORD` ended up in the `runs` table and the response. See `docs/secrets.md` for the limits.
+
 ### Changed
 - Site and `llms*.txt` no longer mention OpenJEV / TypeSafe Jev claim gates. The integration was never part of a release, the hosted OpenJEV endpoint is an unaffiliated community service funded by a memecoin and relays data through OpenRouter, and sending agent output to a third party does not fit the "no data leaves your network" promise. The use case now describes deterministic verify checkpoints plus sealed evidence only.
 

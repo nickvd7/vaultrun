@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Required environment variables (set in .env before running):
 #   MASTER_API_KEY  — bootstrap key for creating the first API key
 #   POSTGRES_PASSWORD — database password
@@ -12,12 +10,25 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.api
     ports:
-      - "${PORT:-8080}:8080"
+      - "127.0.0.1:${PORT:-8080}:8080"
+    # Docker socket access for the non-root API user. The GID differs per distro
+    # (Ubuntu 999, Debian 102, ...). `make up` detects it and writes it to .env.
+    group_add:
+      - "${DOCKER_GID:?DOCKER_GID must be set - run `make up` or scripts/detect-docker-gid.sh --write}"
+    # Everything in .env reaches the API, so settings that are not listed below
+    # (SECRETS_PROVIDER, VAULT_*, AWS_*, VAULTRUN_SECRET_*, SSO, ...) are not
+    # silently ignored. Entries in `environment:` take precedence over .env.
+    env_file:
+      - ../.env
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
-      - WORKSPACE_BASE_DIR=/data/workspaces
+      # The workspace directory is bind-mounted at the SAME path on the host and
+      # in this container. The API hands that path to the Docker daemon when it
+      # mounts a workspace into a sandbox, and the daemon resolves it on the host.
+      - WORKSPACE_BASE_DIR=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
+      - DOCKER_HOST_WORKSPACE_BASE_DIR=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - MIGRATIONS_PATH=/app/migrations
       - MASTER_API_KEY=${MASTER_API_KEY:?MASTER_API_KEY must be set}
       - DOCKER_HOST=unix:///var/run/docker.sock
@@ -72,27 +83,42 @@ services:
       - NET_ADMIN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - workspace_data:/data/workspaces
+      - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - acme_cache:/data/acme-cache
     depends_on:
+      workspace-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # One-shot root container: creates the host workspace directory and hands it to
+  # the API's non-root user (uid 65532). Docker would otherwise create it as root.
+  workspace-init:
+    image: alpine:3.21
+    user: "0:0"
+    command: >
+      sh -c 'mkdir -p "$$WS" && chown 65532:65532 "$$WS" && chmod 700 "$$WS"'
+    environment:
+      - WS=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
+    volumes:
+      - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
+    restart: "no"
 
   frontend:
     build:
       context: ../apps/frontend
       dockerfile: Dockerfile
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
       # Server-side proxy env vars (not exposed to browser bundle)
@@ -112,7 +138,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vaultrun"]
@@ -126,7 +152,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -137,5 +163,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  workspace_data:
   acme_cache:

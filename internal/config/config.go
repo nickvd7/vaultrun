@@ -82,6 +82,7 @@ type DockerConfig struct {
 
 type WorkspaceConfig struct {
 	BaseDir              string
+	DockerHostBaseDir    string // DOCKER_HOST_WORKSPACE_BASE_DIR: path on Docker host for bind mounts (defaults to BaseDir)
 	MaxFileMB            int64
 	MaxOutputMB          int64
 	MaxWorkspaceMB       int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
@@ -227,6 +228,7 @@ func Load() (*Config, error) {
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:              getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
+			DockerHostBaseDir:    getEnv("DOCKER_HOST_WORKSPACE_BASE_DIR", ""),
 			MaxFileMB:            maxFileMB,
 			MaxOutputMB:          maxOutputMB,
 			MaxWorkspaceMB:       func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),

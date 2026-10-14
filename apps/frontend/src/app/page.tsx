@@ -31,8 +31,8 @@ const features = [
   },
   {
     icon: Globe,
-    title: "MCP-Native (53 tools)",
-    desc: "Built-in Model Context Protocol server exposes 53 tools over stdio or HTTP — works with Claude, OpenAI, OpenRouter, and any MCP client.",
+    title: "MCP-Native (71 tools)",
+    desc: "Built-in Model Context Protocol server exposes 71 tools over stdio or HTTP — works with Claude, OpenAI, OpenRouter, and any MCP client.",
   },
   {
     icon: KeyRound,
@@ -216,7 +216,7 @@ export default function LandingPage() {
         {/* Stats row */}
         <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto">
           {[
-            { value: "53", label: "MCP tools" },
+            { value: "71", label: "MCP tools" },
             { value: "2", label: "transports (stdio + HTTP)" },
             { value: "3", label: "database backends" },
             { value: "4", label: "AWS services" },
@@ -257,7 +257,7 @@ export default function LandingPage() {
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-2xl p-8 md:p-10">
           <div className="flex items-center gap-2 mb-2">
             <Cpu className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs uppercase tracking-widest text-indigo-400 font-medium">53 MCP tools</span>
+            <span className="text-xs uppercase tracking-widest text-indigo-400 font-medium">71 MCP tools</span>
           </div>
           <h2 className="text-xl font-semibold text-slate-100 mb-2">All capabilities, one MCP server</h2>
           <p className="text-slate-400 text-sm mb-8 max-w-2xl">

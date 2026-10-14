@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "VaultRun — Secure AI Agent Runtime",
     description:
-      "Self-hosted secure sandbox runtime for AI agents. Isolated Docker sessions and a 53-tool MCP server.",
+      "Self-hosted secure sandbox runtime for AI agents. Isolated Docker sessions and a 71-tool MCP server.",
     siteName: "VaultRun",
     type: "website",
   },
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: "VaultRun — Secure AI Agent Runtime",
     description:
-      "Self-hosted secure sandbox runtime for AI agents. Isolated Docker sessions and a 53-tool MCP server.",
+      "Self-hosted secure sandbox runtime for AI agents. Isolated Docker sessions and a 71-tool MCP server.",
   },
 };
 

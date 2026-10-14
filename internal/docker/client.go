@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
@@ -96,10 +98,29 @@ func (c *Client) SeccompJSON() string {
 	return c.seccompJSON
 }
 
+// ErrImageUnavailable means the requested image cannot be used because it does
+// not exist, the reference is malformed, or the registry denied access. It is a
+// caller error, not a server fault.
+var ErrImageUnavailable = errors.New("image not found or not accessible")
+
+func isImageUnavailable(err error) bool {
+	if client.IsErrNotFound(err) || errdefs.IsInvalidParameter(err) || errdefs.IsUnauthorized(err) || errdefs.IsForbidden(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "pull access denied") ||
+		strings.Contains(msg, "repository does not exist") ||
+		strings.Contains(msg, "manifest unknown") ||
+		strings.Contains(msg, "invalid reference format")
+}
+
 // PullImage pulls an image if not already present.
 func (c *Client) PullImage(ctx context.Context, image string) error {
 	out, err := c.inner.ImagePull(ctx, image, dockerImagePullOptions())
 	if err != nil {
+		if isImageUnavailable(err) {
+			return fmt.Errorf("pull image %s: %w (%v)", image, ErrImageUnavailable, err)
+		}
 		return fmt.Errorf("pull image %s: %w", image, err)
 	}
 	defer out.Close()

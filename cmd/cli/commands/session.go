@@ -43,6 +43,16 @@ func sessionCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a new sandbox session",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cpu <= 0 {
+				return fmt.Errorf("--cpu must be positive (got %.2f)", cpu)
+			}
+			if memMB <= 0 {
+				return fmt.Errorf("--mem must be positive (got %d)", memMB)
+			}
+			if timeoutSec <= 0 {
+				return fmt.Errorf("--timeout must be positive (got %d)", timeoutSec)
+			}
+
 			body := map[string]interface{}{
 				"image":           image,
 				"network_enabled": network,
@@ -99,8 +109,12 @@ func sessionListCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "ID\tNAME\tIMAGE\tSTATUS\tCREATED")
 			for _, s := range result.Sessions {
+				name := "-"
+				if n, ok := s["name"].(string); ok && n != "" {
+					name = n
+				}
 				fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\n",
-					s["id"], s["name"], s["image"], s["status"], s["created_at"])
+					s["id"], name, s["image"], s["status"], s["created_at"])
 			}
 			return w.Flush()
 		},

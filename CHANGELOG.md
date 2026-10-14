@@ -9,9 +9,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **Jev / OpenJEV gate** — opt-in claim-vs-evidence checks via TypeSafe or [OpenJEV](https://openjev.sh/) (`api.openjev.sh`); MCP `jev_verify` / `jev_gate`, `POST /api/v1/verify/jev(-gate)`, mission step verify fail/hold, local-gateway completion gate; see `docs/features/jev-integration.md`
-- **Verify evidence** — sealed verification export (`content_digest` + optional `AUDIT_HMAC_KEY` HMAC); `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`, MCP `verify_evidence`; control-suite **v2** anti-shortcut cases; see `docs/features/verify-evidence.md`
+- **Verify evidence** — sealed verification export (`content_digest` + optional `AUDIT_HMAC_KEY` HMAC); `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`, MCP `verify_evidence` (MCP tool count is now 71, 77 with Flowd); control-suite **v2** anti-shortcut cases; see `docs/features/verify-evidence.md`
 - **Site / SEO / LLM index** — homepage + use-cases surface verify evidence, sealed digests, OpenJEV/Jev claim gates; FAQPage JSON-LD; expanded `robots.txt` AI crawlers; `llms.txt` / `llms-full.txt` + sitemap priority for AI grounding
 - **Agent plugin v1.1.0** — Cursor / Claude / Codex skills document verify evidence + OpenJEV/Jev env and tools (`skills/vaultrun`, `.cursor/skills/vaultrun`)
+
+---
+
+## [0.3.3] — 2026-10-14
+
+Housekeeping release. The application code is identical to v0.3.2 (`322a7ee`); this release fixes what v0.3.2 shipped with wrong metadata.
+
+### Fixed
+- **Python SDK on PyPI.** The `v0.3.2` tag still declared SDK version `0.2.1`, so the publish workflow skipped it and PyPI stayed on 0.2.1. The SDK is now `0.3.3` and is published by the tag workflow. No SDK code changed since 0.2.1.
+- **v0.3.2 release notes** were generated from an outdated changelog section and omitted the quickstart, secrets and API validation fixes. The correct list is below under 0.3.2.
+- Site `softwareVersion`, roadmap date, bug template examples and the README "latest release" note now match the release.
+
+---
+
+## [0.3.2] — 2026-10-14
+
+Cross-feature security pass plus the Docker Compose quickstart, secrets broker and API validation fixes. The quickstart is verified end to end by the Quickstart E2E workflow.
+
+
+### Fixed — Docker Compose quickstart (`make up` → session → command)
+- `make up` now runs end to end on a clean Linux host; verified by running the quickstart (Docker 29, socket GID 103): healthy API, dashboard, session `201`, command output returned, Python SDK example and CLI working.
+- **Workspace path.** The API hands the workspace path to the Docker daemon, which resolves it on the *host*. Compose now bind-mounts one host directory (`WORKSPACE_HOST_DIR`, default `/var/lib/vaultrun/workspaces`) at the same path in the API container and passes the same value as `WORKSPACE_BASE_DIR` / `DOCKER_HOST_WORKSPACE_BASE_DIR`. A one-shot `workspace-init` container creates it as `0700` owned by uid 65532, so no `sudo` is needed. The `workspace_data` named volume is removed.
+- **Docker socket GID.** `make up` runs `scripts/detect-docker-gid.sh --write`, which writes the real socket GID into `.env` and fails clearly if it cannot detect it. `DOCKER_GID` is required by Compose (no silent `999` fallback).
+- `DOCKER_HOST_WORKSPACE_BASE_DIR` support in the API (`SandboxConfig.HostWorkspacePath`) for setups where the in-container and host paths differ.
+- API no longer hangs silently when Postgres is unreachable: `connect_timeout=10` is added to the DSN (lib/pq ignores the context while dialing) and startup logs `connecting to database` plus a clear error.
+- `make bootstrap-key` sends its status line to stderr so its stdout is pure JSON, and refuses an empty `MASTER_API_KEY`.
+- `.env.example`: `REDIS_ADDR=redis:6379`, `WORKSPACE_HOST_DIR`, clearer `DOCKER_GID` note. README quickstart lists `curl` and `jq` as prerequisites.
+- Quickstart E2E workflow (`.github/workflows/quickstart-e2e.yml`) rewritten to use the real API (`POST /sessions/:id/run`), assert `201`, exit code and stdout, and dump logs on failure.
+- Earlier unreleased changes in this block that did not work as described: mount propagation was briefly switched to `rshared` and is back to `rprivate`; the `DOCKER_HOST_WORKSPACE_BASE_DIR=/data/workspaces` default pointed at a path that does not exist on the host.
+
+### Fixed — secrets broker and API validation
+- **Secrets broker under Compose.** The API container only received the variables listed in `docker-compose.yml`, so `SECRETS_PROVIDER`, `VAULT_*`, `AWS_*` and every `VAULTRUN_SECRET_*` in `.env` were silently ignored and each `"secrets": [...]` request failed with `secret not found`. The `api` service now loads `../.env` via `env_file` (explicit `environment:` entries still take precedence). Verified by running a command with `VAULTRUN_SECRET_TESTSECRET` set in `.env`.
+- `POST /sessions` returns `400` for negative `cpu_limit`, `memory_limit_mb` and `timeout_seconds` instead of silently replacing them with defaults (omitted or `0` still means "use the default").
+- `POST /sessions` returns `400` (`image "..." not found or not accessible`) for unknown images, registry access denials and malformed image references, instead of `500 container creation failed`.
+
+### Fixed — security and CLI
+- Postgres, Redis, API and dashboard ports are published on `127.0.0.1` only.
+- CLI: `--api-key` default is masked in `--help`; `session list` shows `-` instead of `<nil>`; `session create` rejects non-positive `--cpu`, `--mem`, `--timeout`; usage text is no longer printed on every error.
+
+### Changed — site and docs
+- MCP tool count is 70 everywhere (+6 with Flowd enabled). Google Fonts removed from the site (system monospace stack).
+
+### Still open
+- OOM-kill has no explanation, `REDIS_PASSWORD` empty by default, open defaults (OPA allow-all, unauthenticated `/metrics`, `0777` workspace dirs), secrets not filtered from stdout, PyPI behind the repo, `/docs/` 404, SDK import name — tracked in #66–#71.
+
+### Added
+- **Marketing site redesign** — clearer hero promise, problem/compare, honest threat model, progressive contact form, JetBrains Mono; `site/home.css` + `site/home.js`; shared nav refresh
+- **Site** — homepage + use-cases surface local inference gateway and verify controls (`#local`, features grid, local-AI use case)
 - **Verify controls** — frozen positive/negative suite certifying the verify evaluator (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`, `pipeline_discriminates` + suite fingerprint); see `docs/features/verify-controls.md`
 - **Local Inference Action Gateway** — OpenAI-compatible sidecar (`cmd/local`, `internal/localgateway`) that proxies chat to Ollama/LM Studio/vLLM and executes VaultRun sandbox tools on `tool_calls`. Auth, rate limits, loopback-default bind, final-answer SSE streaming, mission auto-capture, client recipes (`examples/local-gateway/`), automated smoke (`make test-local-gateway`); see `docs/local-gateway.md`
 - **Mission cost attribution** — snapshot session `cost_metrics` onto mission runs (`mission_cost_attributions`); `PATCH …/runs/:run_id`, `…/attribute-costs`, `GET …/costs`
@@ -87,9 +135,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   on tool results. Legacy `2024-11-05` `initialize` / `initialized` clients
   keep working without the new headers.
 
----
-
-## [0.3.2] — 2026-07-31
+### Cross-feature security pass (originally dated 2026-07-31)
 
 **Cross-feature security release.** A second testing pass, focused on where features interact rather than each in isolation, found twelve more defects — eight security-relevant. Full analysis in [docs/security-testing-report.md](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
 

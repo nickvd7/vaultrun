@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,7 +61,20 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	limits := sh.h.cfg.SessionLimits()
 
-	// Apply defaults for zero values
+	if req.CPULimit < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cpu_limit must not be negative"})
+		return
+	}
+	if req.MemoryLimitMB < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "memory_limit_mb must not be negative"})
+		return
+	}
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must not be negative"})
+		return
+	}
+
+	// Apply defaults for omitted (zero) values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage
 	}
@@ -232,16 +246,25 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	var containerID string
 
 	if containerID == "" {
+		// Calculate host workspace path for Docker bind mount.
+		// When DOCKER_HOST_WORKSPACE_BASE_DIR is set, use it; otherwise default to WorkspacePath.
+		hostWorkspacePath := wspath
+		if sh.h.cfg.Workspace.DockerHostBaseDir != "" {
+			// Replace the API container's base dir with the host base dir
+			hostWorkspacePath = strings.Replace(wspath, sh.h.cfg.Workspace.BaseDir, sh.h.cfg.Workspace.DockerHostBaseDir, 1)
+		}
+
 		containerID, err = sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{
-			SessionID:      sessionID,
-			Image:          req.Image,
-			WorkspacePath:  wspath,
-			NetworkEnabled: req.NetworkEnabled,
-			CPULimit:       req.CPULimit,
-			MemoryLimitMB:  req.MemoryLimitMB,
-			ContainerName:  containerName,
-			AllowedHosts:   []string(allowedHosts),
-			GPUDevices:     gpuDevices,
+			SessionID:         sessionID,
+			Image:             req.Image,
+			WorkspacePath:     wspath,
+			HostWorkspacePath: hostWorkspacePath,
+			NetworkEnabled:    req.NetworkEnabled,
+			CPULimit:          req.CPULimit,
+			MemoryLimitMB:     req.MemoryLimitMB,
+			ContainerName:     containerName,
+			AllowedHosts:      []string(allowedHosts),
+			GPUDevices:        gpuDevices,
 		})
 	}
 	if err != nil {
@@ -251,6 +274,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			"err", err,
 		)
 		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
+		if errors.Is(err, dockerpkg.ErrImageUnavailable) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})
 		return
 	}

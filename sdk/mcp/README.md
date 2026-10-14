@@ -3,7 +3,7 @@
 Model Context Protocol server that exposes all VaultRun capabilities as tools.
 Works with Claude Desktop, Claude Code, OpenAI, OpenRouter, and any MCP-compatible platform.
 
-**53+ tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
+**71 tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
 
 ## Build
 
@@ -117,7 +117,7 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 ## All tools
 
-Core: **53 tools**. With `MCP_FLOWD_ENABLED=true`: **59 tools**.
+Core: **71 tools**. With `MCP_FLOWD_ENABLED=true`: **77 tools** (+2 with `MCP_JEV_ENABLED=true`).
 
 ### Sandbox (13 tools)
 
@@ -310,7 +310,7 @@ curl -s -X POST http://localhost:8090/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | jq '.result.tools | length'
-# → 53 (59 with MCP_FLOWD_ENABLED=true)
+# → 71 (77 with MCP_FLOWD_ENABLED=true)
 
 # Without token → 401
 curl -s -X POST http://localhost:8090/mcp \

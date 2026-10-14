@@ -31,8 +31,8 @@ body:
     id: version
     attributes:
       label: VaultRun version
-      description: Release tag, commit SHA, or `main` + date. Example — `v0.2.1` or `git rev-parse --short HEAD`.
-      placeholder: v0.2.1
+      description: Release tag, commit SHA, or `main` + date. Example — `v0.3.3` or `git rev-parse --short HEAD`.
+      placeholder: v0.3.3
     validations:
       required: true
 

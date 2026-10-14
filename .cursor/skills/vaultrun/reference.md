@@ -38,7 +38,7 @@
 
 ## Tool counts
 
-- Core: 53 tools (always) — includes `verify_checkpoint`, `verify_controls`, `verify_evidence`
+- Core: 71 tools (always) — includes `verify_checkpoint`, `verify_controls`, `verify_evidence`
 - + AWS: 14 (when `MCP_AWS_ENABLED=true`)
 - + DB: varies by configured databases
 - + Flowd: 6 (when `MCP_FLOWD_ENABLED=true`)

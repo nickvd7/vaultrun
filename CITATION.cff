@@ -9,7 +9,7 @@ repository-code: "https://github.com/nickvd7/vaultrun"
 url: "https://vaultrun.dev"
 abstract: >-
   VaultRun is a self-hosted secure runtime for AI agents. It provides isolated
-  Docker sandboxes, a 53-tool MCP server (stdio and HTTP), Python and Go SDKs,
+  Docker sandboxes, a 71-tool MCP server (stdio and HTTP), Python and Go SDKs,
   and an HMAC-signed audit trail so agents can execute code and call tools
   without a SaaS dependency.
 keywords:

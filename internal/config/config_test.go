@@ -205,3 +205,11 @@ func TestProductionProblemsRedisPasswordOnlyWhenRedisUsed(t *testing.T) {
 		t.Fatalf("redis without password should be flagged: %v", c.ProductionProblems())
 	}
 }
+
+func TestProductionProblemsEmptyMasterKeyAllowed(t *testing.T) {
+	c := hardenedConfig()
+	c.Auth.MasterKey = ""
+	if p := c.ProductionProblems(); len(p) != 0 {
+		t.Fatalf("empty key (cleared after bootstrap) must not be flagged: %v", p)
+	}
+}

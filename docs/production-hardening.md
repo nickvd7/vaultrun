@@ -2,23 +2,29 @@
 
 The defaults are tuned for a local quickstart: `make up` and it works. Several of them are too open for a deployment that untrusted clients can reach. This page lists what to change and what VaultRun can enforce for you.
 
-## Production mode
+## Secure by default
 
-Set `VAULTRUN_PRODUCTION=true` and the API refuses to start unless all of these hold:
+The API refuses to start unless all of these hold:
 
 | Check | Satisfy it with | Explicit opt-out |
 |-------|-----------------|------------------|
 | OPA policy | `OPA_POLICY_FILE=/path/policy.rego` | `OPA_ALLOW_ALL=true` (accept AllowAll on purpose) |
 | TLS | `TLS_CERT_FILE` + `TLS_KEY_FILE`, or `ACME_DOMAIN` | `TLS_DISABLED=true` (a reverse proxy terminates TLS) |
 | `/metrics` auth | `METRICS_TOKEN=<random>` (bearer token) | none |
-| Master key | `MASTER_API_KEY` of at least 32 characters (`openssl rand -hex 32`) | none |
+| Master key | if set, at least 32 characters (`openssl rand -hex 32`); empty is allowed once you have bootstrapped | none |
 | Redis password | `REDIS_PASSWORD`, checked only when `REDIS_ADDR` is set | none |
 
-Without `VAULTRUN_PRODUCTION`, the API starts as before and logs one `not production-hardened` warning listing every open item, so the problems are visible without breaking the quickstart.
+Every failed check is logged as `insecure configuration` with the variable to set.
 
-Every failed check is logged as `production check failed` with the variable to set.
+### Local development
 
-## Not covered by production mode
+`.env.example` contains `VAULTRUN_INSECURE_DEV=true`, so `cp .env.example .env && make up` works with open defaults. With it set, the API starts anyway and logs one warning listing what is open. **Remove that line for any deployment other people can reach.**
+
+If you start the API without that variable (your own `.env`, the release binary, your own compose file) and the checks fail, it exits with the list of problems instead of running open.
+
+Upgrading from 0.3.4 or earlier: an existing `.env` without `VAULTRUN_INSECURE_DEV` now has to either pass the checks or add that line.
+
+## Not covered by the startup check
 
 These need action on your side:
 
@@ -35,7 +41,6 @@ The longer list, including SSO and the MCP HTTP transport, is in [security.md](s
 ## Minimal production `.env`
 
 ```bash
-VAULTRUN_PRODUCTION=true
 MASTER_API_KEY=<openssl rand -hex 32>
 METRICS_TOKEN=<openssl rand -hex 32>
 OPA_POLICY_FILE=/etc/vaultrun/policy.rego

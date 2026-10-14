@@ -21,10 +21,11 @@ type Config struct {
 	Production    ProductionConfig
 }
 
-// ProductionConfig drives the opt-in production-readiness check. See
+// ProductionConfig drives the startup hardening check, which is strict unless
+// InsecureDev is set. See
 // docs/production-hardening.md.
 type ProductionConfig struct {
-	Enabled      bool   // VAULTRUN_PRODUCTION: refuse to start when ProductionProblems() is non-empty
+	InsecureDev  bool   // VAULTRUN_INSECURE_DEV: start anyway (with a warning) when ProductionProblems() is non-empty
 	OPAAllowAll  bool   // OPA_ALLOW_ALL: explicitly accept running without an OPA policy
 	TLSDisabled  bool   // TLS_DISABLED: explicitly accept plain HTTP (e.g. TLS terminated by a proxy)
 	MetricsToken string // METRICS_TOKEN: bearer token protecting /metrics
@@ -288,7 +289,7 @@ func Load() (*Config, error) {
 			}
 		}(),
 		Production: ProductionConfig{
-			Enabled:      envBool("VAULTRUN_PRODUCTION"),
+			InsecureDev:  envBool("VAULTRUN_INSECURE_DEV"),
 			OPAAllowAll:  envBool("OPA_ALLOW_ALL"),
 			TLSDisabled:  envBool("TLS_DISABLED"),
 			MetricsToken: getEnv("METRICS_TOKEN", ""),
@@ -347,9 +348,9 @@ func (c *Config) ProductionProblems() []string {
 	if c.Production.MetricsToken == "" {
 		p = append(p, "/metrics is unauthenticated: set METRICS_TOKEN")
 	}
-	if c.Auth.MasterKey == "" {
-		p = append(p, "MASTER_API_KEY is not set")
-	} else if len(c.Auth.MasterKey) < 32 {
+	// An empty key is allowed: docs/security.md recommends clearing it after
+	// bootstrapping. A short one is brute-forceable and grants full admin.
+	if c.Auth.MasterKey != "" && len(c.Auth.MasterKey) < 32 {
 		p = append(p, "MASTER_API_KEY is shorter than 32 characters")
 	}
 	if c.Redis.Addr != "" && c.Redis.Password == "" {

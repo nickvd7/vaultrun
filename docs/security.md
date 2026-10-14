@@ -204,7 +204,7 @@ Audit logs have no update or delete endpoints.
 
 ## Recommendations for Production
 
-Set `VAULTRUN_PRODUCTION=true` to make the API refuse to start with the open quickstart defaults; see [production-hardening.md](production-hardening.md).
+The API refuses to start with open defaults unless `VAULTRUN_INSECURE_DEV=true` is set (the quickstart `.env.example` sets it); remove it in production. See [production-hardening.md](production-hardening.md).
 
 **API server:**
 1. Run the API server as a non-root user with only `CAP_NET_ADMIN` (for iptables egress filtering)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,7 +61,20 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	limits := sh.h.cfg.SessionLimits()
 
-	// Apply defaults for zero values
+	if req.CPULimit < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cpu_limit must not be negative"})
+		return
+	}
+	if req.MemoryLimitMB < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "memory_limit_mb must not be negative"})
+		return
+	}
+	if req.TimeoutSeconds < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must not be negative"})
+		return
+	}
+
+	// Apply defaults for omitted (zero) values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage
 	}
@@ -260,6 +274,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			"err", err,
 		)
 		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
+		if errors.Is(err, dockerpkg.ErrImageUnavailable) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})
 		return
 	}

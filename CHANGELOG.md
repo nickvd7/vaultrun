@@ -18,6 +18,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Quickstart E2E workflow (`.github/workflows/quickstart-e2e.yml`) rewritten to use the real API (`POST /sessions/:id/run`), assert `201`, exit code and stdout, and dump logs on failure.
 - Earlier unreleased changes in this block that did not work as described: mount propagation was briefly switched to `rshared` and is back to `rprivate`; the `DOCKER_HOST_WORKSPACE_BASE_DIR=/data/workspaces` default pointed at a path that does not exist on the host.
 
+### Fixed — secrets broker and API validation
+- **Secrets broker under Compose.** The API container only received the variables listed in `docker-compose.yml`, so `SECRETS_PROVIDER`, `VAULT_*`, `AWS_*` and every `VAULTRUN_SECRET_*` in `.env` were silently ignored and each `"secrets": [...]` request failed with `secret not found`. The `api` service now loads `../.env` via `env_file` (explicit `environment:` entries still take precedence). Verified by running a command with `VAULTRUN_SECRET_TESTSECRET` set in `.env`.
+- `POST /sessions` returns `400` for negative `cpu_limit`, `memory_limit_mb` and `timeout_seconds` instead of silently replacing them with defaults (omitted or `0` still means "use the default").
+- `POST /sessions` returns `400` (`image "..." not found or not accessible`) for unknown images, registry access denials and malformed image references, instead of `500 container creation failed`.
+
 ### Fixed — security and CLI
 - Postgres, Redis, API and dashboard ports are published on `127.0.0.1` only.
 - CLI: `--api-key` default is masked in `--help`; `session list` shows `-` instead of `<nil>`; `session create` rejects non-positive `--cpu`, `--mem`, `--timeout`; usage text is no longer printed on every error.
@@ -26,7 +31,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - MCP tool count is 70 everywhere (+6 with Flowd enabled). Google Fonts removed from the site (system monospace stack).
 
 ### Still open
-- Unknown image returns 500, OOM-kill has no explanation, `REDIS_PASSWORD` empty by default, open defaults (OPA allow-all, unauthenticated `/metrics`, `0777` workspace dirs), secrets not filtered from stdout, PyPI behind the repo, `/docs/` 404, SDK import name — tracked in #66–#71.
+- OOM-kill has no explanation, `REDIS_PASSWORD` empty by default, open defaults (OPA allow-all, unauthenticated `/metrics`, `0777` workspace dirs), secrets not filtered from stdout, PyPI behind the repo, `/docs/` 404, SDK import name — tracked in #66–#71.
 
 ### Added
 - **Marketing site redesign** — clearer hero promise, problem/compare, honest threat model, progressive contact form, JetBrains Mono; `site/home.css` + `site/home.js`; shared nav refresh

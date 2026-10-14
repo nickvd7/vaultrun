@@ -37,6 +37,10 @@ VAULTRUN_SECRET_API_KEY=sk-...
 Secret name `"DB_PASSWORD"` maps to env var `VAULTRUN_SECRET_DB_PASSWORD`.
 Names are uppercased before lookup.
 
+**Docker Compose:** the `api` service loads `.env` (`env_file`), so adding the
+variables there and re-running `make up` is enough. Entries in `.env` end up in
+the API container's environment; keep the file out of version control.
+
 **When to use:** development, single-host deployments.
 
 ---

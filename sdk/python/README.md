@@ -15,7 +15,7 @@ pip install vaultrun-sdk
 ## Quickstart
 
 ```python
-from sandbox_sdk import Client
+from vaultrun_sdk import Client
 
 client = Client("http://localhost:8080", api_key="vr_...")
 

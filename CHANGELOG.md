@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Changed
+- **Python SDK import name (#68).** `pip install vaultrun-sdk` now provides `import vaultrun_sdk`. The old `sandbox_sdk` import still works as a deprecated alias (emits `DeprecationWarning`), so existing code keeps running. README, examples, site and `llms*.txt` use the new name.
+- **`/docs/` no longer 404s (#69).** `vaultrun.dev/docs/` redirects to the documentation in the repository. The redesigned site has no links to it any more.
 - Site and `llms*.txt` no longer mention OpenJEV / TypeSafe Jev claim gates. The integration was never part of a release, the hosted OpenJEV endpoint is an unaffiliated community service funded by a memecoin and relays data through OpenRouter, and sending agent output to a third party does not fit the "no data leaves your network" promise. The use case now describes deterministic verify checkpoints plus sealed evidence only.
 
 ### Added

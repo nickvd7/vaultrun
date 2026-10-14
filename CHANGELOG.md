@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.0] — 2026-10-14
+
+**Upgrade note:** this release changes a default. If your `.env` does not contain `VAULTRUN_INSECURE_DEV=true`, the API now exits at startup unless the hardening checks pass. For local use add that line (it is in `.env.example`); for deployments follow `docs/production-hardening.md`. No other breaking changes; Python SDK 0.4.0 is published to PyPI with no code changes since 0.3.4.
+
 ### Changed
 - **Breaking: the API is now secure by default (#70).** It refuses to start without an OPA policy (or `OPA_ALLOW_ALL=true`), TLS (or `TLS_DISABLED=true`), `METRICS_TOKEN`, a 32+ character `MASTER_API_KEY` (if set) and, when Redis is used, `REDIS_PASSWORD`, unless `VAULTRUN_INSECURE_DEV=true` is set. `.env.example` sets it, so the quickstart is unchanged; **existing deployments whose `.env` lacks it must configure these or add the line.** This replaces the opt-in `VAULTRUN_PRODUCTION` added in 0.3.4.
 

@@ -315,12 +315,6 @@ rows: 48,211   revenue: €1.92M   top region: NL
       c: 6,
       opt: true,
     },
-    {
-      n: "jev",
-      tools: ["jev_verify", "jev_gate"],
-      c: 2,
-      opt: true,
-    },
   ];
   const catsEl = document.getElementById("cats");
   const toolTotal = document.getElementById("toolTotal");

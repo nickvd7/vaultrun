@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Site and `llms*.txt` no longer mention OpenJEV / TypeSafe Jev claim gates. The integration was never part of a release, the hosted OpenJEV endpoint is an unaffiliated community service funded by a memecoin and relays data through OpenRouter, and sending agent output to a third party does not fit the "no data leaves your network" promise. The use case now describes deterministic verify checkpoints plus sealed evidence only.
+
 ### Added
 - **Verify evidence** — sealed verification export (`content_digest` + optional `AUDIT_HMAC_KEY` HMAC); `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`, MCP `verify_evidence` (MCP tool count is now 71, 77 with Flowd); control-suite **v2** anti-shortcut cases; see `docs/features/verify-evidence.md`
 - **Site** — homepage, use cases and `llms.txt` describe verify evidence and the anti-shortcut controls

@@ -8,7 +8,7 @@
   --accent:#f2f2f2; --accent-ink:#000;
   --warn:#d4d4d4; --bad:#8a8a8a; --info:#cfcfcf;
   --note:#f2f2f2; --note-ink:#000;
-  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
   --sans:var(--mono);
   --r:6px; --max:1120px;
 }

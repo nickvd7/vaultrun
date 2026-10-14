@@ -18,9 +18,7 @@
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/site.css">
 <style>
@@ -97,7 +95,7 @@
     <p><strong style="color:var(--fg)">Problem.</strong> Giving an LLM toolchain raw AWS/DB credentials is risky; banning tools blocks useful workflows.</p>
     <p><strong style="color:var(--fg)">Pattern.</strong> Use MCP tools with explicit opt-in (e.g. AWS tools only when enabled), scoped filesystem allowlists, and Secrets Manager / Vault injection per run — results redacted in audit where needed.</p>
     <ul>
-      <li>53 MCP tools over stdio (Claude) or HTTP (OpenAI / OpenRouter / custom)</li>
+      <li>70 MCP tools over stdio (Claude) or HTTP (OpenAI / OpenRouter / custom)</li>
       <li>Postgres / SQLite / Mongo tools without putting the agent on the database host</li>
       <li>Enterprise IdP login so dashboard users never share the master key</li>
     </ul>

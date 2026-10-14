@@ -8,6 +8,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+
+### Fixed
+
+### Changed
+
+---
+
+## [0.3.3] - 2026-10-14
+
+### Fixed
+
+**Quickstart blockers:**
+- Dockerfile.api: Go version 1.23 → 1.25 (matches go.mod requirement)
+- Dockerfile.api: Alpine 3.21 runtime with curl for working healthcheck (was distroless without wget)
+- docker-compose.yml: curl-based healthcheck that actually succeeds
+- Makefile: `down`, `logs`, `ps` now load `.env` correctly with `--env-file`
+- Makefile: `bootstrap-key` validates that `.env` exists and `jq` is installed before running
+
+**Security:**
+- docker-compose.yml: All service ports (Postgres, Redis, API, frontend) now bind to `127.0.0.1` instead of `0.0.0.0` (prevents public network exposure)
+- .env.example: Added prominent **CRITICAL SECURITY WARNING** for Redis password with generation command
+- CLI: API key now masked as `***` in `--help` output (prevents leakage via screenshots/CI logs)
+
+**CLI improvements:**
+- `session list`: Display `-` instead of `<nil>` for empty session names
+- `session create`: Validate positive values for `--cpu`, `--mem`, `--timeout` (reject silently-accepted negatives)
+- CLI: `SilenceUsage = true` - stop printing full usage text on every error
+
+### Changed
+
+**Documentation consistency:**
+- Updated tool count from inconsistent 53/61 → accurate **70 tools** across all documentation
+  - Breakdown: 53 core + 8 browser + 4 memory + 2 verify + 3 task control (+6 Flowd opt-in = 76 total)
+  - Updated: README.md, AGENTS.md, sdk/mcp/README.md, docs/mcp.md, docs/flowd-integration.md, site/*.html, llms*.txt
+- Site: Removed Google Fonts (conflicted with "nothing phones home" claim)
+- Site: Use system monospace font stack (ui-monospace, SF Mono, Menlo, Monaco, etc.)
+
+**Related issues:** #66 (secrets filtering), #67 (API error codes), #68 (SDK naming), #69 (docs 404), #70 (production hardening), #71 (PyPI version sync)
+
+---
+
+## [0.3.2] - 2026-10-08
+
+### Added
 - **Marketing site redesign** — clearer hero promise, problem/compare, honest threat model, progressive contact form, JetBrains Mono; `site/home.css` + `site/home.js`; shared nav refresh
 - **Site** — homepage + use-cases surface local inference gateway and verify controls (`#local`, features grid, local-AI use case)
 - **Verify controls** — frozen positive/negative suite certifying the verify evaluator (`GET|POST /api/v1/verify/controls`, MCP `verify_controls`, `pipeline_discriminates` + suite fingerprint); see `docs/features/verify-controls.md`

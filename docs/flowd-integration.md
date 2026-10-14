@@ -83,7 +83,7 @@ Optional:
 | `flowd_stats` | `stats` | Local usage statistics |
 | `flowd_undo_run` | `undo <run_id>` | Undo a previous run (`run_id` required) |
 
-With Flowd enabled, `tools/list` returns **59** tools (53 core + 6 Flowd).
+With Flowd enabled, `tools/list` returns **76** tools (70 core + 6 Flowd).
 
 ## Example agent workflow
 

@@ -6,7 +6,7 @@ import responses as rsps
 
 import pytest
 
-from sandbox_sdk.client import APIKey, Client, CreatedKey, File, Run, Session, VaultRunError
+from vaultrun_sdk.client import APIKey, Client, CreatedKey, File, Run, Session, VaultRunError
 
 BASE_URL = "http://testserver"
 
@@ -492,7 +492,7 @@ def test_get_session(client: Client) -> None:
 
 @rsps.activate
 def test_run_async(client: Client) -> None:
-    from sandbox_sdk.client import AsyncRunResult
+    from vaultrun_sdk.client import AsyncRunResult
 
     rsps.add(
         rsps.POST,
@@ -655,7 +655,7 @@ def test_api_key_header_sent(client: Client) -> None:
 
 @rsps.activate
 def test_run_async_with_callback(client: Client) -> None:
-    from sandbox_sdk.client import AsyncRunResult
+    from vaultrun_sdk.client import AsyncRunResult
 
     rsps.add(
         rsps.POST,
@@ -683,7 +683,7 @@ def test_run_async_with_callback(client: Client) -> None:
 
 @rsps.activate
 def test_get_session_stats(client: Client) -> None:
-    from sandbox_sdk.client import SessionStats
+    from vaultrun_sdk.client import SessionStats
 
     rsps.add(
         rsps.GET,
@@ -732,7 +732,7 @@ def test_get_session_logs(client: Client) -> None:
 
 @rsps.activate
 def test_list_images(client: Client) -> None:
-    from sandbox_sdk.client import Image
+    from vaultrun_sdk.client import Image
 
     rsps.add(
         rsps.GET,
@@ -764,7 +764,7 @@ def test_list_images(client: Client) -> None:
 
 @rsps.activate
 def test_pull_image(client: Client) -> None:
-    from sandbox_sdk.client import PullStatus
+    from vaultrun_sdk.client import PullStatus
 
     rsps.add(
         rsps.POST,
@@ -781,3 +781,21 @@ def test_pull_image(client: Client) -> None:
     body = rsps.calls[0].request.body
     decoded = body.decode() if isinstance(body, bytes) else body
     assert "python:3.12-slim" in decoded
+
+
+def test_legacy_sandbox_sdk_alias_still_works():
+    import importlib
+    import sys
+    import warnings
+
+    sys.modules.pop("sandbox_sdk", None)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        legacy = importlib.import_module("sandbox_sdk")
+    import vaultrun_sdk
+
+    assert legacy.Client is vaultrun_sdk.Client
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    from sandbox_sdk.client import VaultRunError as LegacyError
+
+    assert LegacyError is vaultrun_sdk.VaultRunError

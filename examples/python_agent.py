@@ -17,7 +17,7 @@ import textwrap
 # Add the SDK to the path (for local dev)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
 
-from sandbox_sdk import Client, VaultRunError
+from vaultrun_sdk import Client, VaultRunError
 
 API_URL = os.environ.get("VAULTRUN_API_URL", "http://localhost:8080")
 API_KEY = os.environ.get("VAULTRUN_API_KEY", "")

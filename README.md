@@ -44,18 +44,13 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 
 ## Quickstart
 
-**Prerequisites:** Docker, Docker Compose, Go 1.25+
+**Prerequisites:** Docker, Docker Compose, `curl` and `jq` (Go 1.25+ only if you build outside Docker)
 
 ```bash
 git clone https://github.com/nickvd7/vaultrun
 cd vaultrun
-cp .env.example .env        # set MASTER_API_KEY to something strong
-
-# IMPORTANT: Detect your Docker group GID
-./scripts/detect-docker-gid.sh
-# Add the output DOCKER_GID=<number> to your .env file
-
-make up                     # start API + Postgres + Redis + dashboard
+cp .env.example .env        # set MASTER_API_KEY and POSTGRES_PASSWORD (openssl rand -hex 32)
+make up                     # detects the Docker GID, then starts API + Postgres + Redis + dashboard
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
 ```

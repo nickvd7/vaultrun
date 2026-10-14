@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ func Connect(cfg config.DatabaseConfig) (*sqlx.DB, error) {
 		return nil, err
 	}
 
-	dsn := injectSSLParams(cfg.DSN, cfg)
+	dsn := withConnectTimeout(injectSSLParams(cfg.DSN, cfg), connectTimeoutSeconds)
 
 	db, err := sqlx.Open("postgres", dsn)
 	if err != nil {
@@ -40,14 +41,39 @@ func Connect(cfg config.DatabaseConfig) (*sqlx.DB, error) {
 			"set DB_SSL_MODE=require in production")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	slog.Info("connecting to database", "timeout_seconds", connectTimeoutSeconds)
+	ctx, cancel := context.WithTimeout(context.Background(), (connectTimeoutSeconds+5)*time.Second)
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("ping db: %w", err)
+		return nil, fmt.Errorf("ping db (is Postgres reachable?): %w", err)
 	}
 
 	return db, nil
+}
+
+// connectTimeoutSeconds bounds how long a single connection attempt may block.
+// database/sql hands the context to lib/pq's Connect but lib/pq (v1.10) dials
+// without it, so without connect_timeout an unreachable Postgres blocks for the
+// OS TCP timeout (minutes) without a single log line.
+const connectTimeoutSeconds = 10
+
+// withConnectTimeout adds connect_timeout to the DSN unless the caller already set one.
+func withConnectTimeout(dsn string, seconds int) string {
+	if strings.Contains(dsn, "connect_timeout") {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return dsn
+		}
+		q := u.Query()
+		q.Set("connect_timeout", strconv.Itoa(seconds))
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+	return dsn + " connect_timeout=" + strconv.Itoa(seconds)
 }
 
 func RunMigrations(db *sqlx.DB, migrationsPath string) error {

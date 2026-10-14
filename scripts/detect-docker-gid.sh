@@ -1,30 +1,46 @@
-#!/bin/bash
-# Detect the Docker group GID for docker-compose.yml
-# Usage: ./scripts/detect-docker-gid.sh
+#!/usr/bin/env bash
+# Detect the group ID that owns the Docker socket, so the non-root API
+# container can talk to the Docker daemon (docker-compose `group_add`).
+#
+# Usage:
+#   scripts/detect-docker-gid.sh            print the GID
+#   scripts/detect-docker-gid.sh --write    set DOCKER_GID in .env (creates it if missing)
+#   scripts/detect-docker-gid.sh --write path/to/envfile
+set -euo pipefail
 
-set -e
+SOCKET="${DOCKER_SOCKET:-/var/run/docker.sock}"
 
-if [ -S /var/run/docker.sock ]; then
-    # Socket exists, check its group
-    GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null)
-    if [ -n "$GID" ]; then
-        echo "Detected Docker socket GID: $GID"
-        echo "Add this to your .env file:"
-        echo "DOCKER_GID=$GID"
-        exit 0
+detect() {
+    if [ -S "$SOCKET" ]; then
+        stat -c '%g' "$SOCKET" 2>/dev/null || stat -f '%g' "$SOCKET" 2>/dev/null && return 0
     fi
+    if getent group docker >/dev/null 2>&1; then
+        getent group docker | cut -d: -f3
+        return 0
+    fi
+    return 1
+}
+
+GID="$(detect || true)"
+if [ -z "$GID" ]; then
+    echo "error: could not detect the Docker socket GID (is Docker installed and running?)" >&2
+    echo "       check 'ls -ln $SOCKET' and set DOCKER_GID=<gid> in .env manually" >&2
+    exit 1
 fi
 
-# Fallback: check docker group
-if getent group docker >/dev/null 2>&1; then
-    GID=$(getent group docker | cut -d: -f3)
-    echo "Detected docker group GID: $GID"
-    echo "Add this to your .env file:"
-    echo "DOCKER_GID=$GID"
+if [ "${1:-}" != "--write" ]; then
+    echo "$GID"
     exit 0
 fi
 
-echo "Warning: Could not detect Docker GID automatically"
-echo "Please find it manually with: ls -l /var/run/docker.sock"
-echo "Then add DOCKER_GID=<gid> to your .env file"
-exit 1
+ENV_FILE="${2:-.env}"
+touch "$ENV_FILE"
+if grep -q '^DOCKER_GID=' "$ENV_FILE"; then
+    tmp="$(mktemp)"
+    sed "s/^DOCKER_GID=.*/DOCKER_GID=$GID/" "$ENV_FILE" > "$tmp"
+    cat "$tmp" > "$ENV_FILE"
+    rm -f "$tmp"
+else
+    printf '\nDOCKER_GID=%s\n' "$GID" >> "$ENV_FILE"
+fi
+echo "DOCKER_GID=$GID written to $ENV_FILE" >&2

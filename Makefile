@@ -35,8 +35,8 @@ run-api: build-api
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 up:
-	@echo "Detecting Docker GID..."
-	@./scripts/detect-docker-gid.sh || true
+	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
+	@./scripts/detect-docker-gid.sh --write .env
 	docker compose -f deployments/docker-compose.yml --env-file .env up -d --build
 
 down:
@@ -101,7 +101,7 @@ bootstrap-key:
 	  echo "Error: MASTER_API_KEY is empty in .env. Set it to a strong secret (e.g. openssl rand -hex 32)"; \
 	  exit 1; \
 	fi && \
-	echo "Creating initial API key..." && \
+	echo "Creating initial API key..." >&2 && \
 	curl -s -X POST http://localhost:8080/api/v1/keys \
 	  -H "X-API-Key: $${MASTER_API_KEY}" \
 	  -H "Content-Type: application/json" \

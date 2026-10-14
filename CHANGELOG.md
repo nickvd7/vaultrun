@@ -15,6 +15,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.4] - 2026-10-14
+
+### Fixed
+
+**Critical workspace path fix:**
+- docker-compose.yml: Pass `DOCKER_HOST_WORKSPACE_BASE_DIR` environment variable to API container (was missing)
+- container.go: Change mount propagation from `rprivate` to `rshared` (allows workspace_data volume to work)
+- .env.example: Set `DOCKER_HOST_WORKSPACE_BASE_DIR=/data/workspaces` as default for Docker Compose
+- **Impact**: Sessions can now be created successfully - sandbox containers mount workspaces correctly
+
+**Docker GID detection:**
+- Added `scripts/detect-docker-gid.sh` to automatically find correct Docker group GID
+- .env.example: Better documentation of DOCKER_GID with common values (999/102/991)
+- Makefile: `make up` now runs GID detection script before starting
+- README: Added GID detection step to quickstart
+- **Impact**: Works out-of-box on more Linux distributions (Debian GID=102, Ubuntu GID=999)
+
+### Added
+
+**Quickstart E2E test:**
+- .github/workflows/quickstart-e2e.yml: Full integration test
+- Tests: make up → bootstrap-key → create session → run command
+- Validates complete quickstart flow on every push/PR
+- **Impact**: Catches setup blockers before they reach users
+
+**Related issues:** Addresses tester feedback from third round - workspace path still didn't work, GID was wrong on Debian
+
+---
+
+## [0.3.3] - 2026-10-14
+
+### Added
+
+### Fixed
+
+### Changed
+
+---
+
 ## [0.3.3] - 2026-10-14
 
 ### Fixed

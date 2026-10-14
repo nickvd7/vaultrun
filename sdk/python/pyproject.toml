@@ -47,4 +47,4 @@ dev = ["pytest>=8", "responses>=0.25"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sandbox_sdk*"]
+include = ["vaultrun_sdk*", "sandbox_sdk*"]

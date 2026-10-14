@@ -17,7 +17,7 @@ import re
 import textwrap
 
 import autogen
-from sandbox_sdk import Client
+from vaultrun_sdk import Client
 
 # ── VaultRun client ────────────────────────────────────────────────────────────
 vr = Client(

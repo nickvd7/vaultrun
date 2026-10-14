@@ -1,42 +1,20 @@
-"""VaultRun Python SDK — secure sandbox runtime for AI agents."""
+"""Deprecated alias for :mod:`vaultrun_sdk`.
 
-from .client import (
-    Client,
-    Session,
-    Run,
-    AsyncRunResult,
-    File,
-    APIKey,
-    CreatedKey,
-    AuditLog,
-    StreamResult,
-    Organization,
-    OrgMember,
-    Snapshot,
-    SharedArtifact,
-    Image,
-    SessionStats,
-    PullStatus,
-    VaultRunError,
+``pip install vaultrun-sdk`` provides the ``vaultrun_sdk`` package. This module
+only exists so code written against the old import name keeps working.
+"""
+
+import sys
+import warnings
+
+import vaultrun_sdk as _impl
+from vaultrun_sdk import *  # noqa: F401,F403
+from vaultrun_sdk import __all__, __version__  # noqa: F401
+
+warnings.warn(
+    "'sandbox_sdk' is deprecated; use 'import vaultrun_sdk' (package vaultrun-sdk).",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
-__all__ = [
-    "Client",
-    "Session",
-    "Run",
-    "AsyncRunResult",
-    "File",
-    "APIKey",
-    "CreatedKey",
-    "AuditLog",
-    "StreamResult",
-    "Organization",
-    "OrgMember",
-    "Snapshot",
-    "SharedArtifact",
-    "Image",
-    "SessionStats",
-    "PullStatus",
-    "VaultRunError",
-]
-__version__ = "0.1.0"
+sys.modules[__name__ + ".client"] = _impl.client

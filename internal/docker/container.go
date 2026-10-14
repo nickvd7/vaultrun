@@ -75,6 +75,9 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	exists, err := c.ImageExists(ctx, pinnedImage)
 	if err != nil {
 		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+		if isImageUnavailable(err) {
+			return "", fmt.Errorf("check image: %w (%v)", ErrImageUnavailable, err)
+		}
 		return "", fmt.Errorf("check image: %w", err)
 	}
 	if !exists {

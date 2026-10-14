@@ -278,7 +278,7 @@ if run.Stdout != nil { fmt.Println(*run.Stdout) }</code></pre></div>
       </div>
       <div>
         <ul class="checklist">
-          <li><b>Needs</b>Docker, Docker Compose, and Go 1.25+ to build from source.</li>
+          <li><b>Needs</b>Docker with Compose v2, plus <code>curl</code> and <code>jq</code> for the quickstart. Go 1.25+ is only needed to build outside Docker.</li>
           <li><b>Starts</b>API on :8080, dashboard on :3000, Postgres and Redis.</li>
           <li><b>Next</b><a href="#mcp">Wire up MCP</a> or <a href="#local">connect a local model</a>.</li>
         </ul>

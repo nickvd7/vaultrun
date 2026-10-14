@@ -15,6 +15,11 @@ services:
     # (Ubuntu 999, Debian 102, ...). `make up` detects it and writes it to .env.
     group_add:
       - "${DOCKER_GID:?DOCKER_GID must be set - run `make up` or scripts/detect-docker-gid.sh --write}"
+    # Everything in .env reaches the API, so settings that are not listed below
+    # (SECRETS_PROVIDER, VAULT_*, AWS_*, VAULTRUN_SECRET_*, SSO, ...) are not
+    # silently ignored. Entries in `environment:` take precedence over .env.
+    env_file:
+      - ../.env
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable

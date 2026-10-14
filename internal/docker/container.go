@@ -195,7 +195,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 				}(),
 				Target: "/workspace",
 				BindOptions: &mount.BindOptions{
-					Propagation: mount.PropagationRPrivate,
+					Propagation: mount.PropagationRShared,
 				},
 			},
 			// /tmp tmpfs — needed because HOME=/tmp and some tools write

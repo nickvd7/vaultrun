@@ -23,6 +23,7 @@ services:
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable
       - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
       - WORKSPACE_BASE_DIR=/data/workspaces
+      - DOCKER_HOST_WORKSPACE_BASE_DIR=${DOCKER_HOST_WORKSPACE_BASE_DIR:-/data/workspaces}
       - MIGRATIONS_PATH=/app/migrations
       - MASTER_API_KEY=${MASTER_API_KEY:?MASTER_API_KEY must be set}
       - DOCKER_HOST=unix:///var/run/docker.sock

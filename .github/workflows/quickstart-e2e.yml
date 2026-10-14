@@ -1,0 +1,119 @@
+name: Quickstart E2E Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quickstart-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          cp .env.example .env
+          # Generate strong secrets for testing
+          MASTER_KEY=$(openssl rand -hex 32)
+          PG_PASSWORD=$(openssl rand -hex 32)
+          sed -i "s/MASTER_API_KEY=.*/MASTER_API_KEY=$MASTER_KEY/" .env
+          sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$PG_PASSWORD/" .env
+          
+          # Detect Docker GID
+          ./scripts/detect-docker-gid.sh | grep DOCKER_GID >> .env || echo "DOCKER_GID=999" >> .env
+          
+          cat .env
+
+      - name: Start services
+        run: |
+          make up
+          
+      - name: Wait for API healthy
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+          
+      - name: Bootstrap API key
+        id: bootstrap
+        run: |
+          API_KEY=$(make bootstrap-key | jq -r '.key')
+          echo "api_key=$API_KEY" >> $GITHUB_OUTPUT
+          echo "API key created: ${API_KEY:0:10}..."
+
+      - name: Create session
+        run: |
+          SESSION=$(curl -s -X POST http://localhost:8080/api/v1/sessions \
+            -H "X-API-Key: ${{ steps.bootstrap.outputs.api_key }}" \
+            -H "Content-Type: application/json" \
+            -d '{"image":"python:3.12-slim","cpu_limit":0.5,"memory_limit_mb":256}')
+          echo "Session response: $SESSION"
+          SESSION_ID=$(echo $SESSION | jq -r '.id')
+          echo "SESSION_ID=$SESSION_ID" >> $GITHUB_ENV
+          
+          # Verify session was created
+          if [ "$SESSION_ID" == "null" ] || [ -z "$SESSION_ID" ]; then
+            echo "Failed to create session"
+            echo $SESSION | jq .
+            exit 1
+          fi
+          echo "Session created: $SESSION_ID"
+
+      - name: Execute command
+        run: |
+          RUN=$(curl -s -X POST http://localhost:8080/api/v1/sessions/$SESSION_ID/runs \
+            -H "X-API-Key: ${{ steps.bootstrap.outputs.api_key }}" \
+            -H "Content-Type: application/json" \
+            -d '{"command":"python","args":["-c","print(\"hello from sandbox\")"]}')
+          echo "Run response: $RUN"
+          RUN_ID=$(echo $RUN | jq -r '.id')
+          
+          # Wait for run to complete
+          for i in {1..30}; do
+            STATUS=$(curl -s http://localhost:8080/api/v1/sessions/$SESSION_ID/runs/$RUN_ID \
+              -H "X-API-Key: ${{ steps.bootstrap.outputs.api_key }}" | jq -r '.status')
+            echo "Run status: $STATUS"
+            if [ "$STATUS" == "completed" ] || [ "$STATUS" == "failed" ]; then
+              break
+            fi
+            sleep 1
+          done
+          
+          # Get final result
+          RESULT=$(curl -s http://localhost:8080/api/v1/sessions/$SESSION_ID/runs/$RUN_ID \
+            -H "X-API-Key: ${{ steps.bootstrap.outputs.api_key }}")
+          echo "Final result: $RESULT"
+          
+          EXIT_CODE=$(echo $RESULT | jq -r '.exit_code')
+          STDOUT=$(echo $RESULT | jq -r '.stdout')
+          
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Command failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          
+          if [[ "$STDOUT" != *"hello from sandbox"* ]]; then
+            echo "Expected output not found"
+            echo "Got: $STDOUT"
+            exit 1
+          fi
+          
+          echo "✅ Quickstart test passed!"
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== API logs ==="
+          docker compose -f deployments/docker-compose.yml --env-file .env logs api
+          echo "=== Postgres logs ==="
+          docker compose -f deployments/docker-compose.yml --env-file .env logs postgres
+          echo "=== Redis logs ==="
+          docker compose -f deployments/docker-compose.yml --env-file .env logs redis
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker compose -f deployments/docker-compose.yml --env-file .env down -v

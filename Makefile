@@ -35,6 +35,8 @@ run-api: build-api
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 up:
+	@echo "Detecting Docker GID..."
+	@./scripts/detect-docker-gid.sh || true
 	docker compose -f deployments/docker-compose.yml --env-file .env up -d --build
 
 down:

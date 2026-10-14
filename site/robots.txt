@@ -2,14 +2,20 @@
 User-agent: *
 Allow: /
 
-# AI / LLM crawlers — content is intentionally public
+# AI / LLM crawlers — public product docs intentionally crawlable
 User-agent: GPTBot
 Allow: /
 
 User-agent: ChatGPT-User
 Allow: /
 
+User-agent: OAI-SearchBot
+Allow: /
+
 User-agent: Google-Extended
+Allow: /
+
+User-agent: Googlebot
 Allow: /
 
 User-agent: anthropic-ai
@@ -24,6 +30,9 @@ Allow: /
 User-agent: PerplexityBot
 Allow: /
 
+User-agent: Applebot
+Allow: /
+
 User-agent: Applebot-Extended
 Allow: /
 
@@ -31,6 +40,24 @@ User-agent: Bytespider
 Allow: /
 
 User-agent: CCBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: FacebookBot
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: Diffbot
+Allow: /
+
+User-agent: YouBot
 Allow: /
 
 Sitemap: https://vaultrun.dev/sitemap.xml

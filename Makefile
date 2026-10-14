@@ -35,16 +35,18 @@ run-api: build-api
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 up:
+	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
+	@./scripts/detect-docker-gid.sh --write .env
 	docker compose -f deployments/docker-compose.yml --env-file .env up -d --build
 
 down:
-	docker compose -f deployments/docker-compose.yml down
+	docker compose -f deployments/docker-compose.yml --env-file .env down
 
 logs:
-	docker compose -f deployments/docker-compose.yml logs -f api
+	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
 
 ps:
-	docker compose -f deployments/docker-compose.yml ps
+	docker compose -f deployments/docker-compose.yml --env-file .env ps
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
@@ -86,9 +88,22 @@ migrate-down:
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 # Creates the first API key using the master key
 bootstrap-key:
-	@echo "Creating initial API key..."
+	@if [ ! -f .env ]; then \
+	  echo "Error: .env not found. Run: cp .env.example .env"; \
+	  exit 1; \
+	fi
+	@if ! command -v jq >/dev/null 2>&1; then \
+	  echo "Error: jq is required. Install it with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"; \
+	  exit 1; \
+	fi
+	@. ./.env && \
+	if [ -z "$$MASTER_API_KEY" ]; then \
+	  echo "Error: MASTER_API_KEY is empty in .env. Set it to a strong secret (e.g. openssl rand -hex 32)"; \
+	  exit 1; \
+	fi && \
+	echo "Creating initial API key..." >&2 && \
 	curl -s -X POST http://localhost:8080/api/v1/keys \
-	  -H "X-API-Key: $${MASTER_API_KEY:-changeme-master-key}" \
+	  -H "X-API-Key: $${MASTER_API_KEY}" \
 	  -H "Content-Type: application/json" \
 	  -d '{"name":"default"}' | jq .
 

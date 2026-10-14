@@ -3,7 +3,7 @@
 Model Context Protocol server that exposes all VaultRun capabilities as tools.
 Works with Claude Desktop, Claude Code, OpenAI, OpenRouter, and any MCP-compatible platform.
 
-**53+ tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
+**71 tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
 
 ## Build
 

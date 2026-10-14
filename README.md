@@ -15,11 +15,13 @@
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network. Local-first: treat successful agent plans as **workflow assets** you own (missions, verify checkpoints, sandbox memory, swarm graph, cost-aware replay).
 
-> **Latest v0.3.2:** A second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
+> **Latest v0.3.3:** Housekeeping on top of v0.3.2 (corrected release metadata, Python SDK published to PyPI as 0.3.3).
+>
+> **v0.3.2:** The Docker Compose quickstart (`make up` → session → command) now works end to end on a clean Linux host and is covered by a CI workflow; the secrets broker works under Compose, and the API returns `400` for invalid limits and unknown images. It also includes a second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
 >
 > **v0.3.1:** Security and correctness release for the six v0.3.0 features — eleven defects found and fixed, including Rego and iptables injection through LLM-generated policies, incomplete SSRF filtering, HMAC signatures that did not cover the data they protect, and two features that did not work at all.
 >
-> **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (61 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
+> **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (71 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -44,13 +46,13 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 
 ## Quickstart
 
-**Prerequisites:** Docker, Docker Compose, Go 1.25+
+**Prerequisites:** Docker, Docker Compose, `curl` and `jq` (Go 1.25+ only if you build outside Docker)
 
 ```bash
 git clone https://github.com/nickvd7/vaultrun
 cd vaultrun
-cp .env.example .env        # set MASTER_API_KEY to something strong
-make up                     # start API + Postgres + Redis + dashboard
+cp .env.example .env        # set MASTER_API_KEY and POSTGRES_PASSWORD (openssl rand -hex 32)
+make up                     # detects the Docker GID, then starts API + Postgres + Redis + dashboard
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
 ```
@@ -63,7 +65,7 @@ Open `http://localhost:3000` for the dashboard.
 |---|---|
 | **API server** (`cmd/api`) | Gin-based REST API — sessions, runs, files, audit |
 | **CLI** (`cmd/cli`) | `vaultrun` command-line tool |
-| **MCP server** (`sdk/mcp`) | 61-tool MCP server (stdio + HTTP, +8 browser tools) |
+| **MCP server** (`sdk/mcp`) | 71-tool MCP server (stdio + HTTP, +6 Flowd when enabled) |
 | **CI runner** (`cmd/ci-runner`) | GitHub webhook → sandbox CI + Slack/Teams notify |
 | **Local gateway** (`cmd/local`) | OpenAI-compat action plane for Ollama / LM Studio / vLLM → VaultRun tools ([docs](docs/local-gateway.md) · [recipes](examples/local-gateway/)) |
 | **Dashboard** (`apps/frontend`) | Next.js management UI |
@@ -123,9 +125,9 @@ vaultrun/
 └── examples/         Usage examples
 ```
 
-## MCP Server (61 tools)
+## MCP Server (71 tools)
 
-The MCP server exposes every VaultRun capability as a Model Context Protocol tool, including 8 browser automation tools.
+The MCP server exposes every VaultRun capability as a Model Context Protocol tool, including browser automation, memory, verification, task control, and optional Flowd integration (+6 tools).
 Add it to Claude Desktop, Claude Code, or any MCP-compatible platform in seconds.
 
 ### Stdio transport (Claude Desktop / Claude Code)

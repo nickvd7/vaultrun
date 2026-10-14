@@ -25,7 +25,8 @@ func isPrivateIP(ip net.IP) bool {
 type SandboxConfig struct {
 	SessionID      uuid.UUID
 	Image          string
-	WorkspacePath  string
+	WorkspacePath  string // Path to workspace on the API container filesystem
+	HostWorkspacePath string // Path to workspace on the Docker host (for bind mounts); defaults to WorkspacePath if empty
 	NetworkEnabled bool
 	CPULimit       float64 // fractional CPUs, e.g. 0.5 = half a core
 	MemoryLimitMB  int
@@ -74,6 +75,9 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	exists, err := c.ImageExists(ctx, pinnedImage)
 	if err != nil {
 		metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+		if isImageUnavailable(err) {
+			return "", fmt.Errorf("check image: %w (%v)", ErrImageUnavailable, err)
+		}
 		return "", fmt.Errorf("check image: %w", err)
 	}
 	if !exists {
@@ -186,7 +190,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 			// Primary workspace — writable bind mount at /workspace.
 			{
 				Type:   mount.TypeBind,
-				Source: cfg.WorkspacePath,
+				Source: func() string {
+					if cfg.HostWorkspacePath != "" {
+						return cfg.HostWorkspacePath
+					}
+					return cfg.WorkspacePath
+				}(),
 				Target: "/workspace",
 				BindOptions: &mount.BindOptions{
 					Propagation: mount.PropagationRPrivate,

@@ -13,6 +13,11 @@ services:
       dockerfile: deployments/Dockerfile.api
     ports:
       - "127.0.0.1:${PORT:-8080}:8080"
+    # Docker socket access: add the docker group GID so the nonroot user can access the socket.
+    # On most systems this is 999, but check with: getent group docker | cut -d: -f3
+    # If this doesn't match your system, override with: DOCKER_GID=<your-gid> in .env
+    group_add:
+      - "${DOCKER_GID:-999}"
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable

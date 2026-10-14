@@ -94,8 +94,13 @@ bootstrap-key:
 	  echo "Error: jq is required. Install it with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"; \
 	  exit 1; \
 	fi
-	@echo "Creating initial API key..."
-	@. ./.env && curl -s -X POST http://localhost:8080/api/v1/keys \
+	@. ./.env && \
+	if [ -z "$$MASTER_API_KEY" ]; then \
+	  echo "Error: MASTER_API_KEY is empty in .env. Set it to a strong secret (e.g. openssl rand -hex 32)"; \
+	  exit 1; \
+	fi && \
+	echo "Creating initial API key..." && \
+	curl -s -X POST http://localhost:8080/api/v1/keys \
 	  -H "X-API-Key: $${MASTER_API_KEY}" \
 	  -H "Content-Type: application/json" \
 	  -d '{"name":"default"}' | jq .

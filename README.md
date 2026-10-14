@@ -21,7 +21,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 >
 > **v0.3.1:** Security and correctness release for the six v0.3.0 features — eleven defects found and fixed, including Rego and iptables injection through LLM-generated policies, incomplete SSRF filtering, HMAC signatures that did not cover the data they protect, and two features that did not work at all.
 >
-> **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (70 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
+> **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (71 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -65,7 +65,7 @@ Open `http://localhost:3000` for the dashboard.
 |---|---|
 | **API server** (`cmd/api`) | Gin-based REST API — sessions, runs, files, audit |
 | **CLI** (`cmd/cli`) | `vaultrun` command-line tool |
-| **MCP server** (`sdk/mcp`) | 70-tool MCP server (stdio + HTTP, +6 Flowd when enabled) |
+| **MCP server** (`sdk/mcp`) | 71-tool MCP server (stdio + HTTP, +6 Flowd when enabled) |
 | **CI runner** (`cmd/ci-runner`) | GitHub webhook → sandbox CI + Slack/Teams notify |
 | **Local gateway** (`cmd/local`) | OpenAI-compat action plane for Ollama / LM Studio / vLLM → VaultRun tools ([docs](docs/local-gateway.md) · [recipes](examples/local-gateway/)) |
 | **Dashboard** (`apps/frontend`) | Next.js management UI |
@@ -125,7 +125,7 @@ vaultrun/
 └── examples/         Usage examples
 ```
 
-## MCP Server (70 tools)
+## MCP Server (71 tools)
 
 The MCP server exposes every VaultRun capability as a Model Context Protocol tool, including browser automation, memory, verification, task control, and optional Flowd integration (+6 tools).
 Add it to Claude Desktop, Claude Code, or any MCP-compatible platform in seconds.

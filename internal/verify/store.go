@@ -2,13 +2,18 @@ package verify
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 )
+
+// ErrNotFound is returned when a verification id does not exist.
+var ErrNotFound = errors.New("verification not found")
 
 // Record is a persisted verification outcome.
 type Record struct {
@@ -63,6 +68,23 @@ func (s *Store) Save(ctx context.Context, rec *Record) error {
 		return fmt.Errorf("insert run_verification: %w", err)
 	}
 	return nil
+}
+
+// Get returns one verification by id.
+func (s *Store) Get(ctx context.Context, id uuid.UUID) (*Record, error) {
+	var rec Record
+	err := s.db.GetContext(ctx, &rec, `
+		SELECT id, session_id, run_id, mission_run_id, step_name,
+		       spec, observation, passed, checks, created_at
+		FROM run_verifications
+		WHERE id = $1`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get run_verification: %w", err)
+	}
+	return &rec, nil
 }
 
 // ListBySession returns recent verifications for a session.

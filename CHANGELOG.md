@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Verify evidence** — sealed verification export (`content_digest` + optional `AUDIT_HMAC_KEY` HMAC); `POST /api/v1/verify/evidence`, `GET /api/v1/verifications/:id/evidence`, MCP `verify_evidence` (MCP tool count is now 71, 77 with Flowd); control-suite **v2** anti-shortcut cases; see `docs/features/verify-evidence.md`
+- **Site** — homepage, use cases and `llms.txt` describe verify evidence and the anti-shortcut controls
+
 ---
 
 ## [0.3.3] — 2026-10-14

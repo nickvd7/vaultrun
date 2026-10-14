@@ -9,9 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.3] — 2026-10-14
+
+Housekeeping release. The application code is identical to v0.3.2 (`322a7ee`); this release fixes what v0.3.2 shipped with wrong metadata.
+
+### Fixed
+- **Python SDK on PyPI.** The `v0.3.2` tag still declared SDK version `0.2.1`, so the publish workflow skipped it and PyPI stayed on 0.2.1. The SDK is now `0.3.3` and is published by the tag workflow. No SDK code changed since 0.2.1.
+- **v0.3.2 release notes** were generated from an outdated changelog section and omitted the quickstart, secrets and API validation fixes. The correct list is below under 0.3.2.
+- Site `softwareVersion`, roadmap date, bug template examples and the README "latest release" note now match the release.
+
+---
+
 ## [0.3.2] — 2026-10-14
 
-Combines the cross-feature security pass with the Docker Compose quickstart and API validation fixes. The quickstart is verified end to end by the Quickstart E2E workflow.
+Cross-feature security pass plus the Docker Compose quickstart, secrets broker and API validation fixes. The quickstart is verified end to end by the Quickstart E2E workflow.
 
 
 ### Fixed — Docker Compose quickstart (`make up` → session → command)

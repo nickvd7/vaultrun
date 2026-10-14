@@ -81,6 +81,18 @@ func main() {
 			"length", len(cfg.Auth.MasterKey))
 	}
 
+	if problems := cfg.ProductionProblems(); cfg.Production.Enabled && len(problems) > 0 {
+		for _, msg := range problems {
+			slog.Error("production check failed", "problem", msg)
+		}
+		slog.Error("refusing to start with VAULTRUN_PRODUCTION=true; fix the problems above " +
+			"(see docs/production-hardening.md)")
+		os.Exit(1)
+	} else if !cfg.Production.Enabled && len(problems) > 0 {
+		slog.Warn("not production-hardened — fine for local use; set VAULTRUN_PRODUCTION=true to enforce "+
+			"(see docs/production-hardening.md)", "problems", problems)
+	}
+
 	db, err := dbpkg.Connect(cfg.Database)
 	if err != nil {
 		slog.Error("connect database", "err", err)
@@ -195,7 +207,7 @@ func main() {
 		}
 		policyHook = h
 		slog.Info("opa policy loaded", "file", policyFile)
-	} else {
+	} else if !cfg.Production.OPAAllowAll {
 		// M-8: warn operators who start without an explicit policy — AllowAll
 		// permits every command and every file path with no restrictions.
 		slog.Warn("OPA_POLICY_FILE not set — running with AllowAll policy; " +

@@ -22,7 +22,7 @@ Every failed check is logged as `insecure configuration` with the variable to se
 
 If you start the API without that variable (your own `.env`, the release binary, your own compose file) and the checks fail, it exits with the list of problems instead of running open.
 
-Upgrading from 0.3.4 or earlier: an existing `.env` without `VAULTRUN_INSECURE_DEV` now has to either pass the checks or add that line.
+Upgrading from 0.3.4 or earlier: an existing `.env` without `VAULTRUN_INSECURE_DEV` now has to either pass the checks or add that line. `make up` prints a note when the line is missing, and `make dev-env` adds it for local use. Check the cause with `make logs`: the API logs each `insecure configuration` problem before exiting.
 
 ## Not covered by the startup check
 

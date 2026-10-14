@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.3.2] — 2026-10-14
+
+Combines the cross-feature security pass with the Docker Compose quickstart and API validation fixes. The quickstart is verified end to end by the Quickstart E2E workflow.
+
+
 ### Fixed — Docker Compose quickstart (`make up` → session → command)
 - `make up` now runs end to end on a clean Linux host; verified by running the quickstart (Docker 29, socket GID 103): healthy API, dashboard, session `201`, command output returned, Python SDK example and CLI working.
 - **Workspace path.** The API hands the workspace path to the Docker daemon, which resolves it on the *host*. Compose now bind-mounts one host directory (`WORKSPACE_HOST_DIR`, default `/var/lib/vaultrun/workspaces`) at the same path in the API container and passes the same value as `WORKSPACE_BASE_DIR` / `DOCKER_HOST_WORKSPACE_BASE_DIR`. A one-shot `workspace-init` container creates it as `0700` owned by uid 65532, so no `sudo` is needed. The `workspace_data` named volume is removed.
@@ -111,9 +118,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   on tool results. Legacy `2024-11-05` `initialize` / `initialized` clients
   keep working without the new headers.
 
----
-
-## [0.3.2] — 2026-07-31
+### Cross-feature security pass (originally dated 2026-07-31)
 
 **Cross-feature security release.** A second testing pass, focused on where features interact rather than each in isolation, found twelve more defects — eight security-relevant. Full analysis in [docs/security-testing-report.md](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
 

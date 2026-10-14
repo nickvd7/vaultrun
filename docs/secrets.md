@@ -2,7 +2,9 @@
 
 VaultRun supports three secrets backends, selected via `SECRETS_PROVIDER`.
 Secrets are resolved at run-time and injected as environment variables into
-container exec calls — they are **never stored in the database** or logged.
+container exec calls. The secret values themselves are not stored in the
+database or logged, and their exact values are redacted from command output
+(see [Output redaction](#output-redaction) for what that does and does not cover).
 
 ## How it works
 
@@ -18,8 +20,29 @@ POST /api/v1/sessions/:id/run
 ```
 
 VaultRun resolves each name via the configured provider and merges the
-values into `env` before the container exec. The caller never sees the
-values; they exist only in the container's process environment.
+values into `env` before the container exec. They exist in the container's
+process environment; the caller does not receive them in the run output (see
+below).
+
+### Output redaction
+
+For every run that requests `secrets`, VaultRun replaces the exact value of
+each injected secret with `[REDACTED:<NAME>]` in stdout and stderr before the
+output is stored in the database, returned by the API or streamed over SSE
+(sync, async and `/run/stream`). The base64 forms (standard and URL-safe,
+padded or not) are redacted too, so `echo $SECRET | base64` does not leak.
+
+Limits you should know about:
+
+- Only secrets requested in that run are redacted, and only values of at least
+  4 characters (shorter values would mangle normal output).
+- It is an exact-match safety net against accidental leaks, not a defence
+  against a command that wants to exfiltrate the value: hex, reversed or
+  split output is not caught. Treat a command that receives a secret as
+  trusted with it.
+- Files the command writes to `/workspace` are not scanned.
+- If output hits the size limit in the middle of a secret, the truncated
+  prefix is not redacted.
 
 ---
 

@@ -18,6 +18,16 @@ type Config struct {
 	Observability ObservabilityConfig
 	SSO         SSOConfig
 	MultiRegion MultiRegionConfig
+	Production    ProductionConfig
+}
+
+// ProductionConfig drives the opt-in production-readiness check. See
+// docs/production-hardening.md.
+type ProductionConfig struct {
+	Enabled      bool   // VAULTRUN_PRODUCTION: refuse to start when ProductionProblems() is non-empty
+	OPAAllowAll  bool   // OPA_ALLOW_ALL: explicitly accept running without an OPA policy
+	TLSDisabled  bool   // TLS_DISABLED: explicitly accept plain HTTP (e.g. TLS terminated by a proxy)
+	MetricsToken string // METRICS_TOKEN: bearer token protecting /metrics
 }
 
 type ServerConfig struct {
@@ -277,6 +287,12 @@ func Load() (*Config, error) {
 				SessionSecure:      sessionSecure,
 			}
 		}(),
+		Production: ProductionConfig{
+			Enabled:      envBool("VAULTRUN_PRODUCTION"),
+			OPAAllowAll:  envBool("OPA_ALLOW_ALL"),
+			TLSDisabled:  envBool("TLS_DISABLED"),
+			MetricsToken: getEnv("METRICS_TOKEN", ""),
+		},
 		MultiRegion: MultiRegionConfig{
 			Region:          getEnv("REGION", ""),
 			DatabaseReadURL: getEnv("DATABASE_READ_URL", ""),
@@ -310,6 +326,36 @@ func ValidateDBSSLMode(mode string) error {
 	default:
 		return fmt.Errorf("DB_SSL_MODE=%q is invalid; supported: disable, require, verify-ca, verify-full", mode)
 	}
+}
+
+func envBool(key string) bool {
+	v, _ := strconv.ParseBool(getEnv(key, "false"))
+	return v
+}
+
+// ProductionProblems lists settings that are acceptable for a local quickstart
+// but unsafe for a deployment reachable by untrusted clients. Each entry names
+// the variable to set and the explicit opt-out, if there is one.
+func (c *Config) ProductionProblems() []string {
+	var p []string
+	if c.Auth.OPAPolicyFile == "" && !c.Production.OPAAllowAll {
+		p = append(p, "no OPA policy: set OPA_POLICY_FILE, or OPA_ALLOW_ALL=true to accept AllowAll explicitly")
+	}
+	if !c.TLSEnabled() && !c.ACMEEnabled() && !c.Production.TLSDisabled {
+		p = append(p, "TLS is off: set TLS_CERT_FILE+TLS_KEY_FILE or ACME_DOMAIN, or TLS_DISABLED=true if a reverse proxy terminates TLS")
+	}
+	if c.Production.MetricsToken == "" {
+		p = append(p, "/metrics is unauthenticated: set METRICS_TOKEN")
+	}
+	if c.Auth.MasterKey == "" {
+		p = append(p, "MASTER_API_KEY is not set")
+	} else if len(c.Auth.MasterKey) < 32 {
+		p = append(p, "MASTER_API_KEY is shorter than 32 characters")
+	}
+	if c.Redis.Addr != "" && c.Redis.Password == "" {
+		p = append(p, "Redis has no password: set REDIS_PASSWORD")
+	}
+	return p
 }
 
 // TLSEnabled returns true when static TLS cert+key files are configured.

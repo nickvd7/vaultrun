@@ -133,6 +133,12 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 		redactor := secrets.NewRedactor(req.SecretEnv)
 		result.Stdout = redactor.Redact(result.Stdout)
 		result.Stderr = redactor.Redact(result.Stderr)
+		if msg := result.OOMMessage(); msg != "" {
+			if result.Stderr != "" && !strings.HasSuffix(result.Stderr, "\n") {
+				result.Stderr += "\n"
+			}
+			result.Stderr += msg
+		}
 	}
 
 	status := resolveStatus(execErr, result)
@@ -244,6 +250,9 @@ func (r *Runner) streamImpl(ctx context.Context, req RunRequest, run *models.Run
 	}, redactedOut, redactedErr)
 	_ = redactedOut.Close()
 	_ = redactedErr.Close()
+	if msg := result.OOMMessage(); msg != "" {
+		_, _ = io.WriteString(stderr, msg)
+	}
 	finishedAt := time.Now().UTC()
 
 	status := resolveStatus(execErr, result)

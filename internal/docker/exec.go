@@ -31,7 +31,16 @@ type ExecResult struct {
 	DurationMS int64
 	TimedOut   bool
 	Truncated  bool // true when stdout or stderr was capped at MaxOutputBytes (M-10)
+	// OOMKilled is set when the process was SIGKILLed (exit 137) and the
+	// container's cgroup recorded an out-of-memory kill. MemoryLimitMB is the
+	// container's memory limit in that case, for the error message.
+	OOMKilled     bool
+	MemoryLimitMB int64
 }
+
+// ExitCodeSIGKILL is the exit status of a process killed by SIGKILL (128+9),
+// which is what the kernel OOM killer sends.
+const ExitCodeSIGKILL = 137
 
 // Exec runs a command inside the sandbox container and buffers full output.
 // It is deliberately NOT shell-invoked — command and args are passed as
@@ -148,10 +157,34 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 		return nil, fmt.Errorf("exec inspect: %w", err)
 	}
 
-	return &ExecResult{
+	res := &ExecResult{
 		ExitCode:   inspect.ExitCode,
 		DurationMS: durationMS,
-	}, nil
+	}
+	if inspect.ExitCode == ExitCodeSIGKILL {
+		if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.ContainerJSONBase != nil {
+			if info.State != nil && info.State.OOMKilled {
+				res.OOMKilled = true
+			}
+			if info.HostConfig != nil {
+				res.MemoryLimitMB = info.HostConfig.Memory / (1024 * 1024)
+			}
+		}
+	}
+	return res, nil
+}
+
+// OOMMessage is the human-readable note appended to stderr when a command was
+// killed for exceeding the container memory limit.
+func (r *ExecResult) OOMMessage() string {
+	if r == nil || !r.OOMKilled {
+		return ""
+	}
+	if r.MemoryLimitMB > 0 {
+		return fmt.Sprintf("[vaultrun] command killed: container exceeded its memory limit (%d MB). "+
+			"Create the session with a higher memory_limit_mb or reduce memory use.\n", r.MemoryLimitMB)
+	}
+	return "[vaultrun] command killed: container exceeded its memory limit.\n"
 }
 
 // demuxDockerStream splits the multiplexed Docker attach stream into stdout/stderr.

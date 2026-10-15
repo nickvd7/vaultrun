@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,7 +21,24 @@ type AuditHandler struct {
 
 func NewAuditHandler(h *Hub) *AuditHandler { return &AuditHandler{h: h} }
 
+// parseAuditTime reads an optional RFC3339 timestamp or YYYY-MM-DD date query
+// parameter. It writes the 400 response itself and reports false on bad input.
+func parseAuditTime(c *gin.Context, name string) (*time.Time, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return nil, true
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return &t, true
+		}
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + name + ": use RFC3339 or YYYY-MM-DD"})
+	return nil, false
+}
+
 // GET /api/v1/audit
+// Query: session_id, action (prefix, e.g. "apikey."), from, to, page, limit.
 func (ah *AuditHandler) List(c *gin.Context) {
 	pg := pagination(c)
 
@@ -75,17 +94,26 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		}
 	}
 
-	logs, err := dbpkg.ListAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor, pg.limit, pg.offset)
+	filter := dbpkg.AuditFilter{SessionID: sessionIDPtr, Actor: auditActor, ActionPrefix: strings.TrimSpace(c.Query("action"))}
+	var ok bool
+	if filter.From, ok = parseAuditTime(c, "from"); !ok {
+		return
+	}
+	if filter.To, ok = parseAuditTime(c, "to"); !ok {
+		return
+	}
+
+	logs, err := dbpkg.ListAuditLogsFiltered(c.Request.Context(), ah.h.db, filter, pg.limit, pg.offset)
 	if err != nil {
 		slog.Error("list audit logs", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list audit logs"})
 		return
 	}
-	total, _ := dbpkg.CountAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor)
+	total, _ := dbpkg.CountAuditLogsFiltered(c.Request.Context(), ah.h.db, filter)
 	if ah.h.audit != nil && ah.h.audit.Enabled() {
 		for _, l := range logs {
-			ok := ah.h.audit.VerifyAuditSig(l)
-			l.SigValid = &ok
+			valid := ah.h.audit.VerifyAuditSig(l)
+			l.SigValid = &valid
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "pagination": pg.response(total)})

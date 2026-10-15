@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Dashboard loads data under Docker Compose.** The dashboard now proxies `/api/*` to the API over the compose network (`DASHBOARD_API_UPSTREAM`, default `http://api:8080`, baked in at image build time). Before, the proxy target was `localhost:8080` inside the frontend container, so every request returned 500. The API's default `CORS_ALLOWED_ORIGINS` under compose now includes the local dashboard origin, because browsers send `Origin` on POST/DELETE and the API answered those with an empty 403. Verified in a real browser: sign-in, session list, run, stream, files.
+
+### Security
+- **Removed the dashboard's `/api/proxy` route.** It was unused, and it attached `MASTER_API_KEY` (`VAULTRUN_API_KEY` in the frontend container) to every request, so once reachable it would have given anyone who can open port 3000 master rights. The dashboard container no longer receives any API key; users sign in with their own key.
+
 ### Added
 - `make up` prints a note when `.env` lacks `VAULTRUN_INSECURE_DEV` (older `.env` files after the 0.4.0 secure-by-default change), and `make dev-env` adds it for local use.
 

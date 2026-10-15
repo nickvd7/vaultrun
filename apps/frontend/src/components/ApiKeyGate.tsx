@@ -67,7 +67,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
       setApiKey(key);
       setInput("");
     } catch {
-      setError("Cannot reach the API — check NEXT_PUBLIC_API_URL");
+      setError("Cannot reach the API — check that the api service is running (make logs)");
     } finally {
       setTesting(false);
     }

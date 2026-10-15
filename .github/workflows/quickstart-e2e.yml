@@ -96,6 +96,21 @@ jobs:
           expect400 '{"memory_limit_mb":-1}'
           expect400 '{"image":"vaultrun-e2e/does-not-exist:nope"}'
 
+      - name: Dashboard proxies the API with the user's own key
+        run: |
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:3000/)" = "200" ]
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/v1/sessions?limit=1')" = "401" ]
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/v1/sessions?limit=1' -H "X-API-Key: $API_KEY")" = "200" ]
+          # Browsers send Origin on POST; the dashboard origin must be accepted, others not.
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:3000/api/v1/sessions/$SESSION_ID/run" \
+            -H 'Origin: http://localhost:3000' -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"command":"echo","args":["x"]}')" = "200" ]
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:3000/api/v1/sessions/$SESSION_ID/run" \
+            -H 'Origin: http://evil.example' -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"command":"echo","args":["x"]}')" = "403" ]
+          # The dashboard holds no credentials of its own.
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/proxy/api/v1/sessions')" = "404" ]
+
       - name: Delete session
         run: |
           curl -fsS -X DELETE "http://localhost:8080/api/v1/sessions/$SESSION_ID" \

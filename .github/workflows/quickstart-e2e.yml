@@ -22,6 +22,7 @@ jobs:
           cp .env.example .env
           sed -i "s/^MASTER_API_KEY=.*/MASTER_API_KEY=$(openssl rand -hex 32)/" .env
           sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
+          sed -i "s/^AUDIT_HMAC_KEY=.*/AUDIT_HMAC_KEY=$(openssl rand -hex 32)/" .env
           echo "VAULTRUN_SECRET_E2E_TOKEN=e2e-secret-value" >> .env
 
       - name: make up
@@ -110,6 +111,13 @@ jobs:
             -d '{"command":"echo","args":["x"]}')" = "403" ]
           # The dashboard holds no credentials of its own.
           [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/proxy/api/v1/sessions')" = "404" ]
+
+      - name: Audit log signatures verify after storage
+        run: |
+          RESP=$(curl -sS "http://localhost:8080/api/v1/audit?session_id=$SESSION_ID&limit=100" -H "X-API-Key: $API_KEY")
+          echo "$RESP" | jq -c '.audit_logs[] | {action, sig_valid}'
+          [ "$(echo "$RESP" | jq '.audit_logs | length')" -gt 0 ]
+          [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_valid != true)] | length')" = "0" ]
 
       - name: Delete session
         run: |

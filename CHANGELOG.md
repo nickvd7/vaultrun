@@ -9,6 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - **Dashboard loads data under Docker Compose.** The dashboard now proxies `/api/*` to the API over the compose network (`DASHBOARD_API_UPSTREAM`, default `http://api:8080`, baked in at image build time). Before, the proxy target was `localhost:8080` inside the frontend container, so every request returned 500. The API's default `CORS_ALLOWED_ORIGINS` under compose now includes the local dashboard origin, because browsers send `Origin` on POST/DELETE and the API answered those with an empty 403. Verified in a real browser: sign-in, session list, run, stream, files.
+- **Audit log signatures now verify.** The entry was signed with a nanosecond timestamp but Postgres stores microseconds, so no stored entry ever matched its signature. Timestamps are now truncated to microseconds before signing and metadata is signed in its stored (JSONB) form. `GET /api/v1/audit` adds `sig_valid` to each entry when `AUDIT_HMAC_KEY` is set, so tampering is detectable. Entries written by v0.4.0 and earlier cannot be verified.
+- `AUDIT_HMAC_KEY` is now in `.env.example`, and the startup check requires it (set `VAULTRUN_INSECURE_DEV=true` to run unsigned locally).
 
 ### Security
 - **Removed the dashboard's `/api/proxy` route.** It was unused, and it attached `MASTER_API_KEY` (`VAULTRUN_API_KEY` in the frontend container) to every request, so once reachable it would have given anyone who can open port 3000 master rights. The dashboard container no longer receives any API key; users sign in with their own key.

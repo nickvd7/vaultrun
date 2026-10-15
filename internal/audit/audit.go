@@ -37,9 +37,11 @@ type Event struct {
 }
 
 func (l *Logger) Log(ctx context.Context, e Event) {
+	// Postgres timestamptz keeps microseconds. Sign what will be stored, or the
+	// signature can never verify after a round trip.
 	entry := &models.AuditLog{
 		ID:        uuid.New(),
-		Timestamp: time.Now().UTC(),
+		Timestamp: time.Now().UTC().Truncate(time.Microsecond),
 		Actor:     e.Actor,
 		SessionID: e.SessionID,
 		RunID:     e.RunID,
@@ -74,9 +76,27 @@ func (l *Logger) sign(entry *models.AuditLog) string {
 		uuidStr(entry.SessionID),
 		uuidStr(entry.RunID),
 	)
-	meta, _ := json.Marshal(entry.Metadata)
-	h.Write(meta)
+	h.Write(canonicalMetadata(entry.Metadata))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// canonicalMetadata renders metadata the way it looks after a JSONB round
+// trip (numbers as float64, keys sorted), so the bytes signed at write time
+// equal the bytes verified when the row is read back.
+func canonicalMetadata(m models.JSONB) []byte {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	var v interface{}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return raw
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func uuidStr(u *uuid.UUID) string {
@@ -85,6 +105,9 @@ func uuidStr(u *uuid.UUID) string {
 	}
 	return u.String()
 }
+
+// Enabled reports whether entries are being signed (AUDIT_HMAC_KEY is set).
+func (l *Logger) Enabled() bool { return len(l.hmacKey) > 0 }
 
 // VerifyAuditSig re-computes the HMAC for entry and returns true when it
 // matches the stored Sig. Returns false when signing is not configured.

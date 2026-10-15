@@ -12,6 +12,7 @@ The API refuses to start unless all of these hold:
 | TLS | `TLS_CERT_FILE` + `TLS_KEY_FILE`, or `ACME_DOMAIN` | `TLS_DISABLED=true` (a reverse proxy terminates TLS) |
 | `/metrics` auth | `METRICS_TOKEN=<random>` (bearer token) | none |
 | Master key | if set, at least 32 characters (`openssl rand -hex 32`); empty is allowed once you have bootstrapped | none |
+| Audit signing | `AUDIT_HMAC_KEY=<random>` | none |
 | Redis password | `REDIS_PASSWORD`, checked only when `REDIS_ADDR` is set | none |
 
 Every failed check is logged as `insecure configuration` with the variable to set.
@@ -33,7 +34,6 @@ These need action on your side:
 - **Image allowlist.** Set `DOCKER_IMAGE_ALLOWLIST` to the images you approve, and `COSIGN_PUBLIC_KEY` to fail closed on unsigned ones.
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.
 - **Network exposure.** Bind to a private interface or put the API behind a firewall; only expose 443 to trusted callers. The compose file already binds to `127.0.0.1`.
-- **Audit integrity.** Set `AUDIT_HMAC_KEY` so audit entries are signed.
 - **Webhooks.** Set `WEBHOOK_SECRET` for async callbacks.
 
 The longer list, including SSO and the MCP HTTP transport, is in [security.md](security.md#recommendations-for-production).

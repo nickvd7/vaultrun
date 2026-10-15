@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
-# Stop VaultRun including the sandbox containers the API started.
-# `docker compose down` only knows the compose services; sandboxes and their
-# per-session networks (and egress rules) are created by the API and would be
-# left running with nothing controlling them.
-# Usage: scripts/down.sh [.env]
+# Stop VaultRun.
+#
+# Default: stop the compose services only. Sandbox containers, their networks
+# and the workspace files stay, so sessions survive `make up` again.
+# --all:   also remove every sandbox container, per-session network and egress
+#          rule the API created. Sessions and their files are gone afterwards
+#          (the next `make up` closes them and removes their directories).
+# Usage: scripts/down.sh [--all] [.env]
 set -u
+ALL=0
+if [ "${1:-}" = "--all" ]; then ALL=1; shift; fi
 ENV_FILE="${1:-.env}"
 COMPOSE=(docker compose -f deployments/docker-compose.yml --env-file "$ENV_FILE")
 
 sandboxes=$(docker ps -aq --filter label=vaultrun.managed=true)
+if [ "$ALL" -eq 0 ]; then
+  "${COMPOSE[@]}" down
+  if [ -n "$sandboxes" ]; then
+    echo "Note: $(echo "$sandboxes" | wc -l | tr -d ' ') sandbox container(s) keep running with their files; sessions resume after 'make up'."
+    echo "      'make down-all' removes them (and their sessions and files)."
+  fi
+  exit 0
+fi
 if [ -n "$sandboxes" ]; then
   echo "Removing $(echo "$sandboxes" | wc -l | tr -d ' ') sandbox container(s)..."
   # shellcheck disable=SC2086

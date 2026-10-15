@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -221,31 +223,66 @@ func CreateAuditLog(ctx context.Context, db *sqlx.DB, a *models.AuditLog) error 
 	return err
 }
 
+// AuditFilter narrows an audit log query. SessionID and Actor are the access
+// scope (SessionID wins, matching the long-standing behaviour); ActionPrefix,
+// From and To are optional user filters.
+type AuditFilter struct {
+	SessionID    *uuid.UUID
+	Actor        string
+	ActionPrefix string
+	From, To     *time.Time // From inclusive, To exclusive
+}
+
+func (f AuditFilter) where() (string, []interface{}) {
+	var conds []string
+	var args []interface{}
+	add := func(cond string, v interface{}) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.SessionID != nil {
+		add("session_id = $%d", *f.SessionID)
+	} else if f.Actor != "" {
+		add("actor = $%d", f.Actor)
+	}
+	if f.ActionPrefix != "" {
+		esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.ActionPrefix)
+		add(`action LIKE $%d ESCAPE '\'`, esc+"%")
+	}
+	if f.From != nil {
+		add("timestamp >= $%d", *f.From)
+	}
+	if f.To != nil {
+		add("timestamp < $%d", *f.To)
+	}
+	if len(conds) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+func ListAuditLogsFiltered(ctx context.Context, db *sqlx.DB, f AuditFilter, limit, offset int) ([]*models.AuditLog, error) {
+	logs := make([]*models.AuditLog, 0)
+	where, args := f.where()
+	args = append(args, limit, offset)
+	q := fmt.Sprintf(`SELECT * FROM audit_logs%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+	err := db.SelectContext(ctx, &logs, q, args...)
+	return logs, err
+}
+
+func CountAuditLogsFiltered(ctx context.Context, db *sqlx.DB, f AuditFilter) (int, error) {
+	var n int
+	where, args := f.where()
+	err := db.GetContext(ctx, &n, `SELECT COUNT(*) FROM audit_logs`+where, args...)
+	return n, err
+}
+
 // ListAuditLogs returns audit log entries. When actor is non-empty only
 // that actor's log entries are returned (tenant isolation). When sessionID
 // is set it takes precedence. Master key passes actor="".
 // Initialises the slice to non-nil so JSON always encodes [] instead of null.
 func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string, limit, offset int) ([]*models.AuditLog, error) {
-	logs := make([]*models.AuditLog, 0)
-	if sessionID != nil {
-		err := db.SelectContext(ctx, &logs,
-			`SELECT * FROM audit_logs WHERE session_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
-			sessionID, limit, offset,
-		)
-		return logs, err
-	}
-	if actor != "" {
-		err := db.SelectContext(ctx, &logs,
-			`SELECT * FROM audit_logs WHERE actor = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3`,
-			actor, limit, offset,
-		)
-		return logs, err
-	}
-	err := db.SelectContext(ctx, &logs,
-		`SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT $1 OFFSET $2`,
-		limit, offset,
-	)
-	return logs, err
+	return ListAuditLogsFiltered(ctx, db, AuditFilter{SessionID: sessionID, Actor: actor}, limit, offset)
 }
 
 // API Keys
@@ -413,18 +450,7 @@ func SumWorkspaceBytes(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) (i
 
 // CountAuditLogs mirrors the filter logic of ListAuditLogs for accurate totals.
 func CountAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string) (int, error) {
-	var n int
-	var err error
-	if sessionID != nil {
-		err = db.GetContext(ctx, &n,
-			`SELECT COUNT(*) FROM audit_logs WHERE session_id = $1`, sessionID)
-	} else if actor != "" {
-		err = db.GetContext(ctx, &n,
-			`SELECT COUNT(*) FROM audit_logs WHERE actor = $1`, actor)
-	} else {
-		err = db.GetContext(ctx, &n, `SELECT COUNT(*) FROM audit_logs`)
-	}
-	return n, err
+	return CountAuditLogsFiltered(ctx, db, AuditFilter{SessionID: sessionID, Actor: actor})
 }
 
 func CountAPIKeys(ctx context.Context, db *sqlx.DB) (int, error) {

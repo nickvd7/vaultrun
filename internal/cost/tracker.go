@@ -97,7 +97,7 @@ func (t *Tracker) RecordMetric(ctx context.Context, metric *CostMetric) error {
 
 // GetSessionCosts returns all cost metrics for a session
 func (t *Tracker) GetSessionCosts(ctx context.Context, sessionID uuid.UUID) ([]CostMetric, error) {
-	var metrics []CostMetric
+	metrics := []CostMetric{}
 	err := t.db.SelectContext(ctx, &metrics, `
 		SELECT * FROM cost_metrics
 		WHERE session_id = $1
@@ -220,7 +220,8 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 		return nil, err
 	}
 	
-	// Get top spending sessions
+	// Get top spending sessions (empty, not null, so JSON clients can rely on an array)
+	breakdown.TopSessions = []SessionCostSummary{}
 	err = t.db.SelectContext(ctx, &breakdown.TopSessions, fmt.Sprintf(`
 		SELECT 
 			s.id as session_id,
@@ -305,7 +306,7 @@ func (t *Tracker) GetAlerts(ctx context.Context, resolved bool, scope Scope) ([]
 	filter, scopeArgs := scope.alertPredicate(2)
 	args := append([]interface{}{resolved}, scopeArgs...)
 
-	var alerts []CostAlert
+	alerts := []CostAlert{}
 	err := t.db.SelectContext(ctx, &alerts, fmt.Sprintf(`
 		SELECT a.* FROM cost_alerts a
 		WHERE a.resolved = $1

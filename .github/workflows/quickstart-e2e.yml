@@ -22,11 +22,12 @@ jobs:
           cp .env.example .env
           sed -i "s/^MASTER_API_KEY=.*/MASTER_API_KEY=$(openssl rand -hex 32)/" .env
           sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
-          sed -i "s/^AUDIT_HMAC_KEY=.*/AUDIT_HMAC_KEY=$(openssl rand -hex 32)/" .env
           echo "VAULTRUN_SECRET_E2E_TOKEN=e2e-secret-value" >> .env
 
       - name: make up
-        run: make up
+        run: |
+          make up
+          grep -Eq '^AUDIT_HMAC_KEY=.{64}$' .env || { echo "make up did not generate AUDIT_HMAC_KEY" >&2; exit 1; }
 
       - name: Wait for API to become healthy
         run: |
@@ -143,6 +144,17 @@ jobs:
           echo "$RESP" | jq -c '.audit_logs[] | {action, sig_valid}'
           [ "$(echo "$RESP" | jq '.audit_logs | length')" -gt 0 ]
           [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_valid != true)] | length')" = "0" ]
+
+      - name: Audit filters and cost endpoints
+        run: |
+          api() { curl -sS -H "X-API-Key: $API_KEY" "http://localhost:8080/api/v1$1"; }
+          [ "$(api '/audit?action=session.&limit=200' | jq '[.audit_logs[] | select(.action | startswith("session.") | not)] | length')" = "0" ]
+          [ "$(api '/audit?action=session.' | jq '.pagination.total')" -ge 1 ]
+          [ "$(api '/audit?to=2000-01-01' | jq '.pagination.total')" = "0" ]
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' -H "X-API-Key: $API_KEY" 'http://localhost:8080/api/v1/audit?from=yesterday')" = "400" ]
+          # An empty period must be arrays, not null (the dashboard reads .length).
+          [ "$(api '/costs/breakdown?period=2000-01' | jq -r '.top_sessions | type')" = "array" ]
+          [ "$(api '/costs/alerts' | jq -r '.alerts | type')" = "array" ]
 
       - name: Failed session creations do not count against the quota
         run: |

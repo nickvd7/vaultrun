@@ -273,7 +273,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			"image", req.Image,
 			"err", err,
 		)
-		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
+		// A session that never started must not keep counting against the actor's
+		// quota or keep its workspace directory.
+		_ = dbpkg.FailSession(c.Request.Context(), sh.h.db, sessionID)
+		_ = sh.h.ws.Delete(sessionID)
 		if errors.Is(err, dockerpkg.ErrImageUnavailable) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
 			return

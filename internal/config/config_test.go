@@ -159,9 +159,10 @@ func TestLoadRejectsPreferSSLMode(t *testing.T) {
 
 func hardenedConfig() *Config {
 	return &Config{
-		Auth:       AuthConfig{MasterKey: strings.Repeat("k", 32), OPAPolicyFile: "policy.rego"},
-		Server:     ServerConfig{TLSCertFile: "c.pem", TLSKeyFile: "k.pem"},
-		Production: ProductionConfig{MetricsToken: "t"},
+		Auth:          AuthConfig{MasterKey: strings.Repeat("k", 32), OPAPolicyFile: "policy.rego"},
+		Server:        ServerConfig{TLSCertFile: "c.pem", TLSKeyFile: "k.pem"},
+		Production:    ProductionConfig{MetricsToken: "t"},
+		Observability: ObservabilityConfig{AuditHMACKey: "audit-key"},
 	}
 }
 

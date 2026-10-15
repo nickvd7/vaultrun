@@ -353,6 +353,9 @@ func (c *Config) ProductionProblems() []string {
 	if c.Auth.MasterKey != "" && len(c.Auth.MasterKey) < 32 {
 		p = append(p, "MASTER_API_KEY is shorter than 32 characters")
 	}
+	if c.Observability.AuditHMACKey == "" {
+		p = append(p, "audit log entries are unsigned: set AUDIT_HMAC_KEY")
+	}
 	if c.Redis.Addr != "" && c.Redis.Password == "" {
 		p = append(p, "Redis has no password: set REDIS_PASSWORD")
 	}

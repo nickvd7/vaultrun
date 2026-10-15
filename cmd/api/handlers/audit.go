@@ -82,5 +82,11 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		return
 	}
 	total, _ := dbpkg.CountAuditLogs(c.Request.Context(), ah.h.db, sessionIDPtr, auditActor)
+	if ah.h.audit != nil && ah.h.audit.Enabled() {
+		for _, l := range logs {
+			ok := ah.h.audit.VerifyAuditSig(l)
+			l.SigValid = &ok
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "pagination": pg.response(total)})
 }

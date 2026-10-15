@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.1] — 2026-10-15
+
+**Upgrade notes:** migrations 021 and 022 run automatically at API start. `docker compose up` now also builds and starts a small `netpolicy` helper (host network namespace, `NET_ADMIN` only) that replaces `NET_ADMIN` on the API container; re-run `make up` (not just restart the API) so it exists. Add `AUDIT_HMAC_KEY` to `.env` (the startup check requires it unless `VAULTRUN_INSECURE_DEV=true`). Audit entries written before this release cannot be verified. Python SDK `vaultrun-sdk` 0.4.1 is published to PyPI with this release (no code changes).
+
 ### Fixed
 - **Failed session creations no longer count against the quota.** A session whose container could not be created kept `stopped_at` empty and so counted as active forever; after 20 failed requests (for example a typo in the image name) a key got `429 active session limit reached` until its sessions were deleted by hand. Failed sessions are now closed, their workspace directory is removed, and migration 021 closes the ones already stuck.
 - **`allowed_hosts` works under Docker Compose.** Sessions with `allowed_hosts` returned 500 because the API image has no `iptables`. Installing it would not have helped: iptables in the API container act on that container's network namespace, so the rules would have enforced nothing. Compose now runs a small `netpolicy` helper (host network namespace, `NET_ADMIN` only) that the API drives with `docker exec`, and the API container no longer has `NET_ADMIN`. Without any iptables backend, `POST /sessions` returns `501` with an explanation and no sandbox starts. Also fixed: allowlist hosts that resolve to IPv6 addresses made rule installation fail, and a failed installation left an orphan chain behind.

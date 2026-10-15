@@ -89,6 +89,16 @@ func UpdateSessionStatus(ctx context.Context, db *sqlx.DB, id uuid.UUID, status 
 	return err
 }
 
+// FailSession marks a session whose container could not be created. It sets
+// stopped_at as well so the session no longer counts as active (quota, listings).
+func FailSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE sessions SET status = $1, stopped_at = NOW(), container_id = NULL, updated_at = NOW() WHERE id = $2`,
+		models.SessionStatusError, id,
+	)
+	return err
+}
+
 func StopSession(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 	_, err := db.ExecContext(ctx,
 		`UPDATE sessions SET status = $1, stopped_at = NOW(), updated_at = NOW() WHERE id = $2`,

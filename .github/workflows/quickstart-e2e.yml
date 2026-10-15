@@ -22,11 +22,12 @@ jobs:
           cp .env.example .env
           sed -i "s/^MASTER_API_KEY=.*/MASTER_API_KEY=$(openssl rand -hex 32)/" .env
           sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
-          sed -i "s/^AUDIT_HMAC_KEY=.*/AUDIT_HMAC_KEY=$(openssl rand -hex 32)/" .env
           echo "VAULTRUN_SECRET_E2E_TOKEN=e2e-secret-value" >> .env
 
       - name: make up
-        run: make up
+        run: |
+          make up
+          grep -Eq '^AUDIT_HMAC_KEY=.{64}$' .env || { echo "make up did not generate AUDIT_HMAC_KEY" >&2; exit 1; }
 
       - name: Wait for API to become healthy
         run: |

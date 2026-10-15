@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up dev-env down logs help
+.PHONY: all build test lint clean up dev-env down down-all logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -37,6 +37,7 @@ run-api: build-api
 up:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
 	@./scripts/detect-docker-gid.sh --write .env
+	@./scripts/ensure-audit-key.sh .env
 	@./scripts/check-env.sh .env
 	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
 	  ./scripts/wait-healthy.sh .env $$([ $$rc -eq 0 ] && echo 90 || echo 15) || exit 1; exit $$rc
@@ -49,6 +50,10 @@ dev-env:
 
 down:
 	@./scripts/down.sh .env
+
+# Also removes sandbox containers, networks and egress rules: sessions and their files are lost.
+down-all:
+	@./scripts/down.sh --all .env
 
 logs:
 	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
@@ -128,7 +133,8 @@ help:
 	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
-	@echo "  make down            Stop all services and remove sandbox containers"
+	@echo "  make down            Stop the stack; sandboxes and their files keep running"
+	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

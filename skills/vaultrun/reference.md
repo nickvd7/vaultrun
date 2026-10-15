@@ -35,7 +35,8 @@
 | Target | Action |
 |--------|--------|
 | `make up` | Start Docker Compose stack |
-| `make down` | Stop stack |
+| `make down` | Stop stack (sandboxes keep running) |
+| `make down-all` | Stop stack and remove sandboxes (sessions and files lost) |
 | `make bootstrap-key` | Create first API key |
 | `make test` | Run tests |
 

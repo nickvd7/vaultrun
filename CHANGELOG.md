@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.2] — 2026-10-15
+
+**Upgrade notes:** no migrations. `make up` adds `AUDIT_HMAC_KEY` to `.env` if it is empty. `make down` no longer removes sandboxes; use `make down-all` for the old behaviour. Python SDK `vaultrun-sdk` 0.4.2 is published to PyPI with this release (no code changes).
+
 ### Fixed
 - **The quickstart now signs the audit log.** `make up` generates `AUDIT_HMAC_KEY` in `.env` when it is empty (an existing value is never changed), so audit entries carry a verifiable `sig_valid` out of the box.
 - **`make down` no longer destroys sessions.** Since 0.4.1 it removed every sandbox, which made the next `make up` close all sessions and delete their files. `make down` is back to stopping the stack only (sandboxes and files stay and resume after `make up`, and it says how many are still running); the destructive variant is the explicit `make down-all`.

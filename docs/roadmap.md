@@ -1,6 +1,6 @@
 # VaultRun Roadmap
 
-Status as of **v0.4.1** (2026-10-15).
+Status as of **v0.4.2** (2026-10-15).
 
 ## Shipped
 

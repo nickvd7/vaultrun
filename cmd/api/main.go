@@ -142,6 +142,18 @@ func main() {
 	pingCancel()
 	slog.Info("docker daemon reachable", "host", cfg.Docker.Host)
 
+	// allowed_hosts needs host iptables. Inside a container the API's own
+	// iptables would act on the wrong network namespace, so compose provides a
+	// host-network helper container that the API drives with docker exec.
+	if name := os.Getenv("NETPOLICY_CONTAINER"); name != "" {
+		docker.UseNetpolicyContainer(name)
+		slog.Info("network allowlist enforced via helper container", "container", name)
+	}
+	if !dockerpkg.EgressPolicyAvailable() {
+		slog.Warn("allowed_hosts unavailable: no iptables on PATH and NETPOLICY_CONTAINER not set — " +
+			"sessions that set allowed_hosts will be rejected")
+	}
+
 	ws := workspace.New(cfg.Workspace.BaseDir)
 
 	// Ensure base workspace dir exists (0o700 = owner-only; no group/world read)

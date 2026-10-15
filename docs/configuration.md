@@ -154,8 +154,18 @@ host-side iptables rules that allow only:
 - Outbound connections to the resolved IPs of the listed hosts
 - ESTABLISHED/RELATED reply traffic
 
-All other egress is dropped. The API server process requires `CAP_NET_ADMIN`
-(see `cap_add: [NET_ADMIN]` in `deployments/docker-compose.yml`).
+All other egress is dropped. IPv6 egress from the session network is dropped
+entirely; hostnames are resolved once at session creation.
+
+Where the rules are installed depends on how the API runs:
+
+| Deployment | How |
+|------------|-----|
+| Docker Compose (default) | The `netpolicy` helper container (`network_mode: host`, `NET_ADMIN` only) runs `iptables`; the API drives it with `docker exec` (`NETPOLICY_CONTAINER=vaultrun-netpolicy`). The API container itself has no `NET_ADMIN`: iptables inside it would act on its own network namespace and enforce nothing. |
+| API binary on the host | `iptables` on the PATH of the API process (needs root or `CAP_NET_ADMIN`). |
+| Neither | `POST /sessions` with `allowed_hosts` returns `501` and no sandbox is started. |
+
+If the rules cannot be installed, the sandbox is not started.
 
 ---
 

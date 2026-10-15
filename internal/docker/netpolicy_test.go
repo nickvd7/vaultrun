@@ -142,3 +142,18 @@ func TestApplyEgressPolicyValidIPPassesValidation(t *testing.T) {
 		t.Errorf("valid gateway IP rejected: %v", err)
 	}
 }
+
+func TestEgressPolicyAvailableWithHelper(t *testing.T) {
+	netpolicyMu.Lock()
+	prevC, prevN := netpolicyClient, netpolicyCtr
+	netpolicyMu.Unlock()
+	defer func() {
+		netpolicyMu.Lock()
+		netpolicyClient, netpolicyCtr = prevC, prevN
+		netpolicyMu.Unlock()
+	}()
+	(&Client{}).UseNetpolicyContainer("vaultrun-netpolicy")
+	if !EgressPolicyAvailable() {
+		t.Fatal("a configured helper container must make egress policy available")
+	}
+}

@@ -39,7 +39,7 @@ VaultRun is designed to safely execute untrusted AI agent code. The primary thre
 When a session is created with `allowed_hosts` set and `network_enabled: true`:
 
 1. A **dedicated per-session Docker bridge network** is created
-2. Host-side **iptables rules** are applied to the bridge interface (`br-<networkID[:12]>`) via a custom chain (`vr-<containerID[:12]>`)
+2. Host-side **iptables rules** are applied to the bridge interface (`br-<networkID[:12]>`) via a custom chain (`vr-<containerID[:12]>`) in the host network namespace (under Compose through the `netpolicy` helper container, see [configuration.md](configuration.md#network-egress-filtering))
 3. The chain allows: DNS (UDP/TCP 53), ESTABLISHED/RELATED replies, and IPs resolved from `allowed_hosts` — everything else is **dropped**
 4. On session stop, rules and the Docker network are removed
 
@@ -207,7 +207,7 @@ Audit logs have no update or delete endpoints.
 The API refuses to start with open defaults unless `VAULTRUN_INSECURE_DEV=true` is set (the quickstart `.env.example` sets it); remove it in production. See [production-hardening.md](production-hardening.md).
 
 **API server:**
-1. Run the API server as a non-root user with only `CAP_NET_ADMIN` (for iptables egress filtering)
+1. Run the API server as a non-root user. If you run it on the host and use `allowed_hosts`, it needs `CAP_NET_ADMIN` for iptables; under Compose the `netpolicy` helper holds that capability instead
 2. Enable TLS — either via `TLS_CERT_FILE`/`TLS_KEY_FILE` or a reverse proxy (nginx/caddy)
 3. Set `DB_SSL_MODE=verify-full` with a CA certificate
 4. Set `MASTER_API_KEY` to a cryptographically random value and clear it after bootstrapping

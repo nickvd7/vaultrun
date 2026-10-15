@@ -275,6 +275,25 @@ func (m *Manager) sessionPath(sessionID uuid.UUID) string {
 	return filepath.Join(m.baseDir, sessionID.String())
 }
 
+// SessionDirs returns the session IDs that have a directory under the base
+// directory. Entries whose name is not a UUID (snapshots/, warm pool) are skipped.
+func (m *Manager) SessionDirs() ([]uuid.UUID, error) {
+	entries, err := os.ReadDir(m.baseDir)
+	if err != nil {
+		return nil, err
+	}
+	var ids []uuid.UUID
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if id, err := uuid.Parse(e.Name()); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 func (m *Manager) SessionPath(sessionID uuid.UUID) string {
 	return m.sessionPath(sessionID)
 }

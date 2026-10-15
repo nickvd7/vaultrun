@@ -3,7 +3,7 @@
 //
 // Environment variables (HTTP transport only):
 //
-//	MCP_PORT              Listen address (default: :8080, or :443 in ACME mode)
+//	MCP_PORT              Listen address (default: :8090, or :443 in ACME mode); "8090" is read as ":8090"
 //	MCP_AUTH_TOKEN        Bearer token required on every request (required)
 //	MCP_ACME_DOMAIN       Enable Let's Encrypt auto-TLS for this hostname
 //	MCP_ACME_CACHE_DIR    Directory to cache ACME account keys and certs (default: /data/mcp-acme-cache)
@@ -84,11 +84,25 @@ const (
 	httpShutdownTimeout = 30 * time.Second
 )
 
+// defaultHTTPPort is the HTTP transport's default listen address. It must not
+// be the API's port (8080): both commonly run on the same host.
+const defaultHTTPPort = ":8090"
+
+// normalizeListenAddr accepts a bare port ("8090") as well as a listen address
+// (":8090", "127.0.0.1:8090"). A bare port is not a valid net.Listen address.
+func normalizeListenAddr(v string) string {
+	v = strings.TrimSpace(v)
+	if v != "" && strings.Trim(v, "0123456789") == "" {
+		return ":" + v
+	}
+	return v
+}
+
 // httpConfigFromEnv reads HTTP transport settings from environment variables.
 // Returns an error if required variables are missing or configuration is invalid.
 func httpConfigFromEnv() (httpConfig, error) {
 	cfg := httpConfig{
-		port:         getEnvOrDefault("MCP_PORT", ":8080"),
+		port:         normalizeListenAddr(getEnvOrDefault("MCP_PORT", defaultHTTPPort)),
 		authToken:    os.Getenv("MCP_AUTH_TOKEN"),
 		acmeDomain:   os.Getenv("MCP_ACME_DOMAIN"),
 		acmeCacheDir: getEnvOrDefault("MCP_ACME_CACHE_DIR", "/data/mcp-acme-cache"),
@@ -577,7 +591,7 @@ func startHTTPServer(ctx context.Context, srv *server, cfg httpConfig) error {
 		}()
 
 		httpsAddr := cfg.port
-		if httpsAddr == ":8080" {
+		if httpsAddr == defaultHTTPPort {
 			httpsAddr = ":443"
 		}
 		httpsSrv := newHTTPServer(httpsAddr, &tls.Config{

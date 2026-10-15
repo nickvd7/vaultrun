@@ -337,11 +337,16 @@ func main() {
 		}
 	}()
 
+	// Close sessions whose container vanished while the API was down.
+	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	cleanup.ReconcileOrphans(reconcileCtx, db, docker, al, ws)
+	reconcileCancel()
+
 	// Start background cleanup of idle sessions.
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
-	go cleanup.Start(cleanupCtx, db, docker, al, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
+	go cleanup.Start(cleanupCtx, db, docker, al, ws, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
 
 	// SIEM audit export — optional; only active when AUDIT_EXPORT_URL is set.
 	if siemExp := siemexport.New(db); siemExp != nil {

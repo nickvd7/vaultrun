@@ -20,11 +20,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Dashboard: version labels match the release.** The landing page said v0.2.1 and the sidebar v0.3.2; both now read the dashboard's `package.json` version, and CI (`scripts/check-versions.sh`) fails when it differs from the Python SDK and site versions.
 - Dashboard stats count all sessions (not just the first 20), and the Not Found page for unknown URLs has navigation.
 
-
 ### Added
 - **Audit log:** `GET /api/v1/audit` takes `action` (prefix, for example `apikey.`), `from` and `to` (RFC3339 or `YYYY-MM-DD`); filtering happens before pagination. The dashboard page now paginates, filters by type server-side (so the API key filter finds older events too) and by date, exports CSV/JSON, links session IDs and shows signature status.
 - **Dashboard:** sessions list search (name, ID, image, labels), status filter, sortable columns, label chips and paging; create-form validation (CPU 0 or negative memory are explained before sending); snapshots overview with an explanation, download and delete; allowed secrets field and column on API Keys.
 - **Accessibility:** labelled login field, names for icon-only buttons, form labels tied to inputs, `aria-sort`/`aria-expanded`/tab roles, higher text contrast, consistent page width and badge style; verified with axe (WCAG 2 A/AA) on the main pages.
+
 ---
 
 ## [0.4.1] — 2026-10-15

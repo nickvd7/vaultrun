@@ -9,9 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.4.2] — 2026-10-15
+## [0.4.3] — 2026-10-15
 
-**Upgrade notes:** no migrations. `make up` adds `AUDIT_HMAC_KEY` to `.env` if it is empty. `make down` no longer removes sandboxes; use `make down-all` for the old behaviour. Python SDK `vaultrun-sdk` 0.4.2 is published to PyPI with this release (no code changes).
+**Upgrade notes:** no migrations. `make up` adds `AUDIT_HMAC_KEY` to `.env` if it is empty. `make down` no longer removes sandboxes; use `make down-all` for the old behaviour. Python SDK `vaultrun-sdk` 0.4.3 is published to PyPI with this release (no code changes).
 
 ### Fixed
 - **The quickstart now signs the audit log.** `make up` generates `AUDIT_HMAC_KEY` in `.env` when it is empty (an existing value is never changed), so audit entries carry a verifiable `sig_valid` out of the box.
@@ -30,6 +30,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Audit log:** `GET /api/v1/audit` takes `action` (prefix, for example `apikey.`), `from` and `to` (RFC3339 or `YYYY-MM-DD`); filtering happens before pagination. The dashboard page now paginates, filters by type server-side (so the API key filter finds older events too) and by date, exports CSV/JSON, links session IDs and shows signature status.
 - **Dashboard:** sessions list search (name, ID, image, labels), status filter, sortable columns, label chips and paging; create-form validation (CPU 0 or negative memory are explained before sending); snapshots overview with an explanation, download and delete; allowed secrets field and column on API Keys.
 - **Accessibility:** labelled login field, names for icon-only buttons, form labels tied to inputs, `aria-sort`/`aria-expanded`/tab roles, higher text contrast, consistent page width and badge style; verified with axe (WCAG 2 A/AA) on the main pages.
+
+---
+
+## [0.4.2] — not released
+
+The `v0.4.2` tag was created before the version bump and has no package or release notes; its changes are in 0.4.3. Use 0.4.3.
 
 ---
 

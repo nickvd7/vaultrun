@@ -8,6 +8,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Baked into the Next rewrite at build time: where the server-side proxy sends /api/*.
+ARG DASHBOARD_API_UPSTREAM=http://api:8080
+ENV DASHBOARD_API_UPSTREAM=$DASHBOARD_API_UPSTREAM
 RUN npm run build
 
 FROM node:22-alpine AS runner

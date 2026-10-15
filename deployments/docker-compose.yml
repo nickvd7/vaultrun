@@ -36,7 +36,9 @@ services:
       - MAX_FILE_MB=${MAX_FILE_MB:-100}
       - MAX_OUTPUT_MB=${MAX_OUTPUT_MB:-10}
       - GIN_MODE=${GIN_MODE:-release}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      # The dashboard proxies API calls, but browsers still send Origin on POST/DELETE.
+      # Default: allow the local dashboard only. Set explicitly for a public dashboard URL.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT:-3000},http://127.0.0.1:${FRONTEND_PORT:-3000}}
       # Async workers
       - ASYNC_WORKERS=${ASYNC_WORKERS:-4}
       - ASYNC_QUEUE_SIZE=${ASYNC_QUEUE_SIZE:-256}
@@ -117,13 +119,13 @@ services:
     build:
       context: ../apps/frontend
       dockerfile: Dockerfile
+      args:
+        # The browser only talks to the dashboard; /api/* is proxied to the API
+        # over the compose network. No API key is configured here: users enter
+        # their own key in the dashboard.
+        DASHBOARD_API_UPSTREAM: ${DASHBOARD_API_UPSTREAM:-http://api:8080}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
-      # Server-side proxy env vars (not exposed to browser bundle)
-      - VAULTRUN_API_URL=${VAULTRUN_API_URL:-http://api:8080}
-      - VAULTRUN_API_KEY=${MASTER_API_KEY}
     depends_on:
       api:
         condition: service_healthy

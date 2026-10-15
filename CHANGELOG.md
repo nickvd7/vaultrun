@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Audit log signatures now verify.** The entry was signed with a nanosecond timestamp but Postgres stores microseconds, so no stored entry ever matched its signature. Timestamps are now truncated to microseconds before signing and metadata is signed in its stored (JSONB) form. `GET /api/v1/audit` adds `sig_valid` to each entry when `AUDIT_HMAC_KEY` is set, so tampering is detectable. Entries written by v0.4.0 and earlier cannot be verified.
+- `AUDIT_HMAC_KEY` is now in `.env.example`, and the startup check requires it (set `VAULTRUN_INSECURE_DEV=true` to run unsigned locally).
+
 ### Added
 - `make up` prints a note when `.env` lacks `VAULTRUN_INSECURE_DEV` (older `.env` files after the 0.4.0 secure-by-default change), and `make dev-env` adds it for local use.
 

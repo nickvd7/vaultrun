@@ -51,7 +51,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 ```bash
 git clone https://github.com/nickvd7/vaultrun
 cd vaultrun
-cp .env.example .env        # set MASTER_API_KEY and POSTGRES_PASSWORD (openssl rand -hex 32)
+cp .env.example .env        # set MASTER_API_KEY, POSTGRES_PASSWORD and AUDIT_HMAC_KEY (openssl rand -hex 32)
 make up                     # detects the Docker GID, then starts API + Postgres + Redis + dashboard
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health

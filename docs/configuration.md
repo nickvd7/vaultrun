@@ -281,6 +281,7 @@ See [`docs/multi-region.md`](multi-region.md) for full deployment guides.
 |---|---|---|
 | `LOG_LEVEL` | `info` | Log verbosity: `debug` \| `info` \| `warn` \| `error` |
 | `WEBHOOK_SECRET` | | HMAC-SHA256 signing key for async run callback payloads. Sent as `X-VaultRun-Signature: sha256=<hex>`. Empty = no signing (insecure for internet-facing callbacks). |
+| `AUDIT_HMAC_KEY` | | HMAC-SHA256 key that signs each audit log entry. Empty = unsigned. When set, `GET /api/v1/audit` adds `sig_valid` (true/false) to every entry, recomputed from the stored row, so tampering shows up as `false`. Entries written by v0.4.0 and earlier never verify (their signature covered nanoseconds that the database does not store). |
 | `STOP_CONTAINERS_ON_SHUTDOWN` | `false` | When `true`, gracefully stop all running session containers on SIGTERM. |
 | `AUDIT_LOG_RETENTION_DAYS` | `90` | Delete audit log entries older than N days on each cleanup sweep. `0` = retain indefinitely. |
 

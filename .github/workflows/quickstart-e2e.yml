@@ -22,6 +22,7 @@ jobs:
           cp .env.example .env
           sed -i "s/^MASTER_API_KEY=.*/MASTER_API_KEY=$(openssl rand -hex 32)/" .env
           sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
+          sed -i "s/^AUDIT_HMAC_KEY=.*/AUDIT_HMAC_KEY=$(openssl rand -hex 32)/" .env
           echo "VAULTRUN_SECRET_E2E_TOKEN=e2e-secret-value" >> .env
 
       - name: make up
@@ -95,6 +96,13 @@ jobs:
           expect400 '{"cpu_limit":-1}'
           expect400 '{"memory_limit_mb":-1}'
           expect400 '{"image":"vaultrun-e2e/does-not-exist:nope"}'
+
+      - name: Audit log signatures verify after storage
+        run: |
+          RESP=$(curl -sS "http://localhost:8080/api/v1/audit?session_id=$SESSION_ID&limit=100" -H "X-API-Key: $API_KEY")
+          echo "$RESP" | jq -c '.audit_logs[] | {action, sig_valid}'
+          [ "$(echo "$RESP" | jq '.audit_logs | length')" -gt 0 ]
+          [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_valid != true)] | length')" = "0" ]
 
       - name: Delete session
         run: |

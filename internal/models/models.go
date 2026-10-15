@@ -230,6 +230,10 @@ type AuditLog struct {
 	// It is empty when AUDIT_HMAC_KEY is not configured. Non-empty values can be
 	// verified with VerifyAuditSig to detect tampering after the fact.
 	Sig string `db:"sig" json:"sig,omitempty"`
+	// SigValid is computed on read, never stored: true when Sig matches the
+	// entry, false when it does not or the entry is unsigned. It is only
+	// present when AUDIT_HMAC_KEY is configured.
+	SigValid *bool `db:"-" json:"sig_valid,omitempty"`
 }
 
 // Org RBAC roles

@@ -199,4 +199,35 @@ func ReconcileOrphans(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client
 	if closed > 0 {
 		slog.Info("reconcile: closed sessions whose container is gone", "count", closed)
 	}
+	removeStoppedWorkspaces(ctx, db, ws)
+}
+
+// removeStoppedWorkspaces deletes workspace directories of sessions that are
+// already stopped. Earlier versions left these behind after idle expiry and
+// failed creations. Directories without any session row are not touched: they
+// may belong to a session being created right now.
+func removeStoppedWorkspaces(ctx context.Context, db *sqlx.DB, ws *workspace.Manager) {
+	if ws == nil {
+		return
+	}
+	ids, err := ws.SessionDirs()
+	if err != nil {
+		slog.Warn("reconcile: list workspace dirs", "err", err)
+		return
+	}
+	removed := 0
+	for _, id := range ids {
+		s, err := dbpkg.GetSession(ctx, db, id)
+		if err != nil || s.StoppedAt == nil {
+			continue
+		}
+		if err := ws.Delete(id); err != nil {
+			slog.Warn("reconcile: remove workspace of stopped session", "session_id", id, "err", err)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		slog.Info("reconcile: removed workspaces of stopped sessions", "count", removed)
+	}
 }

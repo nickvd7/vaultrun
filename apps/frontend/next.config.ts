@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import pkg from "./package.json";
 
 // The browser talks to the dashboard origin only; /api/* is forwarded to the
 // VaultRun API from the server side. This avoids CORS and keeps the API port
@@ -10,6 +11,9 @@ const apiUpstream = (process.env.DASHBOARD_API_UPSTREAM || "http://localhost:808
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: {
+    NEXT_PUBLIC_APP_VERSION: pkg.version,
+  },
   async rewrites() {
     return [
       {

@@ -67,12 +67,15 @@ export interface AuditLog {
   run_id?: string;
   action: string;
   metadata: Record<string, unknown>;
+  /** Present when the server signs audit entries. */
+  sig_valid?: boolean;
 }
 
 export interface Pagination {
   limit: number;
   offset: number;
   page: number;
+  total?: number;
 }
 
 export interface APIKey {
@@ -83,6 +86,8 @@ export interface APIKey {
   created_at: string;
   last_used_at?: string;
   expires_at?: string;
+  /** null/absent = may request any secret; a list restricts the key. */
+  allowed_secrets?: string[] | null;
 }
 
 // Returned once on creation — includes the plaintext key

@@ -10,6 +10,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - **The quickstart now signs the audit log.** `make up` generates `AUDIT_HMAC_KEY` in `.env` when it is empty (an existing value is never changed), so audit entries carry a verifiable `sig_valid` out of the box.
 - **`make down` no longer destroys sessions.** Since 0.4.1 it removed every sandbox, which made the next `make up` close all sessions and delete their files. `make down` is back to stopping the stack only (sandboxes and files stay and resume after `make up`, and it says how many are still running); the destructive variant is the explicit `make down-all`.
+- **Costs page no longer crashes.** `/costs/breakdown` and `/costs/alerts` returned `null` instead of `[]` for an empty period, and the page read `.length` of it ("Application error"). The API now returns arrays and the dashboard tolerates `null` from any list endpoint.
+- **Dashboard: arguments keep their quotes.** The Execute panel split arguments on spaces, so `-c "print(2+2)"` ran `print(2+2)` literally and printed nothing while reporting COMPLETED. Arguments now use shell-style quoting (an unterminated quote is reported instead of sent), and runs show their arguments quoted. The default command follows the image (`python`, `node`, otherwise `sh`) instead of always `python`.
+- **Dashboard: unknown or inaccessible session URLs show "Session not found"** instead of loading forever, and load failures show a message with a retry button.
+- **Dashboard: deleting a session works from the detail page and always confirms.** Deletes (sessions, keys, snapshots, artifacts) use an in-page confirmation dialog, failures are shown, and success returns to the list with a notice. Creating a session opens it directly.
+- **Dashboard: the session Audit tab shows its errors, loading state and a "showing N of M" note** (it used to swallow failures into an empty table).
+- **Dashboard: API Keys and Policy explain that they need the master key** (disabled actions, one clear notice) instead of showing "master key required" next to "No API keys yet".
+- **Dashboard: artifact downloads work.** The link had no API key header and returned 401; it now downloads through an authenticated request.
+- **Dashboard: version labels match the release.** The landing page said v0.2.1 and the sidebar v0.3.2; both now read the dashboard's `package.json` version, and CI (`scripts/check-versions.sh`) fails when it differs from the Python SDK and site versions.
+- Dashboard stats count all sessions (not just the first 20), and the Not Found page for unknown URLs has navigation.
+
+### Added
+- **Audit log:** `GET /api/v1/audit` takes `action` (prefix, for example `apikey.`), `from` and `to` (RFC3339 or `YYYY-MM-DD`); filtering happens before pagination. The dashboard page now paginates, filters by type server-side (so the API key filter finds older events too) and by date, exports CSV/JSON, links session IDs and shows signature status.
+- **Dashboard:** sessions list search (name, ID, image, labels), status filter, sortable columns, label chips and paging; create-form validation (CPU 0 or negative memory are explained before sending); snapshots overview with an explanation, download and delete; allowed secrets field and column on API Keys.
+- **Accessibility:** labelled login field, names for icon-only buttons, form labels tied to inputs, `aria-sort`/`aria-expanded`/tab roles, higher text contrast, consistent page width and badge style; verified with axe (WCAG 2 A/AA) on the main pages.
 
 ---
 

@@ -3,11 +3,16 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, Play, CheckCircle, XCircle, ShieldCheck, ShieldOff } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApiKey } from "@/components/ApiKeyGate";
+import { MasterKeyNotice, Notice } from "@/components/ui/Notice";
+import { splitArgs } from "@/lib/shellwords";
 import type { PolicyStatus, PolicyEvalResult } from "@/types";
 
 type EvalTab = "command" | "file";
 
 export default function PolicyPage() {
+  const { isMaster } = useApiKey();
+  const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState<PolicyStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,15 +27,20 @@ export default function PolicyPage() {
   const [evalError, setEvalError] = useState("");
 
   const load = () => {
+    if (isMaster === false) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setLoadError("");
     api.policy
       .get()
       .then(setStatus)
-      .catch(console.error)
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Failed to load policy"))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [isMaster]);
 
   const handleEval = async () => {
     setEvaluating(true);
@@ -39,7 +49,7 @@ export default function PolicyPage() {
     try {
       const req =
         tab === "command"
-          ? { type: "command" as const, command, args: args.split(/\s+/).filter(Boolean) }
+          ? { type: "command" as const, command, args: splitArgs(args) }
           : { type: "file" as const, path: filePath, write: fileWrite };
       const res = await api.policy.eval(req);
       setResult(res);
@@ -51,24 +61,27 @@ export default function PolicyPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Policy</h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-400 text-sm mt-1">
             OPA Rego policy controlling command and file access
           </p>
         </div>
         <button
           onClick={load}
-          disabled={loading}
+          disabled={loading || isMaster === false}
           className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
+
+      {isMaster === false && <MasterKeyNotice what="Viewing and testing the policy" />}
+      {loadError && isMaster !== false && <Notice tone="error" title="Could not load the policy">{loadError}</Notice>}
 
       {/* Status card */}
       {!loading && status && (
@@ -80,7 +93,7 @@ export default function PolicyPage() {
                 <div>
                   <p className="text-sm font-medium text-emerald-300">OPA policy active</p>
                   {status.file_path && (
-                    <p className="text-xs text-slate-500 font-mono mt-0.5">{status.file_path}</p>
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">{status.file_path}</p>
                   )}
                 </div>
                 <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-900/30 border border-emerald-800/50 px-2 py-0.5 rounded">
@@ -90,15 +103,15 @@ export default function PolicyPage() {
               </>
             ) : (
               <>
-                <ShieldOff className="w-5 h-5 text-slate-500 shrink-0" />
+                <ShieldOff className="w-5 h-5 text-slate-400 shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-slate-400">AllowAll (no policy file)</p>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Set <code className="font-mono text-slate-500">OPA_POLICY_FILE</code> to a{" "}
-                    <code className="font-mono text-slate-500">.rego</code> file to enforce rules
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Set <code className="font-mono text-slate-400">OPA_POLICY_FILE</code> to a{" "}
+                    <code className="font-mono text-slate-400">.rego</code> file to enforce rules
                   </p>
                 </div>
-                <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
+                <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                   Passthrough
                 </span>
@@ -115,7 +128,7 @@ export default function PolicyPage() {
           {/* Policy content */}
           {status.enabled && status.content && (
             <div className="mt-2">
-              <p className="text-xs text-slate-600 uppercase tracking-wide mb-2">Policy source</p>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Policy source</p>
               <pre className="bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed whitespace-pre">
                 {status.content}
               </pre>
@@ -125,7 +138,7 @@ export default function PolicyPage() {
       )}
 
       {loading && (
-        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center text-slate-600 text-sm">
+        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center text-slate-400 text-sm">
           Loading…
         </div>
       )}
@@ -133,7 +146,7 @@ export default function PolicyPage() {
       {/* Test panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-5 space-y-4">
         <h2 className="text-sm font-medium text-slate-300">Policy Test</h2>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-400">
           Dry-run an input against the currently loaded policy without executing anything.
         </p>
 
@@ -157,8 +170,9 @@ export default function PolicyPage() {
         {tab === "command" ? (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Command</label>
+              <label htmlFor="policy-command" className="block text-xs text-slate-400 mb-1">Command</label>
               <input
+                id="policy-command"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
@@ -166,8 +180,9 @@ export default function PolicyPage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Args (space-separated)</label>
+              <label htmlFor="policy-args" className="block text-xs text-slate-400 mb-1">Args (shell-style quoting)</label>
               <input
+                id="policy-args"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={args}
                 onChange={(e) => setArgs(e.target.value)}
@@ -178,8 +193,9 @@ export default function PolicyPage() {
         ) : (
           <div className="flex items-end gap-4">
             <div className="flex-1">
-              <label className="block text-xs text-slate-500 mb-1">File path</label>
+              <label htmlFor="policy-path" className="block text-xs text-slate-400 mb-1">File path</label>
               <input
+                id="policy-path"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
@@ -201,7 +217,8 @@ export default function PolicyPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleEval}
-            disabled={evaluating}
+            disabled={evaluating || isMaster === false}
+            title={isMaster === false ? "Requires the master key" : undefined}
             className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50"
           >
             <Play className="w-3.5 h-3.5" />

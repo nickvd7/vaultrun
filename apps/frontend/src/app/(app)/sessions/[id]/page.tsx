@@ -4,10 +4,14 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check, History, RotateCcw, GitFork } from "lucide-react";
 import Link from "next/link";
-import { api, getStoredApiKey } from "@/lib/api";
+import { api, getStoredApiKey, ApiError } from "@/lib/api";
+import { splitArgs, defaultCommandFor, formatCommand } from "@/lib/shellwords";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Notice } from "@/components/ui/Notice";
+import { useToast } from "@/components/ui/Toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
-import type { Session, Run, File, Checkpoint } from "@/types";
+import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -16,8 +20,13 @@ type Tab = "runs" | "files" | "checkpoints" | "audit";
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const toast = useToast();
 
   const [session, setSession] = useState<Session | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "notfound" | "error">("loading");
+  const [loadError, setLoadError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
@@ -25,8 +34,10 @@ export default function SessionDetailPage() {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
 
   // Run form
-  const [cmd, setCmd] = useState("python");
+  const [cmd, setCmd] = useState("");
   const [args, setArgs] = useState("");
+  const [argsError, setArgsError] = useState("");
+  const [cmdTouched, setCmdTouched] = useState(false);
   const [runTimeout, setRunTimeout] = useState("30");
   const [executing, setExecuting] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -47,7 +58,22 @@ export default function SessionDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadSession = useCallback(() => {
-    api.sessions.get(id).then(setSession).catch(console.error);
+    setLoadState("loading");
+    api.sessions
+      .get(id)
+      .then((s) => {
+        setSession(s);
+        setLoadState("ready");
+      })
+      .catch((e: unknown) => {
+        // 400 = malformed id, 403/404 = not yours or gone: all look like "not found" to the user.
+        if (e instanceof ApiError && [400, 403, 404].includes(e.status)) {
+          setLoadState("notfound");
+        } else {
+          setLoadError(e instanceof Error ? e.message : "Failed to load session");
+          setLoadState("error");
+        }
+      });
   }, [id]);
 
   const loadRuns = useCallback(() => {
@@ -65,28 +91,48 @@ export default function SessionDetailPage() {
     api.files.list(id).then(setFiles).catch(console.error);
   }, [id, loadSession, loadRuns, loadCheckpoints]);
 
+  // Preselect a command that exists in the session's image (python is not in alpine).
+  useEffect(() => {
+    if (!session || cmdTouched) return;
+    const d = defaultCommandFor(session.image);
+    setCmd(d.command);
+    setArgs(d.args);
+  }, [session, cmdTouched]);
+
   // Auto-scroll stream output
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [streamOutput]);
 
-  const buildRunBody = () => ({
-    command: cmd,
-    args: args.split(" ").map((a) => a.trim()).filter(Boolean),
-    timeout_seconds: parseInt(runTimeout) || 30,
-  });
+  // Returns null (and shows the problem) when the arguments cannot be parsed.
+  const buildRunBody = () => {
+    let parsed: string[];
+    try {
+      parsed = splitArgs(args);
+    } catch (e) {
+      setArgsError(e instanceof Error ? e.message : "Invalid arguments");
+      return null;
+    }
+    setArgsError("");
+    return {
+      command: cmd.trim(),
+      args: parsed,
+      timeout_seconds: parseInt(runTimeout) || 30,
+    };
+  };
 
   // Blocking run — waits for full output
   const handleRun = async () => {
-    if (!cmd) return;
+    const body = buildRunBody();
+    if (!cmd.trim() || !body) return;
     setExecuting(true);
     try {
-      const result = await api.runs.execute(id, buildRunBody());
+      const result = await api.runs.execute(id, body);
       setRuns((prev) => [result, ...prev]);
       setSelectedRun(result);
       setTab("runs");
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Run failed");
+      toast.error(e instanceof Error ? e.message : "Run failed");
     } finally {
       setExecuting(false);
     }
@@ -94,7 +140,8 @@ export default function SessionDetailPage() {
 
   // Streaming run — live SSE output
   const handleStream = async () => {
-    if (!cmd) return;
+    const body = buildRunBody();
+    if (!cmd.trim() || !body) return;
     setStreaming(true);
     setStreamOutput([]);
     setSelectedRun(null);
@@ -110,7 +157,7 @@ export default function SessionDetailPage() {
           "X-API-Key": getStoredApiKey(),
           "Accept": "text/event-stream",
         },
-        body: JSON.stringify(buildRunBody()),
+        body: JSON.stringify(body),
         signal: abort.signal,
       });
 
@@ -162,18 +209,19 @@ export default function SessionDetailPage() {
 
   // Async run — submit and poll until completion
   const handleAsync = async () => {
-    if (!cmd) return;
+    const body = buildRunBody();
+    if (!cmd.trim() || !body) return;
     setAsyncPolling(true);
     setAsyncRunId(null);
     try {
-      const { run_id } = await api.runs.submitAsync(id, buildRunBody());
+      const { run_id } = await api.runs.submitAsync(id, body);
       setAsyncRunId(run_id);
       const result = await api.runs.poll(run_id);
       setRuns((prev) => [result, ...prev]);
       setSelectedRun(result);
       setTab("runs");
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Async run failed");
+      toast.error(e instanceof Error ? e.message : "Async run failed");
     } finally {
       setAsyncPolling(false);
       setAsyncRunId(null);
@@ -195,15 +243,22 @@ export default function SessionDetailPage() {
         return [...prev, uploaded];
       });
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Upload failed");
+      toast.error(e instanceof Error ? e.message : "Upload failed");
     }
     if (fileRef.current) fileRef.current.value = "";
   };
 
   const handleDelete = async () => {
-    if (!confirm("Delete this session and all its data?")) return;
-    await api.sessions.delete(id).catch(console.error);
-    router.push("/sessions");
+    setDeleting(true);
+    try {
+      await api.sessions.delete(id);
+      toast.success(`Session ${session?.name || id.slice(0, 8)} deleted`);
+      router.push("/sessions");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete session");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   const handleEditLabels = () => {
@@ -219,7 +274,7 @@ export default function SessionDetailPage() {
       setSession((s) => s ? { ...s, labels: pendingLabels } : s);
       setEditingLabels(false);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Failed to save labels");
+      toast.error(e instanceof Error ? e.message : "Failed to save labels");
     }
   };
 
@@ -240,19 +295,57 @@ export default function SessionDetailPage() {
     });
   };
 
-  if (!session) {
-    return <div className="text-slate-600 text-sm p-8">Loading session…</div>;
+  if (loadState === "loading" && !session) {
+    return <div className="text-slate-400 text-sm p-8" role="status">Loading session…</div>;
+  }
+
+  if (loadState === "notfound") {
+    return (
+      <div className="space-y-4 py-8">
+        <h1 className="text-2xl font-semibold text-slate-100">Session not found</h1>
+        <p className="text-sm text-slate-400">
+          There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
+        </p>
+        <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-indigo-300 hover:underline">
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to sessions
+        </Link>
+      </div>
+    );
+  }
+
+  if (loadState === "error" || !session) {
+    return (
+      <div className="space-y-4 py-8">
+        <Notice tone="error" title="Could not load session">{loadError || "Unknown error"}</Notice>
+        <button onClick={loadSession} className="px-4 py-2 rounded-lg border border-slate-700 text-sm text-slate-200 hover:bg-slate-800">
+          Try again
+        </button>
+      </div>
+    );
   }
 
   const canRun = session.status === "running" && !executing && !streaming && !asyncPolling;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete session?"
+        message={
+          <>
+            <span className="font-mono">{session.name || session.id.slice(0, 8)}</span> and all of its files, runs and snapshots will be removed. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete session"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => !deleting && setConfirmDelete(false)}
+      />
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/sessions" className="text-slate-500 hover:text-slate-300">
-            <ArrowLeft className="w-4 h-4" />
+          <Link href="/sessions" aria-label="Back to sessions" className="text-slate-400 hover:text-slate-200">
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           </Link>
           <div>
             <div className="flex items-center gap-2">
@@ -261,11 +354,11 @@ export default function SessionDetailPage() {
               </h1>
               <StatusBadge status={session.status} />
             </div>
-            <p className="text-xs text-slate-500 mt-0.5 font-mono">{session.id}</p>
+            <p className="text-xs text-slate-400 mt-0.5 font-mono">{session.id}</p>
           </div>
         </div>
         <button
-          onClick={handleDelete}
+          onClick={() => setConfirmDelete(true)}
           className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-900/50 rounded hover:bg-red-900/20"
         >
           <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -281,7 +374,7 @@ export default function SessionDetailPage() {
           { label: "Network", value: session.network_enabled ? "Enabled" : "Disabled" },
         ].map(({ label, value }) => (
           <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3">
-            <div className="text-xs text-slate-500 mb-1">{label}</div>
+            <div className="text-xs text-slate-400 mb-1">{label}</div>
             <div className="text-sm text-slate-200 font-mono">{value}</div>
           </div>
         ))}
@@ -307,7 +400,7 @@ export default function SessionDetailPage() {
           /* View mode */
           <div className="flex flex-wrap gap-2 min-h-[1.5rem]">
             {Object.keys(session.labels ?? {}).length === 0 ? (
-              <span className="text-xs text-slate-600 italic">No labels</span>
+              <span className="text-xs text-slate-400 italic">No labels</span>
             ) : (
               Object.entries(session.labels ?? {}).map(([k, v]) => (
                 <span
@@ -315,7 +408,7 @@ export default function SessionDetailPage() {
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-xs font-mono text-slate-300"
                 >
                   <span className="text-indigo-400">{k}</span>
-                  <span className="text-slate-500">=</span>
+                  <span className="text-slate-400">=</span>
                   {v}
                 </span>
               ))
@@ -332,7 +425,7 @@ export default function SessionDetailPage() {
                   value={k}
                   readOnly
                 />
-                <span className="text-slate-600 text-xs">=</span>
+                <span className="text-slate-400 text-xs">=</span>
                 <input
                   className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={v}
@@ -340,10 +433,11 @@ export default function SessionDetailPage() {
                 />
                 <button
                   onClick={() => handleRemovePendingLabel(k)}
-                  className="text-red-500 hover:text-red-400"
+                  className="text-red-400 hover:text-red-300"
+                  aria-label={`Remove label ${k}`}
                   title="Remove label"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               </div>
             ))}
@@ -357,7 +451,7 @@ export default function SessionDetailPage() {
                 onChange={(e) => setNewLabelKey(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddPendingLabel()}
               />
-              <span className="text-slate-600 text-xs">=</span>
+              <span className="text-slate-400 text-xs">=</span>
               <input
                 className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 placeholder="value"
@@ -367,10 +461,11 @@ export default function SessionDetailPage() {
               />
               <button
                 onClick={handleAddPendingLabel}
-                className="text-green-500 hover:text-green-400"
+                className="text-green-400 hover:text-green-300"
+                aria-label="Add label"
                 title="Add label"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
 
@@ -402,20 +497,31 @@ export default function SessionDetailPage() {
           <input
             className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 w-32 focus:outline-none focus:border-indigo-500"
             value={cmd}
-            onChange={(e) => setCmd(e.target.value)}
+            onChange={(e) => {
+              setCmd(e.target.value);
+              setCmdTouched(true);
+            }}
+            aria-label="Command"
             placeholder="command"
           />
           <input
             className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
             value={args}
-            onChange={(e) => setArgs(e.target.value)}
-            placeholder="arguments (space-separated)"
+            onChange={(e) => {
+              setArgs(e.target.value);
+              setCmdTouched(true);
+              setArgsError("");
+            }}
+            aria-label="Arguments"
+            aria-invalid={!!argsError}
+            placeholder={'arguments, shell-style quoting: -c "print(2+2)"'}
           />
           <input
             type="number"
             className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 w-20 focus:outline-none focus:border-indigo-500"
             value={runTimeout}
             onChange={(e) => setRunTimeout(e.target.value)}
+            aria-label="Timeout in seconds"
             title="Timeout (seconds)"
           />
           <button
@@ -456,6 +562,12 @@ export default function SessionDetailPage() {
           </button>
         </div>
 
+        {argsError && (
+          <p role="alert" className="text-xs text-red-400">
+            {argsError}
+          </p>
+        )}
+
         {/* Async run status */}
         {asyncPolling && asyncRunId && (
           <div className="text-xs text-amber-400 font-mono">
@@ -481,15 +593,17 @@ export default function SessionDetailPage() {
 
       {/* Tabs */}
       <div>
-        <div className="flex gap-4 border-b border-slate-800 mb-4">
+        <div role="tablist" aria-label="Session details" className="flex gap-4 border-b border-slate-800 mb-4">
           {(["runs", "files", "checkpoints", "audit"] as Tab[]).map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => setTab(t)}
               className={`pb-2 text-sm capitalize transition-colors ${
                 tab === t
                   ? "text-indigo-400 border-b-2 border-indigo-400"
-                  : "text-slate-500 hover:text-slate-300"
+                  : "text-slate-400 hover:text-slate-300"
               }`}
             >
               {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" />}
@@ -539,11 +653,11 @@ function RunsTab({
     <div className="space-y-4">
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {runs.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 text-sm">No runs yet.</div>
+          <div className="p-6 text-center text-slate-400 text-sm">No runs yet.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">ID</th>
                 <th className="px-4 py-3 text-left">Command</th>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -557,6 +671,14 @@ function RunsTab({
                 <tr
                   key={r.id}
                   onClick={() => setSelectedRun(selectedRun?.id === r.id ? null : r)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedRun(selectedRun?.id === r.id ? null : r);
+                    }
+                  }}
+                  tabIndex={0}
+                  aria-selected={selectedRun?.id === r.id}
                   className={`cursor-pointer hover:bg-slate-800/20 transition-colors ${
                     selectedRun?.id === r.id ? "bg-slate-800/30" : ""
                   }`}
@@ -565,7 +687,7 @@ function RunsTab({
                     {r.id.slice(0, 8)}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
-                    {r.command} {r.args?.join(" ")}
+                    {formatCommand(r.command, r.args)}
                   </td>
                   <td className="px-4 py-2.5">
                     <StatusBadge status={r.status} />
@@ -573,10 +695,10 @@ function RunsTab({
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
                     {r.exit_code ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                  <td className="px-4 py-2.5 text-xs text-slate-400">
                     {r.duration_ms ? formatDuration(r.duration_ms) : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                  <td className="px-4 py-2.5 text-xs text-slate-400">
                     {formatDate(r.created_at)}
                   </td>
                 </tr>
@@ -589,22 +711,27 @@ function RunsTab({
       {selectedRun && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-500 font-mono">
-              {selectedRun.command} {selectedRun.args?.join(" ")}
+            <span className="text-xs text-slate-400 font-mono">
+              {formatCommand(selectedRun.command, selectedRun.args)}
             </span>
             <StatusBadge status={selectedRun.status} />
           </div>
           {selectedRun.stdout && (
             <div className="mb-3">
-              <div className="text-xs text-green-600 mb-1 uppercase tracking-wide">stdout</div>
+              <div className="text-xs text-green-400 mb-1 uppercase tracking-wide">stdout</div>
               <pre className="text-green-300 bg-black/30 rounded p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedRun.stdout}
               </pre>
             </div>
           )}
+          {!selectedRun.stdout && !selectedRun.stderr && (
+            <p className="text-xs text-slate-400">
+              No output (exit code {selectedRun.exit_code ?? "unknown"}).
+            </p>
+          )}
           {selectedRun.stderr && (
             <div>
-              <div className="text-xs text-red-600 mb-1 uppercase tracking-wide">stderr</div>
+              <div className="text-xs text-red-400 mb-1 uppercase tracking-wide">stderr</div>
               <pre className="text-red-300 bg-black/30 rounded p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedRun.stderr}
               </pre>
@@ -649,11 +776,11 @@ function FilesTab({
       </div>
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {files.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 text-sm">No files uploaded.</div>
+          <div className="p-6 text-center text-slate-400 text-sm">No files uploaded.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Path</th>
                 <th className="px-4 py-3 text-left">Size</th>
                 <th className="px-4 py-3 text-left">Type</th>
@@ -665,9 +792,9 @@ function FilesTab({
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-800/20">
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-300">{f.path}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">{formatBytes(f.size_bytes)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">{f.content_type}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">{formatDate(f.updated_at)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400">{formatBytes(f.size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono">{f.content_type}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400">{formatDate(f.updated_at)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       onClick={() => handleDownload(f.path)}
@@ -697,6 +824,7 @@ function CheckpointsTab({
   onReload: () => void;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<Checkpoint | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [forking, setForking] = useState(false);
@@ -707,10 +835,10 @@ function CheckpointsTab({
     setRestoring(true);
     try {
       await api.checkpoints.restore(sessionId, checkpointId, false);
-      alert("Checkpoint restored successfully!");
+      toast.success("Checkpoint restored");
       onReload();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Restore failed");
+      toast.error(e instanceof Error ? e.message : "Restore failed");
     } finally {
       setRestoring(false);
     }
@@ -723,7 +851,7 @@ function CheckpointsTab({
       const { session_id } = await api.checkpoints.fork(checkpointId, name);
       router.push(`/sessions/${session_id}`);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Fork failed");
+      toast.error(e instanceof Error ? e.message : "Fork failed");
     } finally {
       setForking(false);
       setForkName("");
@@ -736,7 +864,7 @@ function CheckpointsTab({
       await api.checkpoints.delete(sessionId, checkpointId);
       onReload();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   };
 
@@ -744,9 +872,9 @@ function CheckpointsTab({
     <div className="space-y-4">
       {checkpoints.length === 0 && (
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center">
-          <History className="w-12 h-12 mx-auto mb-3 text-slate-700" />
-          <p className="text-slate-500 text-sm mb-2">No checkpoints yet</p>
-          <p className="text-slate-600 text-xs">
+          <History className="w-12 h-12 mx-auto mb-3 text-slate-400" />
+          <p className="text-slate-400 text-sm mb-2">No checkpoints yet</p>
+          <p className="text-slate-400 text-xs">
             Checkpoints are automatically created after each command execution when replay is enabled.
           </p>
         </div>
@@ -756,7 +884,7 @@ function CheckpointsTab({
         {checkpoints.length > 0 && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">#</th>
                 <th className="px-4 py-3 text-left">Description</th>
                 <th className="px-4 py-3 text-left">Command</th>
@@ -780,13 +908,13 @@ function CheckpointsTab({
                   <td className="px-4 py-2.5 text-xs text-slate-300 max-w-xs truncate">
                     {cp.name || cp.description}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500 max-w-xs truncate">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400 max-w-xs truncate">
                     {cp.command || "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                  <td className="px-4 py-2.5 text-xs text-slate-400">
                     {formatBytes(cp.size_bytes)}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                  <td className="px-4 py-2.5 text-xs text-slate-400">
                     {formatDate(cp.created_at)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
@@ -811,8 +939,9 @@ function CheckpointsTab({
                         onClick={(e) => { e.stopPropagation(); handleDelete(cp.id); }}
                         className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 border border-red-900/50 rounded hover:bg-red-900/20"
                         title="Delete checkpoint"
+                        aria-label="Delete checkpoint"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3 h-3" aria-hidden="true" />
                       </button>
                     </div>
                   </td>
@@ -826,21 +955,21 @@ function CheckpointsTab({
       {selectedCheckpoint && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-mono">
+            <span className="text-xs text-slate-400 font-mono">
               Checkpoint #{selectedCheckpoint.checkpoint_number}
             </span>
-            <span className="text-xs text-slate-600">{selectedCheckpoint.id.slice(0, 16)}</span>
+            <span className="text-xs text-slate-400">{selectedCheckpoint.id.slice(0, 16)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-slate-600 mb-1">Exit Code</div>
+              <div className="text-xs text-slate-400 mb-1">Exit Code</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.exit_code ?? "—"}
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-600 mb-1">Duration</div>
+              <div className="text-xs text-slate-400 mb-1">Duration</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.duration_ms ? formatDuration(selectedCheckpoint.duration_ms) : "—"}
               </div>
@@ -849,7 +978,7 @@ function CheckpointsTab({
 
           {selectedCheckpoint.stdout_preview && (
             <div>
-              <div className="text-xs text-green-600 mb-1 uppercase tracking-wide">stdout (preview)</div>
+              <div className="text-xs text-green-400 mb-1 uppercase tracking-wide">stdout (preview)</div>
               <pre className="text-green-300 bg-black/30 rounded p-3 max-h-32 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedCheckpoint.stdout_preview}
               </pre>
@@ -858,7 +987,7 @@ function CheckpointsTab({
 
           {selectedCheckpoint.stderr_preview && (
             <div>
-              <div className="text-xs text-red-600 mb-1 uppercase tracking-wide">stderr (preview)</div>
+              <div className="text-xs text-red-400 mb-1 uppercase tracking-wide">stderr (preview)</div>
               <pre className="text-red-300 bg-black/30 rounded p-3 max-h-32 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedCheckpoint.stderr_preview}
               </pre>
@@ -872,41 +1001,68 @@ function CheckpointsTab({
 
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 function AuditTab({ sessionId }: { sessionId: string }) {
-  const [logs, setLogs] = useState<
-    Array<{ id: string; timestamp: string; actor: string; action: string; metadata: Record<string, unknown> }>
-  >([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api.audit.list(sessionId).then(setLogs).catch(console.error);
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    api.audit
+      .list({ sessionId, limit: 200 })
+      .then((r) => {
+        if (cancelled) return;
+        setLogs(r.logs);
+        setTotal(r.total);
+      })
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load audit log"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
+  if (loading) return <div className="p-6 text-center text-slate-400 text-sm" role="status">Loading audit log…</div>;
+  if (error) return <Notice tone="error" title="Could not load the audit log">{error}</Notice>;
+
   return (
-    <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
-      {logs.length === 0 ? (
-        <div className="p-6 text-center text-slate-600 text-sm">No audit logs.</div>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
-              <th className="px-4 py-3 text-left">Time</th>
-              <th className="px-4 py-3 text-left">Actor</th>
-              <th className="px-4 py-3 text-left">Action</th>
-              <th className="px-4 py-3 text-left">Metadata</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {logs.map((l) => (
-              <tr key={l.id} className="hover:bg-slate-800/20">
-                <td className="px-4 py-2.5 text-xs text-slate-500 font-mono">{formatDate(l.timestamp)}</td>
-                <td className="px-4 py-2.5 text-xs text-slate-400">{l.actor}</td>
-                <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">{l.action}</td>
-                <td className="px-4 py-2.5 text-xs text-slate-500 font-mono truncate max-w-xs">
-                  {JSON.stringify(l.metadata)}
-                </td>
+    <div className="space-y-2">
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
+        {logs.length === 0 ? (
+          <div className="p-6 text-center text-slate-400 text-sm">No audit events for this session.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+                <th scope="col" className="px-4 py-3 text-left font-medium">Time</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Metadata</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {logs.map((l) => (
+                <tr key={l.id} className="hover:bg-slate-800/20">
+                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono" title={l.actor}>
+                    {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">{l.action}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
+                    {JSON.stringify(l.metadata)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      {total > logs.length && (
+        <p className="text-xs text-slate-400">
+          Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 hover:underline">Open the audit log</Link> for the full history.
+        </p>
       )}
     </div>
   );

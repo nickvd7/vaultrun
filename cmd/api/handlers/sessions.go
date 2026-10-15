@@ -281,6 +281,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
 			return
 		}
+		if errors.Is(err, dockerpkg.ErrEgressUnavailable) {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "allowed_hosts is not available in this deployment: " +
+				"the API cannot install host iptables rules (see docs/security.md, Network Egress Filtering)"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})
 		return
 	}

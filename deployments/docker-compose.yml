@@ -74,15 +74,15 @@ services:
       # Seccomp + cosign (optional but recommended in production)
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
       - COSIGN_PUBLIC_KEY=${COSIGN_PUBLIC_KEY:-}
+      - NETPOLICY_CONTAINER=vaultrun-netpolicy
       # Database TLS (set to require or verify-full in production)
       - DB_SSL_MODE=${DB_SSL_MODE:-}
       - DB_SSL_ROOT_CERT=${DB_SSL_ROOT_CERT:-}
       - DB_SSL_CERT=${DB_SSL_CERT:-}
       - DB_SSL_KEY=${DB_SSL_KEY:-}
-    # NET_ADMIN is required for host-side iptables egress filtering when
-    # AllowedHosts is set on sessions. Remove if you don't use AllowedHosts.
-    cap_add:
-      - NET_ADMIN
+    # No NET_ADMIN here: iptables run inside this container would act on its own
+    # network namespace, not the host's. Egress filtering for allowed_hosts goes
+    # through the netpolicy helper below.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
@@ -90,6 +90,8 @@ services:
     depends_on:
       workspace-init:
         condition: service_completed_successfully
+      netpolicy:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -114,6 +116,25 @@ services:
     volumes:
       - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
     restart: "no"
+
+  # Helper for sessions with allowed_hosts: shares the host network namespace and
+  # holds NET_ADMIN so the API can install per-session iptables rules there. It
+  # runs no network services. Not needed if you never use allowed_hosts.
+  netpolicy:
+    build:
+      context: .
+      dockerfile: Dockerfile.netpolicy
+    container_name: vaultrun-netpolicy
+    network_mode: host
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
 
   frontend:
     build:

@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/errdefs"
 	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/internal/metrics"
@@ -364,6 +365,20 @@ func (c *Client) ContainerRunning(ctx context.Context, containerID string) (bool
 		return false, nil // not found == not running
 	}
 	return info.State.Running, nil
+}
+
+// ContainerGone reports whether the daemon definitively has no such container.
+// Any other inspect failure (daemon hiccup, timeout) is returned as an error so
+// callers never treat "could not check" as "gone".
+func (c *Client) ContainerGone(ctx context.Context, containerID string) (bool, error) {
+	_, err := c.inner.ContainerInspect(ctx, containerID)
+	if err == nil {
+		return false, nil
+	}
+	if errdefs.IsNotFound(err) {
+		return true, nil
+	}
+	return false, err
 }
 
 // resolveExtraHosts converts a list of hostnames/IPs into Docker ExtraHosts

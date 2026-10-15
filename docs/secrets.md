@@ -24,6 +24,28 @@ values into `env` before the container exec. They exist in the container's
 process environment; the caller does not receive them in the run output (see
 below).
 
+### Which keys may request which secrets
+
+By default an API key can request any secret the provider can resolve (the
+behaviour before v0.4.1). Restrict a key with an allowlist, set when the key
+is created or changed later (master key only):
+
+```bash
+# create a key that can only inject DB_PASSWORD
+curl -X POST $API/api/v1/keys -H "Authorization: Bearer $MASTER_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"ci","allowed_secrets":["DB_PASSWORD"]}'
+
+# change it later: a list restricts, [] denies all, null removes the restriction
+curl -X PUT $API/api/v1/keys/$KEY_ID/secrets -H "Authorization: Bearer $MASTER_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"allowed_secrets":[]}'
+```
+
+A run that asks for a secret outside the allowlist fails with `403` before any
+lookup happens, so the response does not reveal whether the secret exists, and
+a `secret.denied` audit entry is written. The master key is never restricted.
+Keys created before migration 022 stay unrestricted until you set a list.
+
 ### Output redaction
 
 For every run that requests `secrets`, VaultRun replaces the exact value of

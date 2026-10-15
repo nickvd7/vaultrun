@@ -99,6 +99,29 @@ jobs:
           expect400 '{"memory_limit_mb":-1}'
           expect400 '{"image":"vaultrun-e2e/does-not-exist:nope"}'
 
+      - name: Per-key secret allowlist
+        run: |
+          MASTER=$(grep '^MASTER_API_KEY=' .env | cut -d= -f2-)
+          api() { curl -sS "$@" -H 'Content-Type: application/json'; }
+          LIMITED=$(api -X POST http://localhost:8080/api/v1/keys -H "X-API-Key: $MASTER" \
+            -d '{"name":"e2e-limited","allowed_secrets":["NOT_E2E_TOKEN"]}')
+          LKEY=$(echo "$LIMITED" | jq -er '.key'); echo "::add-mask::$LKEY"
+          LID=$(echo "$LIMITED" | jq -er '.id')
+          LSESSION=$(api -X POST http://localhost:8080/api/v1/sessions -H "X-API-Key: $LKEY" \
+            -d '{"image":"python:3.12-slim"}' | jq -er '.id')
+          run_secret() {
+            curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:8080/api/v1/sessions/$LSESSION/run" \
+              -H "X-API-Key: $LKEY" -H 'Content-Type: application/json' \
+              -d '{"command":"echo","args":["x"],"secrets":["E2E_TOKEN"]}'
+          }
+          [ "$(run_secret)" = "403" ]
+          api -X PUT "http://localhost:8080/api/v1/keys/$LID/secrets" -H "X-API-Key: $MASTER" \
+            -d '{"allowed_secrets":["E2E_TOKEN"]}' >/dev/null
+          [ "$(run_secret)" = "200" ]
+          # A non-master key cannot widen its own allowlist.
+          [ "$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "http://localhost:8080/api/v1/keys/$LID/secrets" \
+            -H "X-API-Key: $LKEY" -H 'Content-Type: application/json' -d '{"allowed_secrets":null}')" = "403" ]
+
       - name: Dashboard proxies the API with the user's own key
         run: |
           [ "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:3000/)" = "200" ]

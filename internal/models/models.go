@@ -37,6 +37,8 @@ const (
 	ActionCommandFailed   = "command.failed"
 	ActionAPIKeyCreated   = "apikey.created"
 	ActionAPIKeyRevoked   = "apikey.revoked"
+	ActionAPIKeySecrets   = "apikey.secrets_updated"
+	ActionSecretDenied    = "secret.denied"
 	ActionFileDeleted     = "file.deleted"
 	ActionSessionExpired  = "session.expired" // emitted by background cleanup goroutine
 
@@ -137,6 +139,9 @@ type APIKey struct {
 	RevokedAt  *time.Time `db:"revoked_at"   json:"revoked_at,omitempty"`
 	Active     bool       `db:"active"       json:"active"`
 	OrgID      *uuid.UUID `db:"org_id"     json:"org_id,omitempty"`
+	// AllowedSecrets restricts which secret names the key may inject into runs.
+	// nil means unrestricted; an empty list means no secrets.
+	AllowedSecrets pq.StringArray `db:"allowed_secrets" json:"allowed_secrets"`
 }
 
 type Session struct {

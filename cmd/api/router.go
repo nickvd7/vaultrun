@@ -197,6 +197,7 @@ func newRouter(
 	api.POST("/keys", buildMW(masterMWKeys, keysH.Create)...)
 	api.GET("/keys", buildMW(masterMWKeys, keysH.List)...)
 	api.DELETE("/keys/:id", buildMW(masterMWKeys, keysH.Revoke)...)
+	api.PUT("/keys/:id/secrets", buildMW(masterMWKeys, keysH.SetSecrets)...)
 
 	// Org management — create/list/delete requires master key.
 	// GET a specific org, list members, and list org sessions are accessible to

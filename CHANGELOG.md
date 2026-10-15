@@ -20,6 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `make up` waits for the API to become healthy and prints the API log's last lines when it does not (for example the secure-by-default message when upgrading from v0.3).
 
 ### Security
+- **Per-key secret allowlist.** Any API key could request any secret. Keys now take `allowed_secrets` at creation (`POST /keys`) and via `PUT /keys/:id/secrets` (master only): a list restricts the key, `[]` denies all, `null`/omitted keeps the old unrestricted behaviour (existing keys are unchanged; migration 022). Denied requests return 403 before any lookup and are audited as `secret.denied`. Output redaction remains an accidental-leak safety net, not a barrier against a command that wants to exfiltrate a secret (`rev`, hex, splitting); `docs/secrets.md` now says so, and the allowlist is the control for who can obtain a secret at all.
 - **Removed the dashboard's `/api/proxy` route.** It was unused, and it attached `MASTER_API_KEY` (`VAULTRUN_API_KEY` in the frontend container) to every request, so once reachable it would have given anyone who can open port 3000 master rights. The dashboard container no longer receives any API key; users sign in with their own key.
 
 ### Added

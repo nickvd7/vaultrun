@@ -38,7 +38,8 @@ up:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
 	@./scripts/detect-docker-gid.sh --write .env
 	@./scripts/check-env.sh .env
-	docker compose -f deployments/docker-compose.yml --env-file .env up -d --build
+	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
+	  ./scripts/wait-healthy.sh .env $$([ $$rc -eq 0 ] && echo 90 || echo 15) || exit 1; exit $$rc
 
 # Local development only: opt out of the secure-by-default startup checks.
 dev-env:
@@ -47,7 +48,7 @@ dev-env:
 	else echo "VAULTRUN_INSECURE_DEV=true" >> .env && echo "Added VAULTRUN_INSECURE_DEV=true to .env (local development only)"; fi
 
 down:
-	docker compose -f deployments/docker-compose.yml --env-file .env down
+	@./scripts/down.sh .env
 
 logs:
 	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
@@ -127,7 +128,7 @@ help:
 	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
-	@echo "  make down            Stop all services"
+	@echo "  make down            Stop all services and remove sandbox containers"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

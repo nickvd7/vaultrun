@@ -105,3 +105,17 @@ func TestSDKBridge_TypedRunCommandArgs(t *testing.T) {
 		t.Fatalf("typed SDK args failed coercion: %q", text)
 	}
 }
+
+func TestNormalizeListenAddr(t *testing.T) {
+	for in, want := range map[string]string{
+		"8090":           ":8090",
+		":8090":          ":8090",
+		"127.0.0.1:8090": "127.0.0.1:8090",
+		" 8090 ":         ":8090",
+		"":               "",
+	} {
+		if got := normalizeListenAddr(in); got != want {
+			t.Errorf("normalizeListenAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

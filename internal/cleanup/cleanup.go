@@ -16,6 +16,7 @@ import (
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
+	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 // cleaner holds shared state for sweep runs.
@@ -23,6 +24,7 @@ type cleaner struct {
 	db     *sqlx.DB
 	docker *dockerpkg.Client
 	audit  *audit.Logger
+	ws     *workspace.Manager // nil = leave workspaces on disk
 	// mu ensures only one sweep runs at a time (M-1): if a sweep is slow
 	// (Docker or DB latency) we skip the next tick rather than stacking goroutines.
 	mu sync.Mutex
@@ -30,11 +32,12 @@ type cleaner struct {
 
 // Start launches the idle-session cleanup loop. It runs until ctx is cancelled.
 // interval controls how frequently the sweep runs; idleFor is how long a session
-// must have been quiet before its container is stopped (workspace is preserved).
+// must have been quiet before its session is stopped. Stopping is final (there is
+// no restart), so the session's workspace directory is removed with it.
 //
 // When retentionDays > 0, audit logs older than that many days are also pruned
 // on every sweep. Set to 0 to retain audit logs indefinitely.
-func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, interval, idleFor time.Duration, retentionDays int) {
+func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, ws *workspace.Manager, interval, idleFor time.Duration, retentionDays int) {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
@@ -48,7 +51,7 @@ func Start(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit
 		"audit_retention_days", retentionDays,
 	)
 
-	cl := &cleaner{db: db, docker: docker, audit: al}
+	cl := &cleaner{db: db, docker: docker, audit: al, ws: ws}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -130,6 +133,12 @@ func (cl *cleaner) stopSession(ctx context.Context, s *models.Session) {
 
 	metrics.ActiveSessions.Dec()
 
+	if cl.ws != nil {
+		if err := cl.ws.Delete(s.ID); err != nil {
+			slog.Warn("cleanup: remove workspace", "session_id", s.ID, "err", err)
+		}
+	}
+
 	// Emit audit event so forensic trail is complete (H-4).
 	if cl.audit != nil {
 		sidCopy := s.ID
@@ -139,5 +148,86 @@ func (cl *cleaner) stopSession(ctx context.Context, s *models.Session) {
 			Action:    models.ActionSessionExpired,
 			Metadata:  models.JSONB{"reason": "idle_timeout"},
 		})
+	}
+}
+
+// ReconcileOrphans closes active sessions whose container no longer exists, for
+// example after `make down` removed the sandboxes or an operator ran
+// `docker rm`. Without it they stay listed as running, count against the
+// actor's quota, and every command on them fails. Sessions are only closed
+// when Docker answers "not found"; any other error leaves them alone.
+func ReconcileOrphans(ctx context.Context, db *sqlx.DB, docker *dockerpkg.Client, al *audit.Logger, ws *workspace.Manager) {
+	sessions, err := dbpkg.ListActiveSessions(ctx, db)
+	if err != nil {
+		slog.Error("reconcile: list active sessions", "err", err)
+		return
+	}
+	closed := 0
+	for _, s := range sessions {
+		if s.ContainerID == nil || *s.ContainerID == "" {
+			continue
+		}
+		gone, err := docker.ContainerGone(ctx, *s.ContainerID)
+		if err != nil {
+			slog.Warn("reconcile: could not inspect container; leaving session alone",
+				"session_id", s.ID, "err", err)
+			continue
+		}
+		if !gone {
+			continue
+		}
+		slog.Warn("reconcile: container is gone, closing session", "session_id", s.ID)
+		if err := dbpkg.StopSession(ctx, db, s.ID); err != nil {
+			slog.Error("reconcile: mark session stopped", "session_id", s.ID, "err", err)
+			continue
+		}
+		metrics.ActiveSessions.Dec()
+		if ws != nil {
+			_ = ws.Delete(s.ID)
+		}
+		if al != nil {
+			sid := s.ID
+			al.Log(ctx, audit.Event{
+				Actor:     "cleanup",
+				SessionID: &sid,
+				Action:    models.ActionSessionExpired,
+				Metadata:  models.JSONB{"reason": "container_missing"},
+			})
+		}
+		closed++
+	}
+	if closed > 0 {
+		slog.Info("reconcile: closed sessions whose container is gone", "count", closed)
+	}
+	removeStoppedWorkspaces(ctx, db, ws)
+}
+
+// removeStoppedWorkspaces deletes workspace directories of sessions that are
+// already stopped. Earlier versions left these behind after idle expiry and
+// failed creations. Directories without any session row are not touched: they
+// may belong to a session being created right now.
+func removeStoppedWorkspaces(ctx context.Context, db *sqlx.DB, ws *workspace.Manager) {
+	if ws == nil {
+		return
+	}
+	ids, err := ws.SessionDirs()
+	if err != nil {
+		slog.Warn("reconcile: list workspace dirs", "err", err)
+		return
+	}
+	removed := 0
+	for _, id := range ids {
+		s, err := dbpkg.GetSession(ctx, db, id)
+		if err != nil || s.StoppedAt == nil {
+			continue
+		}
+		if err := ws.Delete(id); err != nil {
+			slog.Warn("reconcile: remove workspace of stopped session", "session_id", id, "err", err)
+			continue
+		}
+		removed++
+	}
+	if removed > 0 {
+		slog.Info("reconcile: removed workspaces of stopped sessions", "count", removed)
 	}
 }

@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2, RefreshCw, Copy, Check, AlertCircle, Clock } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApiKey } from "@/components/ApiKeyGate";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { MasterKeyNotice } from "@/components/ui/Notice";
+import { useToast } from "@/components/ui/Toast";
 import type { APIKey, CreatedKey } from "@/types";
 
 type ExpiryPreset = "never" | "7d" | "30d" | "90d" | "1y" | "custom";
@@ -37,6 +41,11 @@ function formatExpiry(expiresAt: string): { label: string; expired: boolean } {
 }
 
 export default function KeysPage() {
+  const { isMaster } = useApiKey();
+  const toast = useToast();
+  const [secretsInput, setSecretsInput] = useState("");
+  const [revoking, setRevoking] = useState<APIKey | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
   const [keys, setKeys] = useState<APIKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -49,6 +58,10 @@ export default function KeysPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
+    if (isMaster === false) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     api.keys
       .list()
@@ -57,7 +70,7 @@ export default function KeysPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [isMaster]);
 
   const computeExpiresAt = (): string | undefined => {
     switch (preset) {
@@ -79,11 +92,16 @@ export default function KeysPage() {
     setCreating(true);
     setError(null);
     try {
-      const created = await api.keys.create(name.trim(), computeExpiresAt());
+      const secrets = secretsInput
+        .split(/[\s,]+/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      const created = await api.keys.create(name.trim(), computeExpiresAt(), secrets.length > 0 ? secrets : undefined);
       setNewKey(created);
       setName("");
       setPreset("never");
       setCustomDate("");
+      setSecretsInput("");
       setShowForm(false);
       load();
     } catch (e: unknown) {
@@ -93,13 +111,18 @@ export default function KeysPage() {
     }
   };
 
-  const handleRevoke = async (id: string, keyName: string) => {
-    if (!confirm(`Revoke key "${keyName}"? This cannot be undone.`)) return;
+  const handleRevoke = async () => {
+    if (!revoking) return;
+    setRevokeBusy(true);
     try {
-      await api.keys.revoke(id);
+      await api.keys.revoke(revoking.id);
+      toast.success(`Key ${revoking.name} revoked`);
+      setRevoking(null);
       load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to revoke key");
+      toast.error(e instanceof Error ? e.message : "Failed to revoke key");
+    } finally {
+      setRevokeBusy(false);
     }
   };
 
@@ -111,32 +134,50 @@ export default function KeysPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
+      <ConfirmDialog
+        open={revoking !== null}
+        title="Revoke API key?"
+        message={
+          <>
+            Key <span className="font-mono">{revoking?.name}</span> stops working immediately. This cannot be undone.
+          </>
+        }
+        confirmLabel="Revoke key"
+        busy={revokeBusy}
+        onConfirm={handleRevoke}
+        onCancel={() => !revokeBusy && setRevoking(null)}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">API Keys</h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-400 text-sm mt-1">
             Manage keys used to authenticate with the VaultRun API
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={load}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800"
+            disabled={isMaster === false}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
           <button
             onClick={() => { setShowForm(!showForm); setError(null); }}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500"
+            disabled={isMaster === false}
+            title={isMaster === false ? "Requires the master key" : undefined}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-3.5 h-3.5" /> New Key
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 text-red-400 bg-red-950/30 border border-red-900/50 rounded-lg px-4 py-3 text-sm">
+      {isMaster === false && <MasterKeyNotice what="Creating, listing and revoking API keys" />}
+
+      {error && isMaster !== false && (
+        <div role="alert" className="flex items-center gap-2 text-red-400 bg-red-950/30 border border-red-900/50 rounded-lg px-4 py-3 text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {error}
         </div>
@@ -152,7 +193,7 @@ export default function KeysPage() {
             </p>
           </div>
           {newKey.expires_at && (
-            <p className="text-xs text-emerald-600 flex items-center gap-1">
+            <p className="text-xs text-emerald-400 flex items-center gap-1">
               <Clock className="w-3 h-3" />
               Expires {new Date(newKey.expires_at).toLocaleString()}
             </p>
@@ -174,7 +215,7 @@ export default function KeysPage() {
           </div>
           <button
             onClick={() => setNewKey(null)}
-            className="text-xs text-slate-500 hover:text-slate-400"
+            className="text-xs text-slate-400 hover:text-slate-200"
           >
             I&apos;ve saved it — dismiss
           </button>
@@ -187,8 +228,9 @@ export default function KeysPage() {
           <h2 className="text-sm font-medium text-slate-300">Create New API Key</h2>
 
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Key name</label>
+            <label htmlFor="key-name" className="block text-xs text-slate-400 mb-1">Key name</label>
             <input
+              id="key-name"
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -199,7 +241,19 @@ export default function KeysPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-slate-500 mb-2">Expiry</label>
+            <label htmlFor="key-secrets" className="block text-xs text-slate-400 mb-1">Allowed secrets (optional)</label>
+            <input
+              id="key-secrets"
+              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+              value={secretsInput}
+              onChange={(e) => setSecretsInput(e.target.value)}
+              placeholder="DB_PASSWORD, API_TOKEN"
+            />
+            <p className="mt-1 text-xs text-slate-400">Comma-separated secret names this key may inject into runs. Leave empty to allow any secret.</p>
+          </div>
+
+          <div>
+            <span className="block text-xs text-slate-400 mb-2">Expiry</span>
             <div className="flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -247,19 +301,22 @@ export default function KeysPage() {
 
       {/* Keys table */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-slate-600 text-sm">Loading…</div>
+        {isMaster === false ? (
+          <div className="p-8 text-center text-slate-400 text-sm">The key list is only visible to the master key.</div>
+        ) : loading ? (
+          <div className="p-8 text-center text-slate-400 text-sm" role="status">Loading…</div>
         ) : keys.length === 0 ? (
-          <div className="p-8 text-center text-slate-600 text-sm">
+          <div className="p-8 text-center text-slate-400 text-sm">
             No API keys yet. Click &ldquo;New Key&rdquo; to create one.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Prefix</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Secrets</th>
                 <th className="px-4 py-3 text-left">Expires</th>
                 <th className="px-4 py-3 text-left">Created</th>
                 <th className="px-4 py-3 text-left">Last used</th>
@@ -286,10 +343,19 @@ export default function KeysPage() {
                           Active
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                           Revoked
                         </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-300">
+                      {k.allowed_secrets == null ? (
+                        <span className="text-slate-400">Any</span>
+                      ) : k.allowed_secrets.length === 0 ? (
+                        <span className="text-amber-300">None</span>
+                      ) : (
+                        <span className="font-mono" title={k.allowed_secrets.join(", ")}>{k.allowed_secrets.length} allowed</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs">
@@ -299,25 +365,26 @@ export default function KeysPage() {
                           {expiry.label}
                         </span>
                       ) : (
-                        <span className="text-slate-600">Never</span>
+                        <span className="text-slate-400">Never</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td className="px-4 py-3 text-xs text-slate-400">
                       {new Date(k.created_at).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
+                    <td className="px-4 py-3 text-xs text-slate-400">
                       {k.last_used_at
                         ? new Date(k.last_used_at).toLocaleString()
-                        : <span className="text-slate-700">Never</span>}
+                        : <span className="text-slate-400">Never</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {k.active && (
                         <button
-                          onClick={() => handleRevoke(k.id, k.name)}
-                          className="text-slate-600 hover:text-red-400 transition-colors"
+                          onClick={() => setRevoking(k)}
+                          className="text-slate-400 hover:text-red-400 transition-colors"
                           title="Revoke key"
+                          aria-label={`Revoke key ${k.name}`}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                       )}
                     </td>

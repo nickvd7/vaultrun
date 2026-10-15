@@ -3,10 +3,14 @@
 import { useEffect, useState } from "react";
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatBytes, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { Notice } from "@/components/ui/Notice";
+import { useToast } from "@/components/ui/Toast";
 import type { CostBreakdown, CostAlert } from "@/types";
 
 export default function CostsPage() {
+  const toast = useToast();
+  const [loadError, setLoadError] = useState("");
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null);
   const [alerts, setAlerts] = useState<CostAlert[]>([]);
   const [period, setPeriod] = useState(() => {
@@ -19,8 +23,12 @@ export default function CostsPage() {
   }, [period]);
 
   const loadData = () => {
-    api.costs.getBreakdown(period).then(setBreakdown).catch(console.error);
-    api.costs.getAlerts(false).then(setAlerts).catch(console.error);
+    setLoadError("");
+    api.costs
+      .getBreakdown(period)
+      .then(setBreakdown)
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Failed to load costs"));
+    api.costs.getAlerts(false).then(setAlerts).catch(() => setAlerts([]));
   };
 
   const handleResolveAlert = async (alertId: string) => {
@@ -28,7 +36,7 @@ export default function CostsPage() {
       await api.costs.resolveAlert(alertId);
       loadData();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Failed to resolve alert");
+      toast.error(e instanceof Error ? e.message : "Failed to resolve alert");
     }
   };
 
@@ -52,25 +60,32 @@ export default function CostsPage() {
     }
   };
 
-  if (!breakdown) {
-    return <div className="text-slate-600 text-sm p-8">Loading costs…</div>;
+  if (loadError) {
+    return <Notice tone="error" title="Could not load costs">{loadError}</Notice>;
   }
+
+  if (!breakdown) {
+    return <div className="text-slate-400 text-sm p-8" role="status">Loading costs…</div>;
+  }
+
+  const topSessions = breakdown.top_sessions ?? [];
 
   const computePct = breakdown.total_cost > 0 ? (breakdown.compute_cost / breakdown.total_cost) * 100 : 0;
   const storagePct = breakdown.total_cost > 0 ? (breakdown.storage_cost / breakdown.total_cost) * 100 : 0;
   const networkPct = breakdown.total_cost > 0 ? (breakdown.network_cost / breakdown.total_cost) * 100 : 0;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Cost Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">Resource usage and cost tracking</p>
+          <p className="text-sm text-slate-400 mt-1">Resource usage and cost tracking</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Period:</label>
+          <label htmlFor="cost-period" className="text-xs text-slate-400">Period:</label>
           <input
+            id="cost-period"
             type="month"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
@@ -88,7 +103,7 @@ export default function CostsPage() {
             <div className="text-3xl font-bold text-slate-100">{formatCost(breakdown.total_cost)}</div>
           </div>
         </div>
-        <div className="text-xs text-slate-500 mt-2">{breakdown.period}</div>
+        <div className="text-xs text-slate-400 mt-2">{breakdown.period}</div>
       </div>
 
       {/* Cost Breakdown */}
@@ -100,7 +115,7 @@ export default function CostsPage() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Compute (CPU/Memory/GPU)</span>
               <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.compute_cost)} <span className="text-slate-600">({computePct.toFixed(0)}%)</span>
+                {formatCost(breakdown.compute_cost)} <span className="text-slate-400">({computePct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -116,7 +131,7 @@ export default function CostsPage() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Storage (Workspace/Snapshots/Artifacts)</span>
               <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.storage_cost)} <span className="text-slate-600">({storagePct.toFixed(0)}%)</span>
+                {formatCost(breakdown.storage_cost)} <span className="text-slate-400">({storagePct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -132,7 +147,7 @@ export default function CostsPage() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Network (Egress)</span>
               <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.network_cost)} <span className="text-slate-600">({networkPct.toFixed(0)}%)</span>
+                {formatCost(breakdown.network_cost)} <span className="text-slate-400">({networkPct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -152,12 +167,12 @@ export default function CostsPage() {
             <TrendingUp className="w-4 h-4" /> Top Spending Sessions
           </h2>
         </div>
-        {breakdown.top_sessions.length === 0 ? (
-          <div className="p-6 text-center text-slate-600 text-sm">No session costs for this period.</div>
+        {topSessions.length === 0 ? (
+          <div className="p-6 text-center text-slate-400 text-sm">No session costs for this period.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-6 py-3 text-left">Session</th>
                 <th className="px-6 py-3 text-left">Compute</th>
                 <th className="px-6 py-3 text-left">Storage</th>
@@ -166,12 +181,12 @@ export default function CostsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
-              {breakdown.top_sessions.map((s) => (
+              {topSessions.map((s) => (
                 <tr key={s.session_id} className="hover:bg-slate-800/20">
                   <td className="px-6 py-3 font-mono text-xs text-slate-300">{s.session_name}</td>
-                  <td className="px-6 py-3 text-xs text-slate-500">{formatCost(s.compute_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-500">{formatCost(s.storage_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-500">{formatCost(s.network_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.compute_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.storage_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.network_cost)}</td>
                   <td className="px-6 py-3 font-mono text-xs text-slate-200 font-medium">
                     {formatCost(s.total_cost)}
                   </td>
@@ -199,16 +214,16 @@ export default function CostsPage() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(alert.severity)}`}>
                         {alert.severity}
                       </span>
-                      <span className="text-xs text-slate-600">{alert.alert_type}</span>
+                      <span className="text-xs text-slate-400">{alert.alert_type}</span>
                     </div>
                     <div className="text-sm text-slate-200 font-medium mb-1">{alert.title}</div>
-                    <div className="text-xs text-slate-500">{alert.description}</div>
+                    <div className="text-xs text-slate-400">{alert.description}</div>
                     {alert.potential_savings && (
                       <div className="text-xs text-emerald-400 mt-1">
                         💰 Potential savings: {formatCost(alert.potential_savings)}/month
                       </div>
                     )}
-                    <div className="text-xs text-slate-600 mt-2">{formatDate(alert.created_at)}</div>
+                    <div className="text-xs text-slate-400 mt-2">{formatDate(alert.created_at)}</div>
                   </div>
                   <button
                     onClick={() => handleResolveAlert(alert.id)}

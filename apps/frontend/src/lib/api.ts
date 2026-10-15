@@ -18,6 +18,16 @@ function getHeaders(): HeadersInit {
   };
 }
 
+/** Error from the API carrying the HTTP status so callers can tell 404 from 403 from 5xx. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}/api/v1${path}`;
   const resp = await fetch(url, {
@@ -27,11 +37,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ error: resp.statusText }));
-    throw new Error(body.error || `HTTP ${resp.status}`);
+    throw new ApiError(body.error || `HTTP ${resp.status}`, resp.status);
   }
 
   if (resp.status === 204) return undefined as T;
   return resp.json();
+}
+
+export interface AuditQuery {
+  sessionId?: string;
+  /** Action prefix, e.g. "apikey." */
+  action?: string;
+  /** YYYY-MM-DD, inclusive */
+  from?: string;
+  /** YYYY-MM-DD, exclusive */
+  to?: string;
+  page?: number;
+  limit?: number;
 }
 
 // Sessions
@@ -40,7 +62,7 @@ export const api = {
     list: (page = 1, limit = 20) =>
       request<{ sessions: Session[]; pagination: Pagination }>(
         `/sessions?page=${page}&limit=${limit}`
-      ),
+      ).then((r) => ({ ...r, sessions: r.sessions ?? [] })),
 
     get: (id: string) => request<Session>(`/sessions/${id}`),
 
@@ -68,7 +90,7 @@ export const api = {
   runs: {
     list: (sessionId: string) =>
       request<{ runs: Run[] }>(`/sessions/${sessionId}/runs`).then(
-        (r) => r.runs
+        (r) => r.runs ?? []
       ),
 
     get: (id: string) => request<Run>(`/runs/${id}`),
@@ -123,7 +145,7 @@ export const api = {
   files: {
     list: (sessionId: string) =>
       request<{ files: File[] }>(`/sessions/${sessionId}/files`).then(
-        (r) => r.files
+        (r) => r.files ?? []
       ),
 
     upload: async (sessionId: string, path: string, file: globalThis.File) => {
@@ -151,22 +173,35 @@ export const api = {
   },
 
   audit: {
-    list: (sessionId?: string) => {
-      const qs = sessionId ? `?session_id=${sessionId}` : "";
-      return request<{ audit_logs: AuditLog[] }>(`/audit${qs}`).then(
-        (r) => r.audit_logs
-      );
+    list: (params: AuditQuery = {}) => {
+      const qs = new URLSearchParams();
+      if (params.sessionId) qs.set("session_id", params.sessionId);
+      if (params.action) qs.set("action", params.action);
+      if (params.from) qs.set("from", params.from);
+      if (params.to) qs.set("to", params.to);
+      qs.set("page", String(params.page ?? 1));
+      qs.set("limit", String(params.limit ?? 50));
+      return request<{ audit_logs: AuditLog[]; pagination: Pagination }>(`/audit?${qs}`).then((r) => ({
+        logs: (r.audit_logs ?? []).map((l) => ({ ...l, metadata: l.metadata ?? {} })),
+        total: r.pagination?.total ?? 0,
+        page: r.pagination?.page ?? 1,
+        limit: r.pagination?.limit ?? (params.limit ?? 50),
+      }));
     },
   },
 
   keys: {
     list: () =>
-      request<{ api_keys: APIKey[] }>("/keys").then((r) => r.api_keys),
+      request<{ api_keys: APIKey[] }>("/keys").then((r) => r.api_keys ?? []),
 
-    create: (name: string, expiresAt?: string) =>
+    create: (name: string, expiresAt?: string, allowedSecrets?: string[]) =>
       request<CreatedKey>("/keys", {
         method: "POST",
-        body: JSON.stringify(expiresAt ? { name, expires_at: expiresAt } : { name }),
+        body: JSON.stringify({
+          name,
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
+          ...(allowedSecrets ? { allowed_secrets: allowedSecrets } : {}),
+        }),
       }),
 
     revoke: (id: string) =>
@@ -193,7 +228,7 @@ export const api = {
   snapshots: {
     list: (sessionId: string) =>
       request<{ snapshots: Snapshot[] }>(`/sessions/${sessionId}/snapshots`).then(
-        (r) => r.snapshots
+        (r) => r.snapshots ?? []
       ),
 
     create: (sessionId: string, name: string) =>
@@ -204,13 +239,18 @@ export const api = {
 
     delete: (snapshotId: string) =>
       request<void>(`/snapshots/${snapshotId}`, { method: "DELETE" }),
+
+    download: (snapshotId: string) =>
+      fetch(`${API_BASE}/api/v1/snapshots/${snapshotId}/download`, {
+        headers: { "X-API-Key": getApiKey() },
+      }),
   },
 
   artifacts: {
     list: (page = 1, limit = 50) =>
       request<{ artifacts: SharedArtifact[]; pagination: Pagination }>(
         `/artifacts?page=${page}&limit=${limit}`
-      ),
+      ).then((r) => ({ ...r, artifacts: r.artifacts ?? [] })),
 
     promote: (sessionId: string, path: string, name?: string) =>
       request<SharedArtifact>(`/sessions/${sessionId}/artifacts`, {
@@ -221,13 +261,17 @@ export const api = {
     delete: (id: string) =>
       request<void>(`/artifacts/${id}`, { method: "DELETE" }),
 
-    downloadUrl: (id: string) => `${API_BASE}/api/v1/artifacts/${id}/download`,
+    /** The endpoint needs the API key header, so a plain <a href> would get a 401. */
+    download: (id: string) =>
+      fetch(`${API_BASE}/api/v1/artifacts/${id}/download`, {
+        headers: { "X-API-Key": getApiKey() },
+      }),
   },
 
   checkpoints: {
     list: (sessionId: string) =>
       request<{ checkpoints: Checkpoint[] }>(`/sessions/${sessionId}/checkpoints`).then(
-        (r) => r.checkpoints
+        (r) => r.checkpoints ?? []
       ),
 
     get: (sessionId: string, checkpointId: string) =>
@@ -267,12 +311,15 @@ export const api = {
 
     getBreakdown: (period?: string) => {
       const qs = period ? `?period=${period}` : "";
-      return request<CostBreakdown>(`/costs/breakdown${qs}`);
+      return request<CostBreakdown>(`/costs/breakdown${qs}`).then((b) => ({
+        ...b,
+        top_sessions: b.top_sessions ?? [],
+      }));
     },
 
     getAlerts: (resolved = false) =>
       request<{ alerts: CostAlert[] }>(`/costs/alerts?resolved=${resolved}`).then(
-        (r) => r.alerts
+        (r) => r.alerts ?? []
       ),
 
     resolveAlert: (alertId: string) =>

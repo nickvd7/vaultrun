@@ -161,6 +161,10 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Release versions agree
+        working-directory: .
+        run: ./scripts/check-versions.sh
+
       - name: Type check
         run: npx tsc --noEmit
 

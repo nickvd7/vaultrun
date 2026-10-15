@@ -1,159 +1,251 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Archive, Plus, Trash2, RefreshCw, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { Archive, Plus, Trash2, RefreshCw, Download } from "lucide-react";
 import { api } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Notice } from "@/components/ui/Notice";
+import { useToast } from "@/components/ui/Toast";
 import { formatBytes, relativeTime } from "@/lib/utils";
 import type { Session, Snapshot } from "@/types";
 
+const MAX_SESSIONS = 100;
+
 export default function SnapshotsPage() {
+  const toast = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [selectedId, setSelectedId] = useState("");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(true);
-  const [loadingSnaps, setLoadingSnaps] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [toDelete, setToDelete] = useState<Snapshot | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    api.sessions.list(1, 100).then(({ sessions }) => setSessions(sessions)).catch(() => {}).finally(() => setLoadingSessions(false));
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError("");
+    api.sessions
+      .list(1, MAX_SESSIONS)
+      .then(async ({ sessions: list }) => {
+        setSessions(list);
+        const results = await Promise.allSettled(list.map((s) => api.snapshots.list(s.id)));
+        setSnapshots(
+          results
+            .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        );
+      })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Failed to load snapshots"))
+      .finally(() => setLoading(false));
   }, []);
 
-  const loadSnapshots = (sessionId: string) => {
-    if (!sessionId) return;
-    setLoadingSnaps(true);
-    setSnapshots([]);
-    api.snapshots.list(sessionId).then(setSnapshots).catch(() => {}).finally(() => setLoadingSnaps(false));
-  };
+  useEffect(load, [load]);
 
-  const handleSelectSession = (id: string) => {
-    setSelectedId(id);
-    loadSnapshots(id);
+  const sessionLabel = (id: string) => {
+    const s = sessions.find((x) => x.id === id);
+    return s?.name || `${id.slice(0, 8)}…`;
   };
 
   const handleCreate = async () => {
     if (!selectedId || !newName.trim()) return;
     setCreating(true);
-    setError("");
     try {
       const snap = await api.snapshots.create(selectedId, newName.trim());
       setSnapshots((prev) => [snap, ...prev]);
       setNewName("");
+      toast.success(`Snapshot ${snap.name} saved`);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create snapshot");
+      toast.error(e instanceof Error ? e.message : "Failed to create snapshot");
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    setDeletingId(id);
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
     try {
-      await api.snapshots.delete(id);
-      setSnapshots((prev) => prev.filter((s) => s.id !== id));
+      await api.snapshots.delete(toDelete.id);
+      setSnapshots((prev) => prev.filter((s) => s.id !== toDelete.id));
+      toast.success(`Snapshot ${toDelete.name} deleted`);
+      setToDelete(null);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete snapshot");
     } finally {
-      setDeletingId(null);
+      setDeleting(false);
     }
   };
 
+  const handleDownload = async (snap: Snapshot) => {
+    try {
+      const resp = await api.snapshots.download(snap.id);
+      if (!resp.ok) throw new Error(`Download failed (HTTP ${resp.status})`);
+      const url = URL.createObjectURL(await resp.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${snap.name}.tar.gz`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Download failed");
+    }
+  };
+
+  const running = sessions.filter((s) => s.status === "running");
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-100">Snapshots</h1>
-        <p className="text-slate-500 text-sm mt-1">Workspace checkpoints — save and restore session state.</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-100">Snapshots</h1>
+          <p className="text-slate-400 text-sm mt-1">Archives of a session&apos;s workspace files</p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          aria-label="Refresh snapshots"
+          title="Refresh"
+          className="p-2 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
+        </button>
       </div>
 
-      {/* Session selector */}
-      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4">
-        <label className="block text-xs text-slate-500 mb-2 uppercase tracking-wide">Select a session</label>
-        <div className="relative">
-          <select
-            value={selectedId}
-            onChange={(e) => handleSelectSession(e.target.value)}
-            disabled={loadingSessions}
-            className="w-full appearance-none bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-          >
-            <option value="">— choose a session —</option>
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.id.slice(0, 12)}… {s.name ? `(${s.name})` : ""} · {s.image} · {s.status}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-        </div>
-      </div>
+      <Notice title="What is a snapshot?">
+        A snapshot is a compressed copy (<span className="font-mono">.tar.gz</span>) of everything in a session&apos;s{" "}
+        <span className="font-mono">/workspace</span> at one moment. Use it to keep a backup or to download the results of a run before deleting the session.
+        To roll a session back to an earlier state, use{" "}
+        <Link href="/sessions" className="text-indigo-300 underline hover:no-underline">checkpoints</Link> on the session page.
+      </Notice>
 
-      {/* Create snapshot */}
-      {selectedId && (
-        <div className="flex items-center gap-3">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            placeholder="Snapshot name…"
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={creating || !newName.trim()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4" /> {creating ? "Saving…" : "Save Snapshot"}
-          </button>
-          <button onClick={() => loadSnapshots(selectedId)} className="p-2 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 transition-colors">
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-      {error && <p className="text-red-400 text-xs">{error}</p>}
+      {loadError && <Notice tone="error" title="Could not load snapshots">{loadError}</Notice>}
 
-      {/* Snapshots list */}
-      {selectedId && (
-        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
-          {loadingSnaps ? (
-            <div className="p-8 text-center text-slate-600 text-sm">Loading snapshots…</div>
-          ) : snapshots.length === 0 ? (
-            <div className="p-10 text-center space-y-2">
-              <Archive className="w-8 h-8 text-slate-700 mx-auto" />
-              <p className="text-slate-600 text-sm">No snapshots for this session yet.</p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wide">
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Size</th>
-                  <th className="px-4 py-3 text-left">Created by</th>
-                  <th className="px-4 py-3 text-left">Created</th>
-                  <th className="px-4 py-3" />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCreate();
+        }}
+        className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3"
+      >
+        <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide">New snapshot</h2>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <label htmlFor="snap-session" className="block text-xs text-slate-400 mb-1">Session</label>
+            <select
+              id="snap-session"
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              disabled={loading}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            >
+              <option value="">{running.length === 0 ? "No running sessions" : "Choose a running session…"}</option>
+              {running.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || s.id.slice(0, 12)} · {s.image}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label htmlFor="snap-name" className="block text-xs text-slate-400 mb-1">Snapshot name</label>
+            <input
+              id="snap-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="before-refactor"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={creating || !selectedId || !newName.trim()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" /> {creating ? "Saving…" : "Save Snapshot"}
+            </button>
+          </div>
+        </div>
+      </form>
+
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-slate-400 text-sm" role="status">Loading snapshots…</div>
+        ) : snapshots.length === 0 ? (
+          <div className="p-10 text-center space-y-2">
+            <Archive className="w-8 h-8 text-slate-400 mx-auto" aria-hidden="true" />
+            <p className="text-slate-300 text-sm">No snapshots yet.</p>
+            <p className="text-slate-400 text-xs">Pick a running session above and give the snapshot a name.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+                <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Session</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Size</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Created by</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Created</th>
+                <th scope="col" className="px-4 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {snapshots.map((snap) => (
+                <tr key={snap.id} className="hover:bg-slate-800/20 transition-colors">
+                  <td className="px-4 py-3 text-slate-200 text-sm">{snap.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    <Link href={`/sessions/${snap.session_id}`} className="text-indigo-300 hover:underline">
+                      {sessionLabel(snap.session_id)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-slate-300 text-xs font-mono">{formatBytes(snap.size_bytes)}</td>
+                  <td className="px-4 py-3 text-slate-300 text-xs font-mono" title={snap.created_by}>
+                    {snap.created_by.length > 16 ? snap.created_by.slice(0, 16) + "…" : snap.created_by}
+                  </td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">{relativeTime(snap.created_at)}</td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => handleDownload(snap)}
+                      aria-label={`Download snapshot ${snap.name}`}
+                      title="Download"
+                      className="p-1.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={() => setToDelete(snap)}
+                      aria-label={`Delete snapshot ${snap.name}`}
+                      title="Delete"
+                      className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/50">
-                {snapshots.map((snap) => (
-                  <tr key={snap.id} className="hover:bg-slate-800/20 transition-colors">
-                    <td className="px-4 py-3 text-slate-200 text-sm">{snap.name}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs font-mono">{formatBytes(snap.size_bytes)}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs font-mono">{snap.created_by}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{relativeTime(snap.created_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(snap.id)}
-                        disabled={deletingId === snap.id}
-                        className="p-1.5 rounded text-slate-600 hover:text-red-400 hover:bg-red-900/20 disabled:opacity-40 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Delete snapshot?"
+        message={
+          <>
+            Snapshot <span className="font-mono">{toDelete?.name}</span> will be removed permanently.
+          </>
+        }
+        confirmLabel="Delete snapshot"
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => !deleting && setToDelete(null)}
+      />
     </div>
   );
 }

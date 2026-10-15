@@ -6,6 +6,7 @@ import { Shield, LayoutDashboard, Terminal, FileText, ScrollText, KeyRound, LogO
 import { cn } from "@/lib/utils";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { useOrg } from "@/components/OrgContext";
+import { APP_VERSION } from "@/lib/version";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -45,8 +46,9 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
 
       {orgs.length > 0 && (
         <div className="px-3 py-3 border-b border-slate-800">
-          <label className="block text-[10px] uppercase tracking-wide text-slate-600 mb-1.5">Organization</label>
+          <label htmlFor="org-select" className="block text-[10px] uppercase tracking-wide text-slate-400 mb-1.5">Organization</label>
           <select
+            id="org-select"
             value={orgId ?? ""}
             onChange={(e) => setOrgId(e.target.value || null)}
             className="w-full bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -61,12 +63,13 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
         </div>
       )}
 
-      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+      <nav aria-label="Main" className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
         {nav.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             onClick={onNavigate}
+            aria-current={pathname === href || (href !== "/" && pathname.startsWith(href)) ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
               pathname === href || (href !== "/" && pathname.startsWith(href))
@@ -82,7 +85,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
 
       <div className="px-2 py-3 border-t border-slate-800 space-y-1">
         {apiKey && (
-          <div className="px-3 py-1.5 text-xs text-slate-600 font-mono truncate">
+          <div className="px-3 py-1.5 text-xs text-slate-400 font-mono truncate">
             {apiKey.slice(0, 12)}…
           </div>
         )}
@@ -91,14 +94,14 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
             clearApiKey();
             onNavigate?.();
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-500 hover:bg-slate-800/50 hover:text-slate-300 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 transition-colors"
         >
           <LogOut className="w-3.5 h-3.5" />
           Disconnect
         </button>
-        <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-700">
+        <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400">
           <FileText className="w-3 h-3" />
-          <span>v0.3.2</span>
+          <span>v{APP_VERSION}</span>
         </div>
       </div>
     </aside>

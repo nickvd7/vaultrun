@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { APP_VERSION } from "@/lib/version";
 import {
   Shield,
   Terminal,
@@ -160,7 +161,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-indigo-400" />
             <span className="font-semibold text-slate-100 tracking-tight">VaultRun</span>
-            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v0.2.1</span>
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-mono">v{APP_VERSION}</span>
           </div>
           <div className="flex items-center gap-3">
             <a
@@ -223,7 +224,7 @@ export default function LandingPage() {
           ].map(({ value, label }) => (
             <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-indigo-400">{value}</div>
-              <div className="text-xs text-slate-500 mt-1">{label}</div>
+              <div className="text-xs text-slate-400 mt-1">{label}</div>
             </div>
           ))}
         </div>
@@ -246,7 +247,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-medium text-slate-100 text-sm">{title}</h3>
               </div>
-              <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
+              <p className="text-slate-400 text-sm leading-relaxed">{desc}</p>
             </div>
           ))}
         </div>
@@ -271,7 +272,7 @@ export default function LandingPage() {
                 <ul className="space-y-1.5">
                   {tools.map((t) => (
                     <li key={t} className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-                      <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
+                      <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
                       {t}
                     </li>
                   ))}
@@ -326,7 +327,7 @@ export default function LandingPage() {
                     <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                     <div className="w-3 h-3 rounded-full bg-green-500/60" />
                   </div>
-                  <span className="text-xs text-slate-600 font-mono">claude_desktop_config.json</span>
+                  <span className="text-xs text-slate-400 font-mono">claude_desktop_config.json</span>
                 </div>
                 <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                   {mcpConfig}
@@ -339,7 +340,7 @@ export default function LandingPage() {
                     <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                     <div className="w-3 h-3 rounded-full bg-green-500/60" />
                   </div>
-                  <span className="text-xs text-slate-600 font-mono">HTTP transport (OpenAI / OpenRouter)</span>
+                  <span className="text-xs text-slate-400 font-mono">HTTP transport (OpenAI / OpenRouter)</span>
                 </div>
                 <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                   {mcpHTTPConfig}
@@ -415,7 +416,7 @@ export default function LandingPage() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                   <div className="w-3 h-3 rounded-full bg-green-500/60" />
                 </div>
-                <span className="text-xs text-slate-600 font-mono">.env — SSO configuration</span>
+                <span className="text-xs text-slate-400 font-mono">.env — SSO configuration</span>
               </div>
               <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                 {ssoConfig}
@@ -464,7 +465,7 @@ export default function LandingPage() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                   <div className="w-3 h-3 rounded-full bg-green-500/60" />
                 </div>
-                <span className="text-xs text-slate-600 font-mono">ci-runner env</span>
+                <span className="text-xs text-slate-400 font-mono">ci-runner env</span>
               </div>
               <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                 {ciConfig}
@@ -513,9 +514,9 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-8">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-600">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
           <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-slate-700" />
+            <Shield className="w-4 h-4 text-slate-400" />
             <span>VaultRun — self-hosted secure AI agent runtime</span>
           </div>
           <div className="flex items-center gap-4">
@@ -523,7 +524,7 @@ export default function LandingPage() {
               href="https://github.com/nickvd7/vaultrun"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-slate-400 transition-colors"
+              className="hover:text-slate-200 transition-colors"
             >
               GitHub
             </a>
@@ -531,11 +532,11 @@ export default function LandingPage() {
               href="https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-slate-400 transition-colors"
+              className="hover:text-slate-200 transition-colors"
             >
               Changelog
             </a>
-            <span className="font-mono">v0.2.1</span>
+            <span className="font-mono">v{APP_VERSION}</span>
           </div>
         </div>
       </footer>

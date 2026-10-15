@@ -7,12 +7,15 @@ interface ApiKeyContextValue {
   apiKey: string;
   setApiKey: (key: string) => void;
   clearApiKey: () => void;
+  /** true = master key, false = regular key, null = still checking / unknown. */
+  isMaster: boolean | null;
 }
 
 const ApiKeyContext = createContext<ApiKeyContextValue>({
   apiKey: "",
   setApiKey: () => {},
   clearApiKey: () => {},
+  isMaster: null,
 });
 
 export function useApiKey() {
@@ -27,12 +30,31 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
   const [testing, setTesting] = useState(false);
+  const [isMaster, setIsMaster] = useState<boolean | null>(null);
 
   // Load from localStorage on mount (client-only)
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) || "";
     setApiKeyState(stored);
   }, []);
+
+  // Only the master key may list API keys, so the response tells the two apart.
+  useEffect(() => {
+    if (!apiKey) {
+      setIsMaster(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/v1/keys?limit=1", { headers: { "X-API-Key": apiKey } })
+      .then((r) => {
+        if (cancelled) return;
+        setIsMaster(r.ok ? true : r.status === 403 ? false : null);
+      })
+      .catch(() => !cancelled && setIsMaster(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey]);
 
   const setApiKey = useCallback((key: string) => {
     localStorage.setItem(STORAGE_KEY, key);
@@ -87,15 +109,21 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold text-slate-100">Connect to VaultRun</h1>
-              <p className="text-slate-500 text-sm mt-1">Enter your API key to continue</p>
+              <p className="text-slate-400 text-sm mt-1">Enter your API key to continue</p>
             </div>
           </div>
 
           <div className="space-y-3">
             <div className="relative">
+              <label htmlFor="api-key-input" className="sr-only">
+                API key
+              </label>
               <input
+                id="api-key-input"
+                name="api-key"
+                autoComplete="off"
                 type={showKey ? "text" : "password"}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 pr-10 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 pr-10 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
                 placeholder="vr_…"
                 value={input}
                 onChange={(e) => { setInput(e.target.value); setError(""); }}
@@ -105,14 +133,16 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                aria-label={showKey ? "Hide API key" : "Show API key"}
+                aria-pressed={showKey}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
               >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
 
             {error && (
-              <p className="text-red-400 text-xs">{error}</p>
+              <p role="alert" className="text-red-400 text-xs">{error}</p>
             )}
 
             <button
@@ -124,9 +154,9 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <p className="text-center text-xs text-slate-600">
+          <p className="text-center text-xs text-slate-400">
             Generate a key with{" "}
-            <code className="font-mono text-slate-500">make bootstrap-key</code>
+            <code className="font-mono text-slate-400">make bootstrap-key</code>
           </p>
         </div>
       </div>
@@ -134,7 +164,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey }}>
+    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster }}>
       {children}
     </ApiKeyContext.Provider>
   );

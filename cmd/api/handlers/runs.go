@@ -8,8 +8,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/httputil"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
@@ -22,6 +24,55 @@ type RunHandler struct {
 }
 
 func NewRunHandler(h *Hub) *RunHandler { return &RunHandler{h: h} }
+
+// deniedSecret returns the first requested secret not covered by allowed.
+// A nil allowlist is unrestricted.
+func deniedSecret(allowed []string, requested []string) (string, bool) {
+	if allowed == nil {
+		return "", false
+	}
+	set := make(map[string]struct{}, len(allowed))
+	for _, n := range allowed {
+		set[n] = struct{}{}
+	}
+	for _, n := range requested {
+		if _, ok := set[n]; !ok {
+			return n, true
+		}
+	}
+	return "", false
+}
+
+// authorizeSecrets enforces the calling key's secret allowlist before any
+// secret is looked up, so a denial reveals nothing about which secrets exist.
+// It writes the error response and returns false when the request must stop.
+func (rh *RunHandler) authorizeSecrets(c *gin.Context, requested []string) bool {
+	actor := middleware.Actor(c)
+	if actor == "master" {
+		return true
+	}
+	keyID, err := uuid.Parse(actor)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "secrets are not available for this identity"})
+		return false
+	}
+	allowed, err := dbpkg.GetAPIKeyAllowedSecrets(c.Request.Context(), rh.h.db, keyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check secret permissions"})
+		return false
+	}
+	name, denied := deniedSecret(allowed, requested)
+	if !denied {
+		return true
+	}
+	rh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:    actor,
+		Action:   models.ActionSecretDenied,
+		Metadata: models.JSONB{"secret": name},
+	})
+	c.JSON(http.StatusForbidden, gin.H{"error": "secret not permitted for this key: " + name})
+	return false
+}
 
 type createRunRequest struct {
 	Command        string            `json:"command" binding:"required"`
@@ -63,6 +114,9 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 	// at runtime but never written to the database.
 	var secretEnv map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if !rh.authorizeSecrets(c, req.Secrets) {
+			return
+		}
 		secretEnv = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
@@ -138,6 +192,9 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 
 	var secretEnvStream map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if !rh.authorizeSecrets(c, req.Secrets) {
+			return
+		}
 		secretEnvStream = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
@@ -296,6 +353,9 @@ func (rh *RunHandler) Async(c *gin.Context) {
 
 	var secretEnvAsync map[string]string
 	if len(req.Secrets) > 0 && rh.h.secrets != nil {
+		if !rh.authorizeSecrets(c, req.Secrets) {
+			return
+		}
 		secretEnvAsync = make(map[string]string, len(req.Secrets))
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)

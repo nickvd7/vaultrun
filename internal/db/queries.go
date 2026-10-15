@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 
 	"github.com/nickvd7/vaultrun/internal/models"
 )
@@ -251,8 +252,8 @@ func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor
 
 func CreateAPIKey(ctx context.Context, db *sqlx.DB, k *models.APIKey) error {
 	q := `
-		INSERT INTO api_keys (id, name, key_hash, prefix, created_at, expires_at, active)
-		VALUES (:id, :name, :key_hash, :prefix, :created_at, :expires_at, :active)
+		INSERT INTO api_keys (id, name, key_hash, prefix, created_at, expires_at, active, allowed_secrets)
+		VALUES (:id, :name, :key_hash, :prefix, :created_at, :expires_at, :active, :allowed_secrets)
 	`
 	_, err := db.NamedExecContext(ctx, q, k)
 	return err
@@ -275,6 +276,32 @@ func GetAPIKeyByHash(ctx context.Context, db *sqlx.DB, keyHash string) (*models.
 func UpdateAPIKeyLastUsed(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 	_, err := db.ExecContext(ctx, `UPDATE api_keys SET last_used_at = NOW() WHERE id = $1`, id)
 	return err
+}
+
+// GetAPIKeyAllowedSecrets returns the key's secret allowlist; a nil slice means
+// the key is unrestricted.
+func GetAPIKeyAllowedSecrets(ctx context.Context, db *sqlx.DB, id uuid.UUID) ([]string, error) {
+	var allowed pq.StringArray
+	if err := db.GetContext(ctx, &allowed, `SELECT allowed_secrets FROM api_keys WHERE id = $1`, id); err != nil {
+		return nil, err
+	}
+	return allowed, nil
+}
+
+// SetAPIKeyAllowedSecrets replaces the key's secret allowlist (nil = unrestricted).
+func SetAPIKeyAllowedSecrets(ctx context.Context, db *sqlx.DB, id uuid.UUID, allowed []string) error {
+	var arg interface{}
+	if allowed != nil {
+		arg = pq.StringArray(allowed)
+	}
+	res, err := db.ExecContext(ctx, `UPDATE api_keys SET allowed_secrets = $2 WHERE id = $1`, id, arg)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func ListAPIKeys(ctx context.Context, db *sqlx.DB) ([]*models.APIKey, error) {

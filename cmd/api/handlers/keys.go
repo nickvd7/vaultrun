@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +38,9 @@ func NewKeyHandler(h *Hub) *KeyHandler { return &KeyHandler{h: h} }
 type createKeyRequest struct {
 	Name      string  `json:"name" binding:"required"`
 	ExpiresAt *string `json:"expires_at"` // optional RFC3339 timestamp
+	// AllowedSecrets restricts which secrets the key may inject into runs.
+	// Omitted or null: any secret. Empty list: none.
+	AllowedSecrets []string `json:"allowed_secrets"`
 }
 
 // POST /api/v1/keys
@@ -72,6 +76,10 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 		return
 	}
 
+	if req.AllowedSecrets != nil {
+		key.AllowedSecrets = normalizeSecretNames(req.AllowedSecrets)
+	}
+
 	if err := dbpkg.CreateAPIKey(c.Request.Context(), kh.h.db, key); err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
 			c.JSON(http.StatusConflict, gin.H{"error": "api key name already exists"})
@@ -103,11 +111,76 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 		"key":        plaintext, // shown exactly once — caller must save it
 		"active":     key.Active,
 		"created_at": key.CreatedAt,
+
+		"allowed_secrets": key.AllowedSecrets,
 	}
 	if expiresAt != nil {
 		resp["expires_at"] = expiresAt.Format(time.RFC3339)
 	}
 	c.JSON(http.StatusCreated, resp)
+}
+
+type updateKeySecretsRequest struct {
+	AllowedSecrets json.RawMessage `json:"allowed_secrets"`
+}
+
+// PUT /api/v1/keys/:id/secrets
+// Body {"allowed_secrets": ["A","B"]} restricts the key; [] denies all secrets;
+// null removes the restriction.
+func (kh *KeyHandler) SetSecrets(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+	var req updateKeySecretsRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.AllowedSecrets) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed_secrets is required (list of names, [] for none, null for unrestricted)"})
+		return
+	}
+	var names []string
+	if err := json.Unmarshal(req.AllowedSecrets, &names); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed_secrets must be a list of strings or null"})
+		return
+	}
+	if names != nil {
+		names = normalizeSecretNames(names)
+	}
+
+	if err := dbpkg.SetAPIKeyAllowedSecrets(c.Request.Context(), kh.h.db, id, names); err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update key"})
+		return
+	}
+
+	kh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:  middleware.Actor(c),
+		Action: models.ActionAPIKeySecrets,
+		Metadata: models.JSONB{
+			"key_id":          id.String(),
+			"allowed_secrets": names,
+		},
+	})
+	c.JSON(http.StatusOK, gin.H{"id": id, "allowed_secrets": names})
+}
+
+func normalizeSecretNames(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, n := range in {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
 }
 
 // GET /api/v1/keys

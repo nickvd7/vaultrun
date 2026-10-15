@@ -83,7 +83,9 @@ jobs:
           [ "$(echo "$RESP" | jq -r '.stdout')" = "token=[REDACTED:E2E_TOKEN]" ]
           RUN_ID=$(echo "$RESP" | jq -r '.id')
           STORED=$(curl -sS "http://localhost:8080/api/v1/runs/$RUN_ID" -H "X-API-Key: $API_KEY" | jq -r '.stdout')
-          ! echo "$STORED" | grep -q "e2e-secret-value"
+          if echo "$STORED" | grep -q "e2e-secret-value"; then
+            echo "secret value found in stored output" >&2; exit 1
+          fi
 
       - name: Invalid session requests return 400
         run: |
@@ -118,6 +120,46 @@ jobs:
           echo "$RESP" | jq -c '.audit_logs[] | {action, sig_valid}'
           [ "$(echo "$RESP" | jq '.audit_logs | length')" -gt 0 ]
           [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_valid != true)] | length')" = "0" ]
+
+      - name: Failed session creations do not count against the quota
+        run: |
+          # MAX_SESSIONS_PER_ACTOR defaults to 20; each failure used to leave a counted row behind.
+          for i in $(seq 1 25); do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/v1/sessions \
+              -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+              -d '{"image":"vaultrun-e2e/does-not-exist:nope"}')
+            [ "$CODE" = "400" ] || { echo "attempt $i: HTTP $CODE" >&2; exit 1; }
+          done
+          CODE=$(curl -sS -o /tmp/after.json -w '%{http_code}' -X POST http://localhost:8080/api/v1/sessions \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' -d '{"image":"python:3.12-slim"}')
+          echo "HTTP $CODE: $(cat /tmp/after.json)"
+          [ "$CODE" = "201" ]
+          curl -fsS -X DELETE "http://localhost:8080/api/v1/sessions/$(jq -er '.id' /tmp/after.json)" -H "X-API-Key: $API_KEY"
+
+      - name: Network allowlist (allowed_hosts) is enforced
+        run: |
+          RESP=$(curl -sS -w '\n%{http_code}' -X POST http://localhost:8080/api/v1/sessions \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"image":"python:3.12-slim","network_enabled":true,"allowed_hosts":["example.com"]}')
+          CODE=$(echo "$RESP" | tail -n1); BODY=$(echo "$RESP" | sed '$d')
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" = "201" ]
+          NET_SESSION=$(echo "$BODY" | jq -er '.id')
+          fetch() {
+            curl -sS -X POST "http://localhost:8080/api/v1/sessions/$NET_SESSION/run" \
+              -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+              -d "{\"command\":\"python\",\"timeout_seconds\":20,\"args\":[\"-c\",\"import urllib.request as u;print(u.urlopen('$1',timeout=5).status)\"]}"
+          }
+          ALLOWED=$(fetch http://example.com); echo "$ALLOWED" | jq -c '{status, exit_code, stdout, stderr}'
+          [ "$(echo "$ALLOWED" | jq -r '.exit_code')" = "0" ]
+          BLOCKED=$(fetch http://1.1.1.1); echo "$BLOCKED" | jq -c '{status, exit_code}'
+          [ "$(echo "$BLOCKED" | jq -r '.exit_code')" != "0" ]
+          curl -fsS -X DELETE "http://localhost:8080/api/v1/sessions/$NET_SESSION" -H "X-API-Key: $API_KEY"
+          # Rules are removed again with the session.
+          sleep 2
+          if docker exec vaultrun-netpolicy iptables -S 2>/dev/null | grep -q -- '-N vr-'; then
+            echo 'egress chains were not cleaned up' >&2; exit 1
+          fi
 
       - name: Delete session
         run: |

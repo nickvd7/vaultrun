@@ -1,0 +1,6 @@
+# Helper for the per-session network allowlist (allowed_hosts).
+# Runs with the host network namespace and NET_ADMIN; the API drives it with
+# `docker exec iptables ...`. It listens on nothing and runs no network code.
+FROM alpine:3.21
+RUN apk add --no-cache iptables ip6tables
+CMD ["sleep", "infinity"]

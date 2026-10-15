@@ -273,9 +273,17 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			"image", req.Image,
 			"err", err,
 		)
-		_ = dbpkg.UpdateSessionStatus(c.Request.Context(), sh.h.db, sessionID, models.SessionStatusError, nil)
+		// A session that never started must not keep counting against the actor's
+		// quota or keep its workspace directory.
+		_ = dbpkg.FailSession(c.Request.Context(), sh.h.db, sessionID)
+		_ = sh.h.ws.Delete(sessionID)
 		if errors.Is(err, dockerpkg.ErrImageUnavailable) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
+			return
+		}
+		if errors.Is(err, dockerpkg.ErrEgressUnavailable) {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "allowed_hosts is not available in this deployment: " +
+				"the API cannot install host iptables rules (see docs/security.md, Network Egress Filtering)"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "container creation failed"})

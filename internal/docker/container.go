@@ -105,6 +105,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 
 	if cfg.NetworkEnabled {
 		if len(cfg.AllowedHosts) > 0 {
+			// Refuse up front rather than start a sandbox whose allowlist
+			// cannot be enforced.
+			if !EgressPolicyAvailable() {
+				metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+				return "", ErrEgressUnavailable
+			}
 			// Create a per-session bridge network for iptables-enforced egress.
 			// Use the full session UUID to avoid birthday collisions at high session volumes.
 			sessionNetName = "vaultrun-net-" + cfg.SessionID.String()
@@ -294,6 +300,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		if err := applyEgressPolicy(chain, iface, sessionDNSServer, allowedIPs); err != nil {
 			// Policy failed — tear down the container and network rather than
 			// starting a sandbox with no egress controls.
+			removeEgressPolicy(chain, iface)
 			_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 			_ = c.inner.NetworkRemove(ctx, sessionNetID)
 			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()

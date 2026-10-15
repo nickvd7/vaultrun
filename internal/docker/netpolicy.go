@@ -1,13 +1,102 @@
 package docker
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/docker/docker/api/types"
 )
+
+// ErrEgressUnavailable means a session asked for allowed_hosts but this
+// deployment has no way to install host iptables rules.
+var ErrEgressUnavailable = errors.New("network allowlist (allowed_hosts) is not available in this deployment")
+
+var (
+	netpolicyMu     sync.RWMutex
+	netpolicyClient *Client
+	netpolicyCtr    string
+)
+
+// UseNetpolicyContainer routes iptables calls through `docker exec` into a
+// long-running helper container that shares the host network namespace and has
+// NET_ADMIN (the "netpolicy" service in deployments/docker-compose.yml).
+//
+// This is required when the API itself runs in a container: iptables executed
+// in the API's own network namespace would never see the sandbox bridge
+// traffic, so rules would silently enforce nothing.
+func (c *Client) UseNetpolicyContainer(name string) {
+	netpolicyMu.Lock()
+	defer netpolicyMu.Unlock()
+	netpolicyClient, netpolicyCtr = c, name
+}
+
+func netpolicyHelper() (*Client, string) {
+	netpolicyMu.RLock()
+	defer netpolicyMu.RUnlock()
+	return netpolicyClient, netpolicyCtr
+}
+
+// EgressPolicyAvailable reports whether allowed_hosts can be enforced: either
+// iptables is on the API host's PATH (bare-metal install) or a netpolicy
+// helper container is configured.
+func EgressPolicyAvailable() bool {
+	if c, name := netpolicyHelper(); c != nil && name != "" {
+		return true
+	}
+	_, err := exec.LookPath("iptables")
+	return err == nil
+}
+
+// runInHelper executes bin+args inside the netpolicy container.
+func runInHelper(c *Client, name, bin string, args []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	created, err := c.inner.ContainerExecCreate(ctx, name, types.ExecConfig{
+		Cmd:          append([]string{bin}, args...),
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return fmt.Errorf("netpolicy helper %q: %w", name, err)
+	}
+	resp, err := c.inner.ContainerExecAttach(ctx, created.ID, types.ExecStartCheck{})
+	if err != nil {
+		return fmt.Errorf("netpolicy helper attach: %w", err)
+	}
+	defer resp.Close()
+	var out bytes.Buffer
+	if err := demuxDockerStream(resp.Reader, &out, &out); err != nil {
+		return fmt.Errorf("netpolicy helper output: %w", err)
+	}
+	info, err := c.inner.ContainerExecInspect(ctx, created.ID)
+	if err != nil {
+		return fmt.Errorf("netpolicy helper inspect: %w", err)
+	}
+	if info.ExitCode != 0 {
+		return fmt.Errorf("exit status %d: %s", info.ExitCode, strings.TrimSpace(out.String()))
+	}
+	return nil
+}
+
+func runIptables(bin string, args ...string) error {
+	if c, name := netpolicyHelper(); c != nil && name != "" {
+		return runInHelper(c, name, bin, args)
+	}
+	out, err := exec.Command(bin, args...).CombinedOutput() //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
 
 // iptablesNameRe matches valid iptables chain names and Linux interface names:
 // only alphanumeric characters, hyphens, and underscores.
@@ -81,6 +170,11 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) erro
 		return fmt.Errorf("add DNS/TCP rule: %w", err)
 	}
 	for _, ip := range allowedIPs {
+		// Hosts often resolve to AAAA records too. IPv6 egress is dropped
+		// wholesale below, and iptables rejects IPv6 literals.
+		if p := net.ParseIP(ip); p == nil || p.To4() == nil {
+			continue
+		}
 		if err := ipt("-A", chain, "-d", ip, "-j", "ACCEPT"); err != nil {
 			return fmt.Errorf("add allow rule for %q: %w", ip, err)
 		}
@@ -134,22 +228,10 @@ func removeEgressPolicy(chain, iface string) {
 }
 
 // ipt runs iptables with the supplied arguments.
-func ipt(args ...string) error {
-	out, err := exec.Command("iptables", args...).CombinedOutput() //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
+func ipt(args ...string) error { return runIptables("iptables", args...) }
 
 // ipt6 runs ip6tables with the supplied arguments.
-func ipt6(args ...string) error {
-	out, err := exec.Command("ip6tables", args...).CombinedOutput() //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
+func ipt6(args ...string) error { return runIptables("ip6tables", args...) }
 
 // isIPT6NotFound returns true when the error is due to ip6tables binary being absent.
 func isIPT6NotFound(err error) bool {

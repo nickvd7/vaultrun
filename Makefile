@@ -45,7 +45,9 @@ up:
 # Local development only: opt out of the secure-by-default startup checks.
 dev-env:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
-	@if grep -Eq '^[[:space:]]*VAULTRUN_INSECURE_DEV=' .env; then echo "VAULTRUN_INSECURE_DEV already set in .env"; \
+	@if grep -Eq '^[[:space:]]*VAULTRUN_INSECURE_DEV=(true|1|TRUE|True)[[:space:]]*$$' .env; then echo "VAULTRUN_INSECURE_DEV=true already set in .env"; \
+	elif grep -Eq '^[[:space:]]*VAULTRUN_INSECURE_DEV=' .env; then \
+	  sed -i.bak -E 's/^[[:space:]]*VAULTRUN_INSECURE_DEV=.*/VAULTRUN_INSECURE_DEV=true/' .env && rm -f .env.bak && echo "Set VAULTRUN_INSECURE_DEV=true in .env (local development only)"; \
 	else echo "VAULTRUN_INSECURE_DEV=true" >> .env && echo "Added VAULTRUN_INSECURE_DEV=true to .env (local development only)"; fi
 
 down:

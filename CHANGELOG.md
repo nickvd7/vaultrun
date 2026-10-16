@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.6] — 2026-10-16
+
+**Upgrade notes:** no migrations. With `AUDIT_HMAC_KEY` set, audit retention (`AUDIT_LOG_RETENTION_DAYS`) now deletes nothing and logs `audit: retention is paused` while an old entry or the chain head fails verification; check `GET /api/v1/audit/integrity`. API clients that read `/audit/integrity` get new fields (`scope`, `altered_entries`, `affected_entries`, `own_invalid_entries`, `other_invalid_entries`, `entries`) and `/audit` entries get `sig_kind`, `sig_detail` and `out_of_order`; existing fields are unchanged.
+
 ### Security
 - **Audit retention can no longer be used to erase the log.** Retention picked its boundary as the highest chain number whose timestamp was old enough and deleted everything up to it, without checking that entry. Someone with database write access could set one recent entry's timestamp back (for example to 2026-01-01) and the next sweep, within five minutes, deleted every entry up to it and signed the new boundary, after which `/audit/integrity` reported `ok` with nothing missing. Retention now walks the chain from the oldest entry and only deletes a prefix of entries that are old, numbered without gaps, correctly signed, linked to their predecessor and not dated before it, so a back-dated entry further on never pulls newer entries into the deletion. When an old entry fails one of those checks, or the chain head fails verification, retention deletes nothing, logs `audit: retention is paused` and returns `ErrPruneBlocked` until the log verifies again (inspect it with `GET /audit/integrity`). Unnumbered entries written after chaining began (an entry whose number was removed) are no longer treated as legacy and are kept as evidence.
 

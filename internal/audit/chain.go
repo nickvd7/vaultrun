@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
@@ -62,20 +64,83 @@ func (l *Logger) Classify(ctx context.Context, entries []*models.AuditLog) {
 			want = append(want, *e.Seq-1)
 		}
 	}
-	preds, err := dbpkg.AuditSigsBySeq(ctx, l.db, want)
+	preds, err := dbpkg.AuditPredsBySeq(ctx, l.db, want)
 	if err != nil {
 		slog.Error("audit: reading previous entries failed", "err", err)
-		preds = map[int64]string{}
+		preds = map[int64]dbpkg.AuditPred{}
 	}
 
 	for _, e := range entries {
 		e.SigStatus, e.SigReason = l.classify(e, head, vs, preds)
 		valid := e.SigStatus == models.AuditSigValid
 		e.SigValid = &valid
+		if e.SigStatus == models.AuditSigInvalid {
+			e.SigKind = reasonKind(e.SigReason)
+			var seq int64
+			if e.Seq != nil {
+				seq = *e.Seq
+			}
+			e.SigDetail = reasonDetail(e.SigReason, seq)
+		}
+		if e.Seq != nil && *e.Seq > 1 {
+			if pred, ok := preds[*e.Seq-1]; ok && e.Timestamp.Before(pred.Timestamp) {
+				e.OutOfOrder = true
+				e.SigDetail = strings.TrimSpace(e.SigDetail + " " + outOfOrderDetail(*e.Seq-1))
+			}
+		}
 	}
 }
 
-func (l *Logger) classify(e *models.AuditLog, head chainHead, vs *time.Time, preds map[int64]string) (status, reason string) {
+// reasonKind says whether a reason means the entry itself was altered or only
+// that the entry before it was.
+func reasonKind(reason string) string {
+	switch reason {
+	case ReasonPrevChanged, ReasonPrevMissing:
+		return models.AuditKindChain
+	case "":
+		return ""
+	}
+	return models.AuditKindAltered
+}
+
+// reasonDetail explains a reason in full sentences. seq is the entry's own
+// chain number (0 when it has none).
+func reasonDetail(reason string, seq int64) string {
+	prev := "the entry before it"
+	if seq > 1 {
+		prev = fmt.Sprintf("the entry before it (#%d)", seq-1)
+	}
+	switch reason {
+	case ReasonChanged:
+		return "The content or signature of this entry does not match what was signed when it was written, so it was altered afterwards (its time, actor, action or details)."
+	case ReasonSigRemoved:
+		return "This entry has no signature, although every entry written since signing began has one. The signature was removed."
+	case ReasonSeqRemoved:
+		return "The chain number of this entry was removed, so it no longer has a place in the chain."
+	case ReasonUnchained:
+		return "This entry has no chain number although it was written after chaining began, so it was inserted or rewritten outside the API."
+	case ReasonFirstHasParent:
+		return "The first entry in the chain claims a predecessor, which cannot exist."
+	case ReasonPrevChanged:
+		return "This entry itself is intact. " + capitalize(prev) + " was changed after this entry was written: the signature this entry recorded for it no longer matches. This warning is a consequence of that change, not of tampering with this entry."
+	case ReasonPrevMissing:
+		return "This entry itself is intact. " + capitalize(prev) + " was deleted, which breaks the chain at this point."
+	}
+	return ""
+}
+
+func outOfOrderDetail(prevSeq int64) string {
+	return fmt.Sprintf("It is dated earlier than the entry before it (#%d), which an untouched log never shows, so one of the two timestamps was changed.", prevSeq)
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func (l *Logger) classify(e *models.AuditLog, head chainHead, vs *time.Time, preds map[int64]dbpkg.AuditPred) (status, reason string) {
 	if e.Seq == nil {
 		if e.Sig != "" && l.VerifyAuditSig(e) {
 			return models.AuditSigValid, ""
@@ -113,7 +178,7 @@ func (l *Logger) classify(e *models.AuditLog, head chainHead, vs *time.Time, pre
 		return models.AuditSigValid, ""
 	}
 	if pred, ok := preds[seq-1]; ok {
-		if pred != e.PrevSig {
+		if pred.Sig != e.PrevSig {
 			return models.AuditSigInvalid, ReasonPrevChanged
 		}
 		return models.AuditSigValid, ""
@@ -136,21 +201,87 @@ const (
 	IntegrityDisabled    = "disabled"
 )
 
+// IntegrityEntry names one entry that failed verification.
+type IntegrityEntry struct {
+	ID         uuid.UUID `json:"id"`
+	Seq        *int64    `json:"seq,omitempty"`
+	Kind       string    `json:"kind"`
+	Reason     string    `json:"reason"`
+	Detail     string    `json:"detail"`
+	OutOfOrder bool      `json:"out_of_order,omitempty"`
+	actor      string
+}
+
+// Integrity scopes.
+const (
+	ScopeAll = "all"
+	ScopeOwn = "own"
+)
+
 // Integrity is the verdict over the whole log, not one page of it.
 type Integrity struct {
-	Status         string      `json:"status"`
-	CheckedAt      time.Time   `json:"checked_at"`
-	ChainedEntries int64       `json:"chained_entries"`
-	LegacyEntries  int64       `json:"legacy_entries"`
-	InvalidEntries int64       `json:"invalid_entries"`
-	MissingEntries int64       `json:"missing_entries"`
-	Problems       []string    `json:"problems"`
-	InvalidIDs     []uuid.UUID `json:"invalid_ids,omitempty"`
-	MissingSeqs    []string    `json:"missing_seqs,omitempty"`
+	Status         string    `json:"status"`
+	Scope          string    `json:"scope"`
+	CheckedAt      time.Time `json:"checked_at"`
+	ChainedEntries int64     `json:"chained_entries"`
+	LegacyEntries  int64     `json:"legacy_entries"`
+	// InvalidEntries = AlteredEntries + AffectedEntries. Altered entries were
+	// themselves changed; affected ones are intact but follow a changed entry.
+	InvalidEntries  int64    `json:"invalid_entries"`
+	AlteredEntries  int64    `json:"altered_entries"`
+	AffectedEntries int64    `json:"affected_entries"`
+	MissingEntries  int64    `json:"missing_entries"`
+	Problems        []string `json:"problems"`
+	// For a key that cannot see the whole log: how many of the invalid entries
+	// were recorded under its own name and how many belong to other keys.
+	OwnInvalidEntries   *int64           `json:"own_invalid_entries,omitempty"`
+	OtherInvalidEntries *int64           `json:"other_invalid_entries,omitempty"`
+	Entries             []IntegrityEntry `json:"entries,omitempty"`
+	InvalidIDs          []uuid.UUID      `json:"invalid_ids,omitempty"`
+	MissingSeqs         []string         `json:"missing_seqs,omitempty"`
+
+	all          []IntegrityEntry
+	headProblems []string
+}
+
+// ScopedTo returns the verdict as seen by one key: the same status, but only
+// the key's own entries are listed; other keys' entries are replaced by a count.
+func (i *Integrity) ScopedTo(actor string) *Integrity {
+	out := *i
+	out.Scope = ScopeOwn
+	out.Entries, out.InvalidIDs, out.MissingSeqs = nil, nil, nil
+	var own, other int64
+	for _, e := range i.all {
+		if e.actor == actor {
+			own++
+			if len(out.Entries) < maxReportedIDs {
+				out.Entries = append(out.Entries, e)
+				out.InvalidIDs = append(out.InvalidIDs, e.ID)
+			}
+		} else {
+			other++
+		}
+	}
+	// Entries past the cap on the stored list are all attributed to others.
+	other += i.InvalidEntries - int64(len(i.all))
+	out.OwnInvalidEntries, out.OtherInvalidEntries = &own, &other
+
+	out.Problems = append([]string{}, i.headProblems...)
+	if own > 0 {
+		out.Problems = append(out.Problems, entryCount(own, "recorded under your key failed verification (marked Invalid in the table)", "recorded under your key failed verification (marked Invalid in the table)"))
+	}
+	if other > 0 {
+		out.Problems = append(out.Problems, entryCount(other, "recorded under another key failed verification (not visible to you)", "recorded under other keys failed verification (not visible to you)"))
+	}
+	if i.MissingEntries > 0 {
+		out.Problems = append(out.Problems, entryCount(i.MissingEntries, "is missing from the chain (deleted entries cannot be attributed to a key)", "are missing from the chain (deleted entries cannot be attributed to a key)"))
+	}
+	return &out
 }
 
 const (
 	maxReportedIDs   = 25
+	maxTrackedBad    = 10000
 	integrityCacheTT = 10 * time.Second
 )
 
@@ -179,11 +310,29 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Integrity{CheckedAt: time.Now().UTC(), Problems: []string{}}
-	addInvalid := func(id uuid.UUID) {
+	res := &Integrity{Scope: ScopeAll, CheckedAt: time.Now().UTC(), Problems: []string{}}
+	addInvalid := func(e *models.AuditLog, reason string, outOfOrder bool) {
 		res.InvalidEntries++
-		if len(res.InvalidIDs) < maxReportedIDs {
-			res.InvalidIDs = append(res.InvalidIDs, id)
+		kind := reasonKind(reason)
+		if kind == models.AuditKindChain {
+			res.AffectedEntries++
+		} else {
+			res.AlteredEntries++
+		}
+		var seq int64
+		if e.Seq != nil {
+			seq = *e.Seq
+		}
+		ie := IntegrityEntry{ID: e.ID, Seq: e.Seq, Kind: kind, Reason: reason, Detail: reasonDetail(reason, seq), OutOfOrder: outOfOrder, actor: e.Actor}
+		if outOfOrder {
+			ie.Detail = strings.TrimSpace(ie.Detail + " " + outOfOrderDetail(seq-1))
+		}
+		if len(res.all) < maxTrackedBad {
+			res.all = append(res.all, ie)
+		}
+		if len(res.Entries) < maxReportedIDs {
+			res.Entries = append(res.Entries, ie)
+			res.InvalidIDs = append(res.InvalidIDs, e.ID)
 		}
 	}
 
@@ -195,6 +344,7 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 		first      = true
 		prevSeq    int64
 		prevSig    string
+		prevTime   time.Time
 		lastSeq    int64
 		lastSig    string
 		haveChain  bool
@@ -213,7 +363,8 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 		res.ChainedEntries++
 		seq := *e.Seq
 		contiguous := !first && seq == prevSeq+1
-		if (first && expectNext > 0 && seq > expectNext) || (!first && !contiguous) {
+		gap := (first && expectNext > 0 && seq > expectNext) || (!first && !contiguous)
+		if gap {
 			from := expectNext
 			if !first {
 				from = prevSeq + 1
@@ -221,19 +372,23 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 			res.MissingEntries += seq - from
 			res.MissingSeqs = appendRange(res.MissingSeqs, from, seq-1)
 		}
-		bad := e.Sig == "" || !l.VerifyAuditSig(&e)
-		if !bad {
-			switch {
-			case seq == 1 && e.PrevSig != "":
-				bad = true
-			case contiguous && e.PrevSig != prevSig:
-				bad = true
-			}
+		reason := ""
+		switch {
+		case e.Sig == "":
+			reason = ReasonSigRemoved
+		case !l.VerifyAuditSig(&e):
+			reason = ReasonChanged
+		case seq == 1 && e.PrevSig != "":
+			reason = ReasonFirstHasParent
+		case contiguous && e.PrevSig != prevSig:
+			reason = ReasonPrevChanged
+		case gap:
+			reason = ReasonPrevMissing
 		}
-		if bad {
-			addInvalid(e.ID)
+		if reason != "" {
+			addInvalid(&e, reason, contiguous && e.Timestamp.Before(prevTime))
 		}
-		first, prevSeq, prevSig = false, seq, e.Sig
+		first, prevSeq, prevSig, prevTime = false, seq, e.Sig, e.Timestamp
 		lastSeq, lastSig = seq, e.Sig
 	}
 	if err := rows.Err(); err != nil {
@@ -274,8 +429,15 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 				_ = urows.Close()
 				return nil, err
 			}
-			if e.Sig == "" || !l.VerifyAuditSig(&e) {
-				addInvalid(e.ID)
+			switch {
+			case e.Sig == "":
+				addInvalid(&e, ReasonSigRemoved, false)
+			case !l.VerifyAuditSig(&e):
+				if strings.HasPrefix(e.Sig, ChainSigPrefix) {
+					addInvalid(&e, ReasonSeqRemoved, false)
+				} else {
+					addInvalid(&e, ReasonChanged, false)
+				}
 			}
 		}
 		if err := urows.Err(); err != nil {
@@ -290,8 +452,12 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 	}
 	res.LegacyEntries = n
 
-	if res.InvalidEntries > 0 {
-		res.Problems = append(res.Problems, fmt.Sprintf("%s a signature that does not match, or lack one", entryCount(res.InvalidEntries, "has", "have")))
+	res.headProblems = append([]string{}, res.Problems...)
+	if res.AlteredEntries > 0 {
+		res.Problems = append(res.Problems, entryCount(res.AlteredEntries, "was altered (its signature does not match or was removed)", "were altered (their signature does not match or was removed)"))
+	}
+	if res.AffectedEntries > 0 {
+		res.Problems = append(res.Problems, entryCount(res.AffectedEntries, "is intact but follows a changed entry", "are intact but follow a changed entry"))
 	}
 	if res.MissingEntries > 0 {
 		res.Problems = append(res.Problems, fmt.Sprintf("%s missing from the chain", entryCount(res.MissingEntries, "is", "are")))
@@ -360,9 +526,21 @@ func (l *Logger) WatchIntegrity(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// ErrPruneBlocked is returned by Prune when the entries it would delete do not
+// verify, so retention stops instead of erasing evidence.
+var ErrPruneBlocked = errors.New("audit retention paused")
+
 // Prune deletes entries older than before (retention). Chained entries go as a
 // prefix of the chain, and the chain head records how far, so a pruned log
 // still verifies while a hole elsewhere does not.
+//
+// The prefix is walked from the oldest entry and only extends over entries
+// that are old, numbered without gaps, correctly signed, linked to their
+// predecessor and not dated before it. It ends at the first entry that is not
+// old enough, so an entry whose timestamp was moved back can never pull newer
+// entries into the deletion, and it is refused (ErrPruneBlocked, nothing
+// deleted) when an old entry fails any of those checks, since the signed
+// boundary written afterwards would otherwise make the log verify again.
 func (l *Logger) Prune(ctx context.Context, before time.Time) (int64, error) {
 	if !l.Enabled() {
 		return dbpkg.DeleteOldAuditLogs(ctx, l.db, before)
@@ -380,16 +558,101 @@ func (l *Logger) Prune(ctx context.Context, before time.Time) (int64, error) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
-	deleted, maxSeq, err := dbpkg.PruneAuditLogsBefore(ctx, tx, before)
-	if err != nil {
+	headOK := head != nil && l.headValid(head)
+
+	var chained bool
+	if err := tx.GetContext(ctx, &chained, `SELECT EXISTS (SELECT 1 FROM audit_logs WHERE seq IS NOT NULL)`); err != nil {
 		return 0, err
 	}
-	if head != nil && l.headValid(head) && maxSeq > head.PrunedThrough {
-		head.PrunedThrough = maxSeq
+	if (head != nil && !headOK) || (head == nil && chained) {
+		return 0, l.blocked("the chain head is missing or fails verification")
+	}
+
+	var last int64
+	if headOK {
+		if last, err = l.oldPrefix(ctx, tx, head, before); err != nil {
+			return 0, err
+		}
+	}
+
+	var deleted int64
+	if last > 0 {
+		if deleted, err = dbpkg.DeleteAuditSeqThrough(ctx, tx, last); err != nil {
+			return 0, err
+		}
+		head.PrunedThrough = last
 		head.MAC = l.headMAC(head)
 		if err := dbpkg.UpdateAuditChainHead(ctx, tx, head); err != nil {
 			return 0, err
 		}
 	}
-	return deleted, tx.Commit()
+	var start *time.Time
+	if headOK {
+		start = &head.StartedAt
+	}
+	n, err := dbpkg.DeleteUnchainedAuditBefore(ctx, tx, before, start)
+	if err != nil {
+		return 0, err
+	}
+	return deleted + n, tx.Commit()
+}
+
+func (l *Logger) blocked(why string) error {
+	slog.Warn("audit: retention is paused, nothing was deleted; run GET /api/v1/audit/integrity to see which entries fail", "reason", why)
+	return fmt.Errorf("%w: %s", ErrPruneBlocked, why)
+}
+
+// oldPrefix returns the number of the last entry of the deletable prefix, or
+// 0 when there is none. It returns ErrPruneBlocked when an old entry fails
+// verification.
+func (l *Logger) oldPrefix(ctx context.Context, tx *sqlx.Tx, head *dbpkg.AuditChainHead, before time.Time) (int64, error) {
+	rows, err := tx.QueryxContext(ctx, `SELECT * FROM audit_logs WHERE seq IS NOT NULL ORDER BY seq`)
+	if err != nil {
+		return 0, err
+	}
+	var (
+		last, prevSeq int64
+		prevSig       string
+		prevTime      time.Time
+		first         = true
+		expect        = head.PrunedThrough + 1
+		problem       string
+	)
+	for rows.Next() {
+		var e models.AuditLog
+		if err := rows.StructScan(&e); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		if !e.Timestamp.Before(before) {
+			break
+		}
+		seq := *e.Seq
+		switch {
+		case seq != expect:
+			problem = fmt.Sprintf("entry #%d is missing", expect)
+		case e.Sig == "" || !l.VerifyAuditSig(&e):
+			problem = fmt.Sprintf("entry #%d fails verification", seq)
+		case first && seq == 1 && e.PrevSig != "":
+			problem = fmt.Sprintf("entry #%d claims a predecessor", seq)
+		case !first && e.PrevSig != prevSig:
+			problem = fmt.Sprintf("entry #%d does not match the entry before it (#%d)", seq, prevSeq)
+		case !first && e.Timestamp.Before(prevTime):
+			problem = fmt.Sprintf("entry #%d is dated earlier than the entry before it (#%d)", seq, prevSeq)
+		}
+		if problem != "" {
+			break
+		}
+		last, expect = seq, seq+1
+		first, prevSeq, prevSig, prevTime = false, seq, e.Sig, e.Timestamp
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	if problem != "" {
+		return 0, l.blocked(problem)
+	}
+	return last, nil
 }

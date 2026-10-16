@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+- **Audit retention can no longer be used to erase the log.** Retention picked its boundary as the highest chain number whose timestamp was old enough and deleted everything up to it, without checking that entry. Someone with database write access could set one recent entry's timestamp back (for example to 2026-01-01) and the next sweep, within five minutes, deleted every entry up to it and signed the new boundary, after which `/audit/integrity` reported `ok` with nothing missing. Retention now walks the chain from the oldest entry and only deletes a prefix of entries that are old, numbered without gaps, correctly signed, linked to their predecessor and not dated before it, so a back-dated entry further on never pulls newer entries into the deletion. When an old entry fails one of those checks, or the chain head fails verification, retention deletes nothing, logs `audit: retention is paused` and returns `ErrPruneBlocked` until the log verifies again (inspect it with `GET /audit/integrity`). Unnumbered entries written after chaining began (an entry whose number was removed) are no longer treated as legacy and are kept as evidence.
+
+### Changed
+- **The audit warning names the entries and splits the count.** The banner lists each failed entry by chain number (`#41 Altered: signature was removed`) with a "Show in table" button, and separates *altered* entries from *affected* ones (intact, but they follow a changed or deleted entry), instead of one "5 entries". The table has a `#` column, affected rows are amber and altered rows red, and opening a row explains the reason in full and gives the entry ID.
+- **Out-of-order entries are marked.** An entry dated earlier than the one before it in the chain shows an "Out of order" marker, and "Chain order (#)" lists the log by chain number so a back-dated entry stays between its neighbours. API: `GET /audit?sort=seq`, `?seq=` and `?id=`; entries gain `sig_kind`, `sig_detail` and `out_of_order`.
+- **For a key other than the master key the banner is scoped.** It says how many failed entries were recorded under your key (listed, and marked Invalid in the table) and how many belong to other keys (counted only), and that deleted entries cannot be attributed to a key. `GET /audit/integrity` gains `scope`, `altered_entries`, `affected_entries`, `own_invalid_entries`, `other_invalid_entries` and `entries`.
+- The entry directly after a deleted entry now counts as *affected* in `GET /audit/integrity`, as the table already showed.
+
+### Fixed
+- **An expired or revoked saved API key sends you back to the sign-in form** (with a note saying why) instead of showing "Signed in" and an error. Any `401` from the API does this, not only the first check.
+- **Audit banner for a regular key** no longer claims "Whole log verified" next to a partial log: it says the integrity check passed, that you only see your own entries, and omits the whole-log counts.
+- **Policy page for a regular key** shows only the master-key notice; the test form is hidden instead of disabled.
+- **Costs:** the total card shows "October 2026", the same as the month picker, instead of "2026-10".
+- **Not-found page** reads "stopped when idle on Oct 16, 2026, 2:28 PM" instead of "on 7m ago".
+- **Screen readers:** tab and filter names are capitalised text, not lowercase text made to look capitalised with CSS; tab icons are hidden from assistive tech.
+- **Small grey text:** `text-xs` is 13px instead of 12px, the 10/11px labels are 13px, and disabled buttons are dimmed less (60% instead of 40-50%).
+
 ---
 
 ## [0.4.5] — 2026-10-16

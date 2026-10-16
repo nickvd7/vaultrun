@@ -79,6 +79,22 @@ export interface AuditLog {
   sig_reason?: string;
   /** Position in the hash chain; absent on entries written before chaining. */
   seq?: number;
+  /** altered: this entry was changed. chain: it is intact but the entry before it was changed or deleted. */
+  sig_kind?: "altered" | "chain";
+  /** Full-sentence explanation of sig_reason (API 0.4.6 and later). */
+  sig_detail?: string;
+  /** Dated earlier than the entry before it in the chain (API 0.4.6 and later). */
+  out_of_order?: boolean;
+}
+
+/** One entry named by an integrity warning (API 0.4.6 and later). */
+export interface AuditIntegrityEntry {
+  id: string;
+  seq?: number;
+  kind: "altered" | "chain";
+  reason: string;
+  detail: string;
+  out_of_order?: boolean;
 }
 
 /** Verdict over the whole audit log, from GET /audit/integrity (API 0.4.5 and later). */
@@ -88,8 +104,18 @@ export interface AuditIntegrity {
   chained_entries: number;
   legacy_entries: number;
   invalid_entries: number;
+  /** Entries that were changed themselves (API 0.4.6 and later). */
+  altered_entries?: number;
+  /** Intact entries that follow a changed one (API 0.4.6 and later). */
+  affected_entries?: number;
   missing_entries: number;
   problems: string[];
+  /** "all" for the master key; "own" when other keys' entries are only counted. */
+  scope?: "all" | "own";
+  own_invalid_entries?: number;
+  other_invalid_entries?: number;
+  /** Master key: every affected entry (first 25). Other keys: their own. */
+  entries?: AuditIntegrityEntry[];
   /** Master key only. */
   invalid_ids?: string[];
   missing_seqs?: string[];

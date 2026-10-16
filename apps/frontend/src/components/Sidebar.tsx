@@ -46,7 +46,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
 
       {orgs.length > 0 && (
         <div className="px-3 py-3 border-b border-slate-800">
-          <label htmlFor="org-select" className="block text-[10px] uppercase tracking-wide text-slate-300 mb-1.5">Organization</label>
+          <label htmlFor="org-select" className="block text-xs uppercase tracking-wide text-slate-300 mb-1.5">Organization</label>
           <select
             id="org-select"
             value={orgId ?? ""}

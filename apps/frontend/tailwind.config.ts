@@ -12,6 +12,9 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
       },
+      fontSize: {
+        xs: ["0.8125rem", { lineHeight: "1.125rem" }],
+      },
       fontFamily: {
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },

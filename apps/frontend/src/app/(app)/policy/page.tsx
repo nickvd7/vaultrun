@@ -74,7 +74,7 @@ export default function PolicyPage() {
         <button
           onClick={load}
           disabled={loading || isMaster === false}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -144,105 +144,105 @@ export default function PolicyPage() {
         </div>
       )}
 
-      {/* Test panel */}
-      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-5 space-y-4">
-        <h2 className="text-sm font-medium text-slate-300">Policy Test</h2>
-        <p className="text-xs text-slate-200">
-          Dry-run an input against the currently loaded policy without executing anything.
-        </p>
+      {isMaster !== false && (
+        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-5 space-y-4">
+          <h2 className="text-sm font-medium text-slate-300">Policy Test</h2>
+          <p className="text-xs text-slate-200">
+            Dry-run an input against the currently loaded policy without executing anything.
+          </p>
 
-        {/* Tabs */}
-        <div className="flex gap-1">
-          {(["command", "file"] as EvalTab[]).map((t) => (
+          {/* Tabs */}
+          <div className="flex gap-1">
+            {(["command", "file"] as EvalTab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => { setTab(t); setResult(null); setEvalError(""); }}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  tab === t
+                    ? "bg-indigo-600 text-white"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-200"
+                }`}
+              >
+                {t === "command" ? "Command" : "File access"}
+              </button>
+            ))}
+          </div>
+
+          {tab === "command" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="policy-command" className="block text-xs text-slate-200 mb-1">Command</label>
+                <input
+                  id="policy-command"
+                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="python"
+                />
+              </div>
+              <div>
+                <label htmlFor="policy-args" className="block text-xs text-slate-200 mb-1">Args (shell-style quoting)</label>
+                <input
+                  id="policy-args"
+                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder="script.py --verbose"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-end gap-4">
+              <div className="flex-1">
+                <label htmlFor="policy-path" className="block text-xs text-slate-200 mb-1">File path</label>
+                <input
+                  id="policy-path"
+                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+                  value={filePath}
+                  onChange={(e) => setFilePath(e.target.value)}
+                  placeholder="/workspace/output.txt"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-300 pb-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fileWrite}
+                  onChange={(e) => setFileWrite(e.target.checked)}
+                  className="rounded"
+                />
+                Write
+              </label>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
             <button
-              key={t}
-              onClick={() => { setTab(t); setResult(null); setEvalError(""); }}
-              className={`px-3 py-1.5 rounded text-xs font-medium transition-colors capitalize ${
-                tab === t
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-200"
-              }`}
+              onClick={handleEval}
+              disabled={evaluating}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-60"
             >
-              {t === "command" ? "Command" : "File access"}
+              <Play className="w-3.5 h-3.5" />
+              {evaluating ? "Evaluating…" : "Evaluate"}
             </button>
-          ))}
-        </div>
 
-        {tab === "command" ? (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="policy-command" className="block text-xs text-slate-200 mb-1">Command</label>
-              <input
-                id="policy-command"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="python"
-              />
-            </div>
-            <div>
-              <label htmlFor="policy-args" className="block text-xs text-slate-200 mb-1">Args (shell-style quoting)</label>
-              <input
-                id="policy-args"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
-                value={args}
-                onChange={(e) => setArgs(e.target.value)}
-                placeholder="script.py --verbose"
-              />
-            </div>
+            {/* Inline result */}
+            {result && (
+              <div className={`flex items-center gap-2 text-sm font-medium ${result.allowed ? "text-emerald-400" : "text-red-400"}`}>
+                {result.allowed ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <XCircle className="w-4 h-4" />
+                )}
+                {result.allowed ? "Allowed" : `Denied${result.reason ? `: ${result.reason}` : ""}`}
+              </div>
+            )}
+
+            {evalError && (
+              <p className="text-sm text-red-400">{evalError}</p>
+            )}
           </div>
-        ) : (
-          <div className="flex items-end gap-4">
-            <div className="flex-1">
-              <label htmlFor="policy-path" className="block text-xs text-slate-200 mb-1">File path</label>
-              <input
-                id="policy-path"
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
-                value={filePath}
-                onChange={(e) => setFilePath(e.target.value)}
-                placeholder="/workspace/output.txt"
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm text-slate-300 pb-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={fileWrite}
-                onChange={(e) => setFileWrite(e.target.checked)}
-                className="rounded"
-              />
-              Write
-            </label>
-          </div>
-        )}
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleEval}
-            disabled={evaluating || isMaster === false}
-            title={isMaster === false ? "Requires the master key" : undefined}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50"
-          >
-            <Play className="w-3.5 h-3.5" />
-            {evaluating ? "Evaluating…" : "Evaluate"}
-          </button>
-
-          {/* Inline result */}
-          {result && (
-            <div className={`flex items-center gap-2 text-sm font-medium ${result.allowed ? "text-emerald-400" : "text-red-400"}`}>
-              {result.allowed ? (
-                <CheckCircle className="w-4 h-4" />
-              ) : (
-                <XCircle className="w-4 h-4" />
-              )}
-              {result.allowed ? "Allowed" : `Denied${result.reason ? `: ${result.reason}` : ""}`}
-            </div>
-          )}
-
-          {evalError && (
-            <p className="text-sm text-red-400">{evalError}</p>
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

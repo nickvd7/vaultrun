@@ -221,6 +221,18 @@ components:
         sig_reason:
           type: string
           description: Why the entry is invalid.
+        sig_kind:
+          type: string
+          enum: [altered, chain]
+          description: |
+            Only on invalid entries. `altered`: the entry itself was changed. `chain`: the entry is intact but
+            the entry before it was changed or deleted (a consequence, not tampering with this entry).
+        sig_detail:
+          type: string
+          description: Full-sentence explanation of `sig_reason`.
+        out_of_order:
+          type: boolean
+          description: Dated earlier than the entry before it in the chain, which an untouched log never shows.
 
     AuditIntegrity:
       type: object
@@ -230,13 +242,30 @@ components:
         checked_at:       { type: string, format: date-time }
         chained_entries:  { type: integer, format: int64 }
         legacy_entries:   { type: integer, format: int64 }
-        invalid_entries:  { type: integer, format: int64 }
+        invalid_entries:  { type: integer, format: int64, description: altered_entries + affected_entries, for the whole log. }
+        altered_entries:  { type: integer, format: int64, description: Entries that were changed themselves. }
+        affected_entries: { type: integer, format: int64, description: Intact entries that follow a changed or deleted one. }
         missing_entries:  { type: integer, format: int64 }
+        scope:            { type: string, enum: [all, own], description: "`own` for keys other than the master key: other keys' entries are only counted." }
+        own_invalid_entries:   { type: integer, format: int64, description: "Only with scope `own`: invalid entries recorded under the caller's key." }
+        other_invalid_entries: { type: integer, format: int64, description: "Only with scope `own`: invalid entries recorded under other keys." }
         problems:         { type: array, items: { type: string } }
+        entries:
+          type: array
+          description: The first 25 invalid entries (the caller's own with scope `own`).
+          items:
+            type: object
+            properties:
+              id:         { type: string, format: uuid }
+              seq:        { type: integer, format: int64 }
+              kind:       { type: string, enum: [altered, chain] }
+              reason:     { type: string }
+              detail:     { type: string }
+              out_of_order: { type: boolean }
         invalid_ids:
           type: array
           items: { type: string, format: uuid }
-          description: Master key only.
+          description: The IDs of `entries`.
         missing_seqs:
           type: array
           items: { type: string }
@@ -727,6 +756,18 @@ paths:
         - name: actor
           in: query
           schema: { type: string }
+        - name: seq
+          in: query
+          description: Only the entry with this chain number.
+          schema: { type: integer, format: int64 }
+        - name: id
+          in: query
+          description: Only the entry with this ID.
+          schema: { type: string, format: uuid }
+        - name: sort
+          in: query
+          description: "`time` (default, newest first) or `seq` (chain order, newest first; entries without a chain number last)."
+          schema: { type: string, enum: [time, seq] }
       responses:
         "200":
           description: OK
@@ -748,8 +789,9 @@ paths:
       description: |
         Checks every signature and chain link, holes in the numbering, entries cut off the end and the
         signed chain head, so a problem on any page of the log is visible. Results are cached for ten
-        seconds; `?refresh=true` forces a new scan. Only the master key sees entry IDs and missing
-        sequence numbers.
+        seconds; `?refresh=true` forces a new scan. The master key sees every invalid entry and the
+        missing sequence numbers; other keys get the same verdict with their own entries listed and
+        the others counted (`scope: own`).
       parameters:
         - name: refresh
           in: query

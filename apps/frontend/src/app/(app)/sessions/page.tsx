@@ -305,7 +305,7 @@ export default function SessionsPage() {
             </p>
           )}
           <div className="flex items-center gap-3 pt-1">
-            <button type="submit" disabled={creating} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors">
+            <button type="submit" disabled={creating} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium transition-colors">
               {creating ? "Creating…" : "Create"}
             </button>
             <button
@@ -396,7 +396,7 @@ export default function SessionsPage() {
                     >
                       {s.name || `${s.id.slice(0, 12)}…`}
                     </Link>
-                    {s.replay_enabled && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-300">replay</span>}
+                    {s.replay_enabled && <span className="ml-2 text-xs uppercase tracking-wide text-slate-300">replay</span>}
                     <LabelChips labels={s.labels} onPick={(kv) => setQuery(kv)} />
                   </td>
                   <td className="px-4 py-3 text-slate-200 font-mono text-xs">{s.image}</td>
@@ -436,14 +436,14 @@ export default function SessionsPage() {
             <button
               onClick={() => setPage(currentPage - 1)}
               disabled={currentPage <= 1}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Previous
             </button>
             <button
               onClick={() => setPage(currentPage + 1)}
               disabled={currentPage >= pageCount}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               Next <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
@@ -491,7 +491,7 @@ function LabelChips({ labels, onPick }: { labels?: Record<string, string>; onPic
           type="button"
           onClick={() => onPick(`${k}=${v}`)}
           title={`Filter by ${k}=${v}`}
-          className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
+          className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-xs text-slate-200 hover:bg-slate-700"
         >
           <span className="text-indigo-300">{k}</span>
           <span className="text-slate-300">=</span>

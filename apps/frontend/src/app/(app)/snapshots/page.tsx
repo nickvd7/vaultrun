@@ -109,7 +109,7 @@ export default function SnapshotsPage() {
           disabled={loading}
           aria-label="Refresh snapshots"
           title="Refresh"
-          className="p-2 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 transition-colors disabled:opacity-50"
+          className="p-2 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-100 transition-colors disabled:opacity-60"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
         </button>
@@ -140,7 +140,7 @@ export default function SnapshotsPage() {
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               disabled={loading}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-60"
             >
               <option value="">{running.length === 0 ? "No running sessions" : "Choose a running session…"}</option>
               {running.map((s) => (
@@ -164,7 +164,7 @@ export default function SnapshotsPage() {
             <button
               type="submit"
               disabled={creating || !selectedId || !newName.trim()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium transition-colors whitespace-nowrap"
             >
               <Plus className="w-4 h-4" aria-hidden="true" /> {creating ? "Saving…" : "Save Snapshot"}
             </button>

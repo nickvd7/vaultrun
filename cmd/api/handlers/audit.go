@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,7 +40,8 @@ func parseAuditTime(c *gin.Context, name string) (*time.Time, bool) {
 }
 
 // GET /api/v1/audit
-// Query: session_id, action (prefix, e.g. "apikey."), from, to, page, limit.
+// Query: session_id, action (prefix, e.g. "apikey."), from, to, seq, id,
+// sort ("time", the default, or "seq" for chain order), page, limit.
 func (ah *AuditHandler) List(c *gin.Context) {
 	pg := pagination(c)
 
@@ -105,6 +107,31 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		return
 	}
 
+	if raw := strings.TrimSpace(c.Query("seq")); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || n < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid seq"})
+			return
+		}
+		filter.Seq = &n
+	}
+	if raw := strings.TrimSpace(c.Query("id")); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+			return
+		}
+		filter.ID = &id
+	}
+	switch c.Query("sort") {
+	case "", "time":
+	case "seq":
+		filter.BySeq = true
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sort: use time or seq"})
+		return
+	}
+
 	logs, err := dbpkg.ListAuditLogsFiltered(c.Request.Context(), ah.h.db, filter, pg.limit, pg.offset)
 	if err != nil {
 		slog.Error("list audit logs", "err", err)
@@ -121,7 +148,9 @@ func (ah *AuditHandler) List(c *gin.Context) {
 // GET /api/v1/audit/integrity
 // Verifies the whole log (signatures, chain links, deleted entries, chain head)
 // rather than one page, so a problem on page 2 is visible from page 1. The
-// entry IDs and missing sequence numbers are only shown to the master key.
+// entry list and the missing sequence numbers are only shown to the master
+// key; other keys get the same verdict with counts of their own and of other
+// keys' entries.
 func (ah *AuditHandler) Integrity(c *gin.Context) {
 	if ah.h.audit == nil {
 		c.JSON(http.StatusOK, gin.H{"status": audit.IntegrityDisabled, "problems": []string{}})
@@ -133,9 +162,8 @@ func (ah *AuditHandler) Integrity(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify the audit log"})
 		return
 	}
-	out := *res
-	if middleware.Actor(c) != "master" {
-		out.InvalidIDs, out.MissingSeqs = nil, nil
+	if actor := middleware.Actor(c); actor != "master" {
+		res = res.ScopedTo(actor)
 	}
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, res)
 }

@@ -18,6 +18,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 type Tab = "runs" | "files" | "checkpoints" | "audit";
 
+// Real capitalised text: CSS text-transform changes how the tab looks, not what a screen reader announces.
+const TAB_LABELS: Record<Tab, string> = { runs: "Runs", files: "Files", checkpoints: "Checkpoints", audit: "Audit" };
+
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -309,7 +312,7 @@ export default function SessionDetailPage() {
         {session?.stopped_at ? (
           <p className="text-sm text-slate-300">
             The session <span className="font-mono text-slate-200">{session.name || id}</span> no longer exists: it was deleted
-            or stopped when idle on <Time value={session.stopped_at} />. Its events remain in the{" "}
+            or stopped when idle on <Time value={session.stopped_at} absolute />. Its events remain in the{" "}
             <Link href="/audit" className="text-indigo-300 underline">audit log</Link>.
           </p>
         ) : (
@@ -539,7 +542,7 @@ export default function SessionDetailPage() {
           <button
             onClick={handleRun}
             disabled={!canRun}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-60"
             title="Run and wait for full output"
           >
             <Play className="w-3.5 h-3.5" />
@@ -556,7 +559,7 @@ export default function SessionDetailPage() {
             <button
               onClick={handleStream}
               disabled={!canRun}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-emerald-700 rounded hover:bg-emerald-600 disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-emerald-700 rounded hover:bg-emerald-600 disabled:opacity-60"
               title="Stream live output"
             >
               <Zap className="w-3.5 h-3.5" />
@@ -566,7 +569,7 @@ export default function SessionDetailPage() {
           <button
             onClick={handleAsync}
             disabled={!canRun}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-amber-700 rounded hover:bg-amber-600 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-white bg-amber-700 rounded hover:bg-amber-600 disabled:opacity-60"
             title="Submit async — returns immediately, polls for result"
           >
             <Zap className="w-3 h-3 opacity-60" />
@@ -583,7 +586,7 @@ export default function SessionDetailPage() {
         {/* Async run status */}
         {asyncPolling && asyncRunId && (
           <div className="text-xs text-amber-300 font-mono">
-            ⏳ Polling run <span className="opacity-70">{asyncRunId.slice(0, 8)}…</span>
+            ⏳ Polling run <span>{asyncRunId.slice(0, 8)}…</span>
           </div>
         )}
 
@@ -612,17 +615,17 @@ export default function SessionDetailPage() {
               role="tab"
               aria-selected={tab === t}
               onClick={() => setTab(t)}
-              className={`pb-2 text-sm capitalize transition-colors ${
+              className={`pb-2 text-sm transition-colors ${
                 tab === t
                   ? "text-indigo-400 border-b-2 border-indigo-400"
                   : "text-slate-300 hover:text-white"
               }`}
             >
-              {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" />}
-              {t === "files" && <FileText className="w-3.5 h-3.5 inline mr-1" />}
-              {t === "checkpoints" && <History className="w-3.5 h-3.5 inline mr-1" />}
-              {t === "audit" && <ScrollText className="w-3.5 h-3.5 inline mr-1" />}
-              {t}
+              {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />}
+              {t === "files" && <FileText className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />}
+              {t === "checkpoints" && <History className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />}
+              {t === "audit" && <ScrollText className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -934,7 +937,7 @@ function CheckpointsTab({
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRestore(cp.id); }}
                         disabled={restoring}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-40"
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-60"
                         title="Restore to this checkpoint"
                       >
                         <RotateCcw className="w-3 h-3" /> Restore
@@ -942,7 +945,7 @@ function CheckpointsTab({
                       <button
                         onClick={(e) => { e.stopPropagation(); handleFork(cp.id); }}
                         disabled={forking}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-300 border border-indigo-900/50 rounded hover:bg-indigo-900/20 disabled:opacity-40"
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-300 border border-indigo-900/50 rounded hover:bg-indigo-900/20 disabled:opacity-60"
                         title="Fork new session from this checkpoint"
                       >
                         <GitFork className="w-3 h-3" /> Fork

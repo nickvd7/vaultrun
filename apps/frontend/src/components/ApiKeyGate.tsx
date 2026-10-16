@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { Shield, Eye, EyeOff } from "lucide-react";
+import { UNAUTHORIZED_EVENT } from "@/lib/api";
 
 interface ApiKeyContextValue {
   apiKey: string;
@@ -39,6 +40,18 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [isMaster, setIsMaster] = useState<boolean | null>(null);
   const [keyName, setKeyName] = useState<string | null>(null);
   const [roleReady, setRoleReady] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const rejectKey = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setNotice("Your saved API key was rejected (expired or revoked). Enter a valid key to sign in again.");
+    setApiKeyState("");
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(UNAUTHORIZED_EVENT, rejectKey);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, rejectKey);
+  }, [rejectKey]);
 
   // Load from localStorage on mount (client-only)
   useEffect(() => {
@@ -69,6 +82,10 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
           setKeyName(body.actor ?? null);
           return;
         }
+        if (who.status === 401) {
+          rejectKey();
+          return;
+        }
         if (who.status !== 404) {
           setIsMaster(null);
           return;
@@ -86,15 +103,17 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [apiKey]);
+  }, [apiKey, rejectKey]);
 
   const setApiKey = useCallback((key: string) => {
     localStorage.setItem(STORAGE_KEY, key);
+    setNotice("");
     setApiKeyState(key);
   }, []);
 
   const clearApiKey = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    setNotice("");
     setApiKeyState("");
   }, []);
 
@@ -173,14 +192,14 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            {error && (
-              <p role="alert" className="text-red-300 text-xs">{error}</p>
+            {(error || notice) && (
+              <p role="alert" className={`text-xs ${error ? "text-red-300" : "text-amber-300"}`}>{error || notice}</p>
             )}
 
             <button
               onClick={handleConnect}
               disabled={testing || !input.trim()}
-              className="w-full py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+              className="w-full py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 disabled:opacity-60 transition-colors"
             >
               {testing ? "Verifying…" : "Connect"}
             </button>

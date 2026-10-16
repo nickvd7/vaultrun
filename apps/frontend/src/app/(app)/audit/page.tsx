@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert, ShieldQuestion, ArrowUpDown } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApiKey } from "@/components/ApiKeyGate";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { badgeBase } from "@/lib/utils";
 import { Time } from "@/components/ui/Time";
-import type { AuditIntegrity, AuditLog } from "@/types";
+import type { AuditIntegrity, AuditIntegrityEntry, AuditLog } from "@/types";
 
 // ── action colouring ─────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ const NS_FILTER_ACTIVE: Record<NSFilter, string> = {
 };
 
 const NAMESPACES: NSFilter[] = ["all", "session", "file", "command", "apikey", "secret"];
+const NS_LABEL: Record<NSFilter, string> = { all: "All", session: "Session", file: "File", command: "Command", apikey: "API key", secret: "Secret" };
 const PAGE_SIZE = 50;
 const EXPORT_CAP = 5000;
 
@@ -79,9 +81,9 @@ function csvCell(v: unknown): string {
 }
 
 function toCSV(rows: AuditLog[]): string {
-  const header = ["timestamp", "actor", "action", "session_id", "run_id", "sig_status", "metadata"];
+  const header = ["seq", "timestamp", "actor", "action", "session_id", "run_id", "sig_status", "sig_kind", "sig_reason", "out_of_order", "metadata"];
   const lines = rows.map((l) =>
-    [l.timestamp, l.actor, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.metadata].map(csvCell).join(",")
+    [l.seq, l.timestamp, l.actor, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.sig_kind, l.sig_reason, l.out_of_order, l.metadata].map(csvCell).join(",")
   );
   return [header.join(","), ...lines].join("\n") + "\n";
 }
@@ -128,42 +130,139 @@ function sigState(l: AuditLog): SigState | null {
 function SigCell({ log }: { log: AuditLog }) {
   const st = sigState(log);
   if (!st) return null;
+  const affected = st.kind === "invalid" && log.sig_kind === "chain";
+  const label = affected ? "Affected" : st.kind === "invalid" && log.sig_kind === "altered" ? "Altered" : st.label;
+  const color = affected ? "text-amber-300" : st.className;
+  const title = affected
+    ? "This entry is intact, but the entry before it was changed or deleted"
+    : log.sig_reason
+      ? `${st.title} (${log.sig_reason})`
+      : st.title;
   const Icon = st.kind === "valid" ? ShieldCheck : st.kind === "invalid" || st.kind === "unverified" ? ShieldAlert : ShieldQuestion;
   return (
-    <span title={log.sig_reason ? `${st.title} (${log.sig_reason})` : st.title} className={`inline-flex flex-col text-xs ${st.className}`}>
+    <span title={log.sig_detail || title} className={`inline-flex flex-col text-xs ${color}`}>
       <span className="inline-flex items-center gap-1">
         <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-        {st.label}
+        {label}
       </span>
-      {st.kind === "invalid" && log.sig_reason && <span className="text-red-300 font-normal">{log.sig_reason}</span>}
+      {st.kind === "invalid" && log.sig_reason && <span className="font-normal">{log.sig_reason}</span>}
+    </span>
+  );
+}
+
+function OutOfOrderChip({ prevSeq }: { prevSeq?: number }) {
+  return (
+    <span
+      className="mt-1 inline-flex items-center gap-1 text-xs text-amber-300"
+      title={`Dated earlier than the entry before it${prevSeq ? ` (#${prevSeq})` : ""}: an untouched log never shows this`}
+    >
+      <ArrowUpDown className="w-3 h-3" aria-hidden="true" />
+      Out of order
     </span>
   );
 }
 
 /** Verdict over the whole log, so a problem on page 2 is visible from page 1. */
-function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
+const KIND_LABEL: Record<AuditIntegrityEntry["kind"], string> = { altered: "Altered", chain: "Affected" };
+
+function IntegrityBanner({
+  integrity,
+  isMaster,
+  onShow,
+}: {
+  integrity: AuditIntegrity;
+  isMaster: boolean | null;
+  onShow: (e: AuditIntegrityEntry) => void;
+}) {
   if (integrity.status === "compromised") {
+    const own = integrity.scope === "own";
+    const altered = integrity.altered_entries;
+    const affected = integrity.affected_entries;
+    const entries = integrity.entries ?? [];
+    const shownTotal = own ? integrity.own_invalid_entries ?? entries.length : integrity.invalid_entries;
     return (
       <Notice tone="error" title="The audit log failed verification">
-        <ul className="list-disc pl-5 space-y-0.5">
-          {integrity.problems.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-        {integrity.missing_seqs && integrity.missing_seqs.length > 0 && (
-          <p className="mt-2">Missing sequence numbers: <span className="font-mono">{integrity.missing_seqs.join(", ")}</span></p>
+        {own ? (
+          <ul className="list-disc pl-5 space-y-0.5">
+            {integrity.problems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        ) : (
+          <>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {altered !== undefined && affected !== undefined ? (
+                <>
+                  {altered > 0 && (
+                    <li>
+                      <strong>{altered} altered</strong>: their content or signature was changed, or the signature was removed.
+                    </li>
+                  )}
+                  {affected > 0 && (
+                    <li>
+                      <strong>{affected} affected</strong>: intact themselves, but they follow an altered entry, so the chain breaks at them. These are
+                      consequences, not extra tampering.
+                    </li>
+                  )}
+                  {integrity.missing_entries > 0 && (
+                    <li>
+                      <strong>{integrity.missing_entries} missing</strong>
+                      {integrity.missing_seqs && integrity.missing_seqs.length > 0 && (
+                        <>
+                          {" "}
+                          (chain numbers <span className="font-mono">{integrity.missing_seqs.join(", ")}</span>)
+                        </>
+                      )}
+                      : deleted from the log.
+                    </li>
+                  )}
+                </>
+              ) : (
+                integrity.problems.map((p) => <li key={p}>{p}</li>)
+              )}
+            </ul>
+            {altered === undefined && integrity.missing_seqs && integrity.missing_seqs.length > 0 && (
+              <p className="mt-2">
+                Missing sequence numbers: <span className="font-mono">{integrity.missing_seqs.join(", ")}</span>
+              </p>
+            )}
+          </>
         )}
-        {integrity.invalid_ids && integrity.invalid_ids.length > 0 && (
-          <p className="mt-2">
-            Altered entries (ID): <span className="font-mono break-all">{integrity.invalid_ids.join(", ")}</span>
-            {integrity.invalid_entries > integrity.invalid_ids.length && ` and ${integrity.invalid_entries - integrity.invalid_ids.length} more`}
-          </p>
+        {entries.length > 0 && (
+          <>
+            <p className="mt-3 font-medium">{own ? "Your entries that failed:" : "Entries that failed:"}</p>
+            <ul className="mt-1 space-y-1">
+              {entries.map((e) => (
+                <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-mono">{e.seq ? `#${e.seq}` : "no number"}</span>
+                  <span className={e.kind === "chain" ? "text-amber-200" : "text-red-200"}>{KIND_LABEL[e.kind]}</span>
+                  <span>{e.reason}{e.out_of_order && ", dated out of order"}</span>
+                  <button type="button" onClick={() => onShow(e)} className="text-indigo-200 underline hover:text-indigo-100">
+                    Show in table<span className="sr-only"> entry {e.seq ? `#${e.seq}` : e.id}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {shownTotal > entries.length && <p className="mt-1">…and {shownTotal - entries.length} more.</p>}
+          </>
         )}
         <p className="mt-2">
-          Entries may have been altered or deleted by someone with write access to the database. The affected entries
-          are marked Invalid below and in every page of the log; the API logs this too.
+          {own
+            ? "Entries recorded under other keys are not visible to you, which is why the numbers above can exceed what the table shows. "
+            : ""}
+          Entries may have been altered or deleted by someone with write access to the database. Affected entries are marked
+          Invalid in the table and on every page of the log; open a row for the full reason. The API logs this too.
         </p>
       </Notice>
+    );
+  }
+  if (integrity.status === "ok" && isMaster !== true) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-emerald-300" role="status">
+        <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+        Log integrity check passed. You only see your own entries here; the check covers the whole log, which only the master key can inspect
+        {" · "}checked <Time value={integrity.checked_at} />
+      </p>
     );
   }
   if (integrity.status === "ok") {
@@ -189,7 +288,11 @@ function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
+type SortOrder = "time" | "seq";
+type Focus = { seq?: number; id?: string; label: string };
+
 export default function AuditPage() {
+  const { isMaster } = useApiKey();
   const toast = useToast();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -203,6 +306,8 @@ export default function AuditPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [integrity, setIntegrity] = useState<AuditIntegrity | null>(null);
+  const [sort, setSort] = useState<SortOrder>("time");
+  const [focus, setFocus] = useState<Focus | null>(null);
 
   const loadIntegrity = useCallback((refresh: boolean) => {
     api.audit
@@ -228,8 +333,11 @@ export default function AuditPage() {
       action: nsFilter === "all" ? undefined : `${nsFilter}.`,
       from: apiFrom,
       to: apiTo,
+      sort,
+      seq: focus?.seq,
+      id: focus?.seq ? undefined : focus?.id,
     }),
-    [nsFilter, apiFrom, apiTo]
+    [nsFilter, apiFrom, apiTo, sort, focus]
   );
 
   const load = useCallback(() => {
@@ -292,7 +400,17 @@ export default function AuditPage() {
     }
   };
 
-  const hasFilters = nsFilter !== "all" || from !== "" || to !== "";
+  const showEntry = (e: AuditIntegrityEntry) => {
+    setNsFilter("all");
+    setFrom("");
+    setTo("");
+    setSearch("");
+    setFocus(e.seq ? { seq: e.seq, label: `entry #${e.seq}` } : { id: e.id, label: "one entry" });
+    setExpanded(new Set([e.id]));
+    document.getElementById("audit-table")?.scrollIntoView?.({ block: "start" });
+  };
+
+  const hasFilters = nsFilter !== "all" || from !== "" || to !== "" || focus !== null;
   const firstShown = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const lastShown = (page - 1) * PAGE_SIZE + logs.length;
 
@@ -307,7 +425,7 @@ export default function AuditPage() {
           <button
             onClick={() => exportAll("csv")}
             disabled={exporting || total === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <Download className="w-3.5 h-3.5" aria-hidden="true" />
             {exporting ? "Exporting…" : "Export CSV"}
@@ -315,7 +433,7 @@ export default function AuditPage() {
           <button
             onClick={() => exportAll("json")}
             disabled={exporting || total === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <Download className="w-3.5 h-3.5" aria-hidden="true" />
             Export JSON
@@ -326,7 +444,7 @@ export default function AuditPage() {
               loadIntegrity(true);
             }}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
             Refresh
@@ -336,7 +454,7 @@ export default function AuditPage() {
 
       {error && <Notice tone="error" title="Could not load the audit log">{error}</Notice>}
 
-      {integrity && <IntegrityBanner integrity={integrity} />}
+      {integrity && <IntegrityBanner integrity={integrity} isMaster={isMaster} onShow={showEntry} />}
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -377,11 +495,11 @@ export default function AuditPage() {
                 key={ns}
                 onClick={() => setNsFilter(ns)}
                 aria-pressed={active}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors capitalize ${
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                   active ? NS_FILTER_ACTIVE[ns] : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100"
                 }`}
               >
-                {ns}
+                {NS_LABEL[ns]}
               </button>
             );
           })}
@@ -391,11 +509,39 @@ export default function AuditPage() {
                 setNsFilter("all");
                 setFrom("");
                 setTo("");
+                setFocus(null);
               }}
               className="ml-2 text-xs text-indigo-200 hover:underline"
             >
               Clear filters
             </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-xs text-slate-200">
+          <div role="group" aria-label="Sort order" className="flex items-center gap-1.5">
+            <span>Order:</span>
+            {([["time", "Newest first"], ["seq", "Chain order (#)"]] as [SortOrder, string][]).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setSort(v)}
+                aria-pressed={sort === v}
+                title={v === "seq" ? "Order by chain number, so an entry with a changed time stays between its neighbours" : undefined}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                  sort === v ? "bg-slate-600 text-slate-100" : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {focus && (
+            <span role="status" className="inline-flex items-center gap-2 rounded bg-indigo-900/40 border border-indigo-800/50 px-2.5 py-1 text-indigo-100">
+              Showing only {focus.label}
+              <button type="button" onClick={() => setFocus(null)} className="underline hover:text-white">
+                Show all
+              </button>
+            </span>
           )}
         </div>
       </div>
@@ -417,7 +563,7 @@ export default function AuditPage() {
         </p>
       )}
 
-      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
+      <div id="audit-table" className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-slate-300 text-sm" role="status">Loading…</div>
         ) : filtered.length === 0 ? (
@@ -431,6 +577,10 @@ export default function AuditPage() {
                 <th scope="col" className="w-8 px-3 py-3">
                   <span className="sr-only">Details</span>
                 </th>
+                <th scope="col" className="px-3 py-3 text-left font-medium" title="Position in the hash chain">
+                  <span aria-hidden="true">#</span>
+                  <span className="sr-only">Chain number</span>
+                </th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">When</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
@@ -443,10 +593,10 @@ export default function AuditPage() {
             <tbody>
               {filtered.map((l) => {
                 const open = expanded.has(l.id);
-                const hasDetail = Object.keys(l.metadata).length > 0 || !!l.run_id;
+                const hasDetail = Object.keys(l.metadata).length > 0 || !!l.run_id || l.sig_status === "invalid" || !!l.out_of_order;
                 return (
                   <Fragment key={l.id}>
-                    <tr className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 ${l.sig_status === "invalid" ? "bg-red-950/20" : ""}`}>
+                    <tr className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 ${l.sig_status === "invalid" ? (l.sig_kind === "chain" ? "bg-amber-950/20" : "bg-red-950/20") : ""}`}>
                       <td className="px-3 py-2.5 text-slate-300">
                         {hasDetail && (
                           <button
@@ -460,8 +610,16 @@ export default function AuditPage() {
                           </button>
                         )}
                       </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-200 font-mono align-top">
+                        {l.seq ?? <span className="text-slate-300" title="Written before chaining began">—</span>}
+                      </td>
                       <td className="px-4 py-2.5 text-xs text-slate-200 whitespace-nowrap">
                         <Time value={l.timestamp} />
+                        {l.out_of_order && (
+                          <div>
+                            <OutOfOrderChip prevSeq={l.seq ? l.seq - 1 : undefined} />
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-[120px]" title={l.actor}>
                         {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
@@ -486,8 +644,38 @@ export default function AuditPage() {
                     {open && (
                       <tr className="bg-slate-900/40 border-t border-slate-800/30">
                         <td />
-                        <td colSpan={5} className="px-4 py-3 text-xs">
+                        <td colSpan={6} className="px-4 py-3 text-xs">
                           <div className="space-y-2">
+                            {(l.sig_status === "invalid" || l.out_of_order) && (
+                              <div
+                                className={`rounded border px-3 py-2 ${
+                                  l.sig_kind === "chain" ? "border-amber-900/60 bg-amber-950/20" : "border-red-900/60 bg-red-950/20"
+                                }`}
+                              >
+                                <p className={`font-medium ${l.sig_kind === "chain" ? "text-amber-200" : "text-red-200"}`}>
+                                  {l.sig_status !== "invalid"
+                                    ? "Dated out of order"
+                                    : l.sig_kind === "chain"
+                                      ? "Affected: the chain breaks here"
+                                      : "Altered: failed verification"}
+                                  {l.sig_reason && <span className="font-normal"> ({l.sig_reason})</span>}
+                                </p>
+                                <p className="mt-1 text-slate-100">{l.sig_detail || "The signature of this entry does not verify."}</p>
+                                <p className="mt-1 text-slate-200">
+                                  Entry ID <span className="font-mono">{l.id}</span>
+                                  {l.seq ? <> · chain number <span className="font-mono">#{l.seq}</span></> : null}
+                                </p>
+                                {isMaster && l.seq && l.seq > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setFocus({ seq: l.seq! - 1, label: `entry #${l.seq! - 1}` })}
+                                    className="mt-1 text-indigo-200 underline hover:text-indigo-100"
+                                  >
+                                    Show entry #{l.seq - 1} before it
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             {l.run_id && (
                               <p className="text-slate-300">
                                 run: <span className="font-mono text-slate-200">{l.run_id}</span>
@@ -515,14 +703,14 @@ export default function AuditPage() {
             <button
               onClick={() => setPage(page - 1)}
               disabled={page <= 1 || loading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Newer
             </button>
             <button
               onClick={() => setPage(page + 1)}
               disabled={page >= pageCount || loading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               Older <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>

@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.4] — 2026-10-16
+
+**Upgrade notes:** no migrations. After upgrading, existing sessions are billed from their start on the first accrual pass, so Costs fills in retroactively. New audit signatures start with `v2:` (older entries still verify). The dashboard needs the matching API (`GET /api/v1/whoami`). Python SDK `vaultrun-sdk` 0.4.4 is published to PyPI with this release (no code changes).
+
 ### Fixed
 - **Costs are recorded.** `RecordMetric` had no caller, so every session showed 0 whatever it ran. The API now bills sessions every minute for the CPU core-hours and memory GB-hours they had allocated (a running session in blocks of at least five minutes, a stopped one for its remainder, never across a month boundary). After upgrading, sessions that still exist are billed from their start. Storage, network and GPU are not metered yet. Costs are stored to four decimals, so a very short session reads `0.0000` while its core-hours are kept. Metrics are now rounded to the stored precision before they are signed, so they verify after a round trip, and the monthly breakdown assigns a metric to the month it started in (a block ending exactly at midnight on the 1st used to fall in no month).
 - **A tampered audit entry no longer looks like an unsigned one.** Entries now carry `sig_status`: `valid`; `invalid` (changed, or its signature removed, after verifiable signing began); `unsigned` / `unverifiable` (written before that point, for example by v0.4.0 and earlier, which is expected). New signatures start with `v2:`, which marks that point; v0.4.1 to v0.4.3 entries still verify. `sig_valid` stays and is `true` only for `valid`. The dashboard shows the three states differently.

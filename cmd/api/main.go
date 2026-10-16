@@ -36,11 +36,16 @@ import (
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
 	"github.com/nickvd7/vaultrun/internal/templates"
+	"github.com/nickvd7/vaultrun/internal/version"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version") {
+		fmt.Println("vaultrun-api", version.String())
+		return
+	}
 	_ = godotenv.Load() // load .env if present; ignore missing file
 
 	cfg, err := config.Load()
@@ -62,6 +67,7 @@ func main() {
 		logLevel = slog.LevelInfo
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
+	slog.Info("vaultrun api starting", "version", version.Version(), "revision", version.Revision())
 
 	// Startup pre-flight checks — fail fast so operators see problems immediately
 	// rather than discovering them at runtime on the first real request.
@@ -347,6 +353,7 @@ func main() {
 	defer cleanupCancel()
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, al, ws, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
+	go costTracker.StartAccrual(cleanupCtx, time.Minute)
 
 	// SIEM audit export — optional; only active when AUDIT_EXPORT_URL is set.
 	if siemExp := siemexport.New(db); siemExp != nil {

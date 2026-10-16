@@ -3,6 +3,8 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +74,7 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 
 	plaintext, key, err := authpkg.GenerateKey(req.Name, expiresAt)
 	if err != nil {
+		slog.Error("key generation failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "key generation failed"})
 		return
 	}
@@ -85,6 +88,7 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "api key name already exists"})
 			return
 		}
+		slog.Error("failed to persist key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist key"})
 		return
 	}
@@ -151,6 +155,7 @@ func (kh *KeyHandler) SetSecrets(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to update key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update key"})
 		return
 	}
@@ -183,10 +188,45 @@ func normalizeSecretNames(in []string) []string {
 	return out
 }
 
+// purge deletes an already revoked key (DELETE /keys/:id?purge=true).
+func (kh *KeyHandler) purge(c *gin.Context, id uuid.UUID) {
+	err := dbpkg.PurgeAPIKey(c.Request.Context(), kh.h.db, id)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
+		return
+	case errors.Is(err, dbpkg.ErrKeyStillActive):
+		c.JSON(http.StatusConflict, gin.H{"error": "key is still active; revoke it before deleting it"})
+		return
+	case err != nil:
+		slog.Error("failed to delete key", "err", err, "key_id", id)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete key"})
+		return
+	}
+
+	kh.h.audit.Log(c.Request.Context(), audit.Event{
+		Actor:    middleware.Actor(c),
+		Action:   models.ActionAPIKeyDeleted,
+		Metadata: models.JSONB{"key_id": id.String()},
+	})
+	c.Status(http.StatusNoContent)
+}
+
+// GET /api/v1/whoami
+// Tells a caller what its own key may do, so a client can adapt its UI without
+// probing endpoints that answer 403.
+func (kh *KeyHandler) Whoami(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"actor":  middleware.ActorName(c),
+		"master": middleware.Actor(c) == "master",
+	})
+}
+
 // GET /api/v1/keys
 func (kh *KeyHandler) List(c *gin.Context) {
 	keys, err := dbpkg.ListAPIKeys(c.Request.Context(), kh.h.db)
 	if err != nil {
+		slog.Error("failed to list keys", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list keys"})
 		return
 	}
@@ -202,10 +242,16 @@ func (kh *KeyHandler) Revoke(c *gin.Context) {
 		return
 	}
 
+	if c.Query("purge") == "true" {
+		kh.purge(c, id)
+		return
+	}
+
 	if err := dbpkg.RevokeAPIKey(c.Request.Context(), kh.h.db, id); err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to revoke key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke key"})
 		return
 	}

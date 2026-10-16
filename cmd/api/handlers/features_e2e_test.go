@@ -107,6 +107,8 @@ func featureRouter(t *testing.T, db *sqlx.DB, tweaks ...func(*config.Config)) (*
 	// cross-tenant tests.
 	keysH := handlers.NewKeyHandler(hub)
 	api.POST("/keys", keysH.Create)
+	api.GET("/whoami", keysH.Whoami)
+	api.DELETE("/keys/:id", middleware.RequireMasterKey(), keysH.Revoke)
 
 	stubWS := &stubWorkspace{}
 	replayMgr := replay.New(db, stubWS, []byte(testHMACKey))

@@ -128,6 +128,7 @@ func (h *TemplateHandler) GetTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
@@ -153,6 +154,7 @@ func (h *TemplateHandler) GetTemplateBySlug(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
@@ -177,6 +179,7 @@ func (h *TemplateHandler) CreateTemplate(c *gin.Context) {
 	actor := middleware.Actor(c)
 	orgID, err := h.callerOrg(c, actor)
 	if err != nil {
+		slog.Error("failed to get organization", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get organization"})
 		return
 	}
@@ -234,6 +237,7 @@ func (h *TemplateHandler) UpdateTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
@@ -287,6 +291,7 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
@@ -301,6 +306,7 @@ func (h *TemplateHandler) DeleteTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to delete template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
 		return
 	}
@@ -348,6 +354,7 @@ func (h *TemplateHandler) enforceSessionPolicy(c *gin.Context, actor string, tmp
 	if limits.MaxSessionsPerActor > 0 && actor != "master" {
 		count, cerr := dbpkg.CountActiveSessionsByActor(c.Request.Context(), h.hub.db, actor)
 		if cerr != nil {
+			slog.Error("failed to count sessions", "err", cerr, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
 			return cerr
 		}
@@ -380,6 +387,7 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get template", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
 		return
 	}
@@ -399,6 +407,7 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 
 	orgID, err := h.callerOrg(c, actor)
 	if err != nil {
+		slog.Error("failed to get organization", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get organization"})
 		return
 	}
@@ -418,6 +427,7 @@ func (h *TemplateHandler) CreateSessionFromTemplate(c *gin.Context) {
 	sessionID := uuid.New()
 	wspath, err := h.hub.ws.Create(sessionID)
 	if err != nil {
+		slog.Error("workspace creation failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace creation failed"})
 		return
 	}

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -367,6 +368,31 @@ func RevokeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+// ErrKeyStillActive is returned by PurgeAPIKey for a key that has not been
+// revoked.
+var ErrKeyStillActive = errors.New("api key is still active")
+
+// PurgeAPIKey deletes a revoked key's row (freeing its name for reuse). Active
+// keys are refused: revoking first keeps deletion from being a one-step way to
+// lose a key that is still in use.
+func PurgeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = $1 AND active = FALSE`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	var exists bool
+	if err := db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM api_keys WHERE id = $1)`, id); err != nil {
+		return err
+	}
+	if exists {
+		return ErrKeyStillActive
+	}
+	return sql.ErrNoRows
 }
 
 // ListActiveSessions returns sessions that are still running (for cleanup jobs).
@@ -834,4 +860,20 @@ func DeleteArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, err
 		return "", sql.ErrNoRows
 	}
 	return artifactPath, err
+}
+
+// FirstPrefixedAuditTime returns the timestamp of the earliest audit entry whose
+// signature starts with prefix, or nil when there is none.
+func FirstPrefixedAuditTime(ctx context.Context, db *sqlx.DB, prefix string) (*time.Time, error) {
+	var ts time.Time
+	err := db.GetContext(ctx, &ts,
+		`SELECT timestamp FROM audit_logs WHERE left(sig, $2::int) = $1 ORDER BY timestamp ASC LIMIT 1`,
+		prefix, len(prefix))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &ts, nil
 }

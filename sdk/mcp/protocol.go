@@ -6,6 +6,8 @@ package main
 
 import (
 	"encoding/json"
+
+	"github.com/nickvd7/vaultrun/internal/version"
 )
 
 // ---------------------------------------------------------------------------
@@ -45,9 +47,11 @@ const (
 	protocolVersionCurrent = "2026-07-28"
 	protocolVersionLegacy  = "2024-11-05"
 
-	mcpServerName    = "vaultrun-mcp"
-	mcpServerVersion = "0.1.0"
+	mcpServerName = "vaultrun-mcp"
 )
+
+// mcpServerVersion is the VaultRun release the MCP server was built from.
+var mcpServerVersion = version.Version()
 
 func supportedProtocolVersions() []string {
 	return []string{protocolVersionCurrent, protocolVersionLegacy}

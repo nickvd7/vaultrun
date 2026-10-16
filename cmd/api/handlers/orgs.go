@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -84,6 +85,7 @@ func (oh *OrgHandler) Create(c *gin.Context) {
 		UpdatedAt: now,
 	}
 	if err := dbpkg.CreateOrg(c.Request.Context(), oh.h.db, org); err != nil {
+		slog.Error("failed to create org", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create org"})
 		return
 	}
@@ -105,6 +107,7 @@ func (oh *OrgHandler) List(c *gin.Context) {
 	pg := pagination(c)
 	orgs, err := dbpkg.ListOrgs(c.Request.Context(), oh.h.db, pg.limit, pg.offset)
 	if err != nil {
+		slog.Error("failed to list orgs", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
 		return
 	}
@@ -119,6 +122,7 @@ func (oh *OrgHandler) ListMine(c *gin.Context) {
 	if actor == "master" {
 		orgs, err := dbpkg.ListOrgs(c.Request.Context(), oh.h.db, 200, 0)
 		if err != nil {
+			slog.Error("failed to list orgs", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
 			return
 		}
@@ -131,6 +135,7 @@ func (oh *OrgHandler) ListMine(c *gin.Context) {
 	}
 	orgs, err := dbpkg.ListOrgsForActor(c.Request.Context(), oh.h.db, actor)
 	if err != nil {
+		slog.Error("failed to list orgs", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list orgs"})
 		return
 	}
@@ -160,6 +165,7 @@ func (oh *OrgHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "org not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to delete org", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete org"})
 		return
 	}
@@ -223,6 +229,7 @@ func (oh *OrgHandler) AddMember(c *gin.Context) {
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := dbpkg.AddOrgMember(c.Request.Context(), oh.h.db, member); err != nil {
+		slog.Error("failed to add member", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
@@ -252,6 +259,7 @@ func (oh *OrgHandler) ListMembers(c *gin.Context) {
 
 	members, err := dbpkg.ListOrgMembers(c.Request.Context(), oh.h.db, orgID)
 	if err != nil {
+		slog.Error("failed to list members", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list members"})
 		return
 	}
@@ -278,6 +286,7 @@ func (oh *OrgHandler) RemoveMember(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to remove member", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
 		return
 	}
@@ -307,6 +316,7 @@ func (oh *OrgHandler) ListSessions(c *gin.Context) {
 	pg := pagination(c)
 	sessions, err := dbpkg.ListOrgSessions(c.Request.Context(), oh.h.db, orgID, pg.limit, pg.offset)
 	if err != nil {
+		slog.Error("failed to list org sessions", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list org sessions"})
 		return
 	}
@@ -326,6 +336,7 @@ func (oh *OrgHandler) requireOrgAccess(c *gin.Context, orgID uuid.UUID, minRole 
 		return nil, false
 	}
 	if err != nil {
+		slog.Error("failed to get org", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get org"})
 		return nil, false
 	}

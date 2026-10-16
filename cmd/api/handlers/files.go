@@ -86,6 +86,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 
 	f, err := fileHeader.Open()
 	if err != nil {
+		slog.Error("failed to open upload", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to open upload"})
 		return
 	}
@@ -117,6 +118,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 		UpdatedAt:   now,
 	}
 	if err := dbpkg.UpsertFile(c.Request.Context(), fh.h.db, fileMeta); err != nil {
+		slog.Error("failed to persist file metadata", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist file metadata"})
 		return
 	}
@@ -151,6 +153,7 @@ func (fh *FileHandler) List(c *gin.Context) {
 
 	files, err := dbpkg.ListFiles(c.Request.Context(), fh.h.db, sessionID)
 	if err != nil {
+		slog.Error("failed to list files", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list files"})
 		return
 	}
@@ -240,6 +243,7 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to delete file", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete file"})
 		return
 	}

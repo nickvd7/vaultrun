@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **The audit warning names the entries and splits the count.** The banner lists each failed entry by chain number (`#41 Altered: signature was removed`) with a "Show in table" button, and separates *altered* entries from *affected* ones (intact, but they follow a changed or deleted entry), instead of one "5 entries". The table has a `#` column, affected rows are amber and altered rows red, and opening a row explains the reason in full and gives the entry ID.
+- **Out-of-order entries are marked.** An entry dated earlier than the one before it in the chain shows an "Out of order" marker, and "Chain order (#)" lists the log by chain number so a back-dated entry stays between its neighbours. API: `GET /audit?sort=seq`, `?seq=` and `?id=`; entries gain `sig_kind`, `sig_detail` and `out_of_order`.
+- **For a key other than the master key the banner is scoped.** It says how many failed entries were recorded under your key (listed, and marked Invalid in the table) and how many belong to other keys (counted only), and that deleted entries cannot be attributed to a key. `GET /audit/integrity` gains `scope`, `altered_entries`, `affected_entries`, `own_invalid_entries`, `other_invalid_entries` and `entries`.
+- The entry directly after a deleted entry now counts as *affected* in `GET /audit/integrity`, as the table already showed.
+
 ### Fixed
 - **An expired or revoked saved API key sends you back to the sign-in form** (with a note saying why) instead of showing "Signed in" and an error. Any `401` from the API does this, not only the first check.
 - **Audit banner for a regular key** no longer claims "Whole log verified" next to a partial log: it says the integrity check passed, that you only see your own entries, and omits the whole-log counts.

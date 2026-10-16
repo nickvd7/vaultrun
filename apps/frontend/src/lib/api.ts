@@ -61,6 +61,12 @@ export interface AuditQuery {
   from?: string;
   /** YYYY-MM-DD, exclusive */
   to?: string;
+  /** Only the entry with this chain number. */
+  seq?: number;
+  /** Only the entry with this ID. */
+  id?: string;
+  /** "seq" lists in chain order instead of by time. */
+  sort?: "time" | "seq";
   page?: number;
   limit?: number;
 }
@@ -188,6 +194,9 @@ export const api = {
       if (params.action) qs.set("action", params.action);
       if (params.from) qs.set("from", params.from);
       if (params.to) qs.set("to", params.to);
+      if (params.seq) qs.set("seq", String(params.seq));
+      if (params.id) qs.set("id", params.id);
+      if (params.sort === "seq") qs.set("sort", "seq");
       qs.set("page", String(params.page ?? 1));
       qs.set("limit", String(params.limit ?? 50));
       return request<{ audit_logs: AuditLog[]; pagination: Pagination }>(`/audit?${qs}`).then((r) => ({

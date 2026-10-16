@@ -128,6 +128,9 @@ func TestAuditChainDetectsDeletedEntries(t *testing.T) {
 		if e := chainEntries(t, al)["test.event4"]; e.SigStatus != models.AuditSigInvalid {
 			t.Fatalf("successor of deleted entry: %q", e.SigStatus)
 		}
+		if res.AffectedEntries != 1 || len(res.Entries) != 1 || res.Entries[0].Reason != audit.ReasonPrevMissing || *res.Entries[0].Seq != 4 {
+			t.Fatalf("the entry after the hole should be listed as affected: %+v", res.Entries)
+		}
 	})
 	t.Run("newest", func(t *testing.T) {
 		al := chainLogger(t, 5)
@@ -203,5 +206,80 @@ func TestAuditEntriesBeforeChainingStayLegacy(t *testing.T) {
 	got := chainEntries(t, al)
 	if got["test.old"].SigStatus != models.AuditSigUnsigned || got["test.new"].SigStatus != models.AuditSigValid {
 		t.Fatalf("old=%q new=%q", got["test.old"].SigStatus, got["test.new"].SigStatus)
+	}
+}
+
+func TestAuditIntegrityTellsAlteredFromAffectedEntries(t *testing.T) {
+	al := chainLogger(t, 8)
+	testDB.MustExec(`UPDATE audit_logs SET action = 'test.forged', sig = '' WHERE action = 'test.event3'`)
+	testDB.MustExec(`UPDATE audit_logs SET timestamp = timestamp - interval '30 days' WHERE action = 'test.event6'`)
+	res := integrity(t, al)
+	if res.Status != audit.IntegrityCompromised || res.AlteredEntries != 2 || res.AffectedEntries != 1 || res.InvalidEntries != 3 {
+		t.Fatalf("want 2 altered + 1 affected: %+v", res)
+	}
+	byseq := map[int64]audit.IntegrityEntry{}
+	for _, e := range res.Entries {
+		byseq[*e.Seq] = e
+	}
+	if e := byseq[3]; e.Kind != models.AuditKindAltered || e.Reason != audit.ReasonSigRemoved || e.Detail == "" {
+		t.Fatalf("entry 3: %+v", e)
+	}
+	if e := byseq[4]; e.Kind != models.AuditKindChain || e.Reason != audit.ReasonPrevChanged || !strings.Contains(e.Detail, "(#3)") {
+		t.Fatalf("entry 4: %+v", e)
+	}
+	if e := byseq[6]; e.Kind != models.AuditKindAltered || !e.OutOfOrder || !strings.Contains(e.Detail, "(#5)") {
+		t.Fatalf("entry 6 (backdated): %+v", e)
+	}
+
+	entries := chainEntries(t, al)
+	if e := entries["test.event6"]; !e.OutOfOrder || e.SigKind != models.AuditKindAltered || e.SigDetail == "" {
+		t.Fatalf("backdated entry on the page: %+v", e)
+	}
+	if e := entries["test.event4"]; e.SigKind != models.AuditKindChain || e.OutOfOrder {
+		t.Fatalf("affected entry on the page: %+v", e)
+	}
+	if e := entries["test.event5"]; e.SigStatus != models.AuditSigValid || e.OutOfOrder || e.SigKind != "" {
+		t.Fatalf("untouched entry: %+v", e)
+	}
+
+	// Chain order puts the backdated entry between its neighbours.
+	logs, err := dbpkg.ListAuditLogsFiltered(context.Background(), testDB, dbpkg.AuditFilter{BySeq: true}, 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, l := range logs {
+		if *l.Seq != int64(len(logs)-i) {
+			t.Fatalf("chain order broken at %d: seq %d", i, *l.Seq)
+		}
+	}
+}
+
+func TestAuditIntegrityScopedToOneKey(t *testing.T) {
+	al := chainLogger(t, 4)
+	al.Log(context.Background(), audit.Event{Actor: "bob", Action: "test.bob1"})
+	testDB.MustExec(`UPDATE audit_logs SET action = 'test.forged', sig = '' WHERE action = 'test.event2'`)
+	testDB.MustExec(`UPDATE audit_logs SET action = 'test.forged', sig = '' WHERE action = 'test.bob1'`)
+	res := integrity(t, al)
+	if res.InvalidEntries != 3 {
+		t.Fatalf("want 3 invalid (2 altered + 1 affected): %+v", res)
+	}
+	alice := res.ScopedTo("alice")
+	if alice.Scope != audit.ScopeOwn || *alice.OwnInvalidEntries != 2 || *alice.OtherInvalidEntries != 1 {
+		t.Fatalf("alice: own=%d other=%d", *alice.OwnInvalidEntries, *alice.OtherInvalidEntries)
+	}
+	if len(alice.Entries) != 2 || len(alice.InvalidIDs) != 2 || len(alice.MissingSeqs) != 0 {
+		t.Fatalf("alice should be told about her own two entries only: %+v", alice)
+	}
+	for _, e := range alice.Entries {
+		if *e.Seq == 5 {
+			t.Fatalf("scoped verdict leaks bob's entry: %+v", e)
+		}
+	}
+	if alice.Status != audit.IntegrityCompromised || len(alice.Problems) == 0 {
+		t.Fatalf("scoped verdict lost the status: %+v", alice)
+	}
+	bob := res.ScopedTo("bob")
+	if *bob.OwnInvalidEntries != 1 || *bob.OtherInvalidEntries != 2 {
+		t.Fatalf("bob: own=%d other=%d", *bob.OwnInvalidEntries, *bob.OtherInvalidEntries)
 	}
 }

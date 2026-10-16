@@ -283,21 +283,29 @@ func LastChainedAuditEntry(ctx context.Context, q ExecQuerier) (seq int64, sig s
 	return row.Seq, row.Sig, err
 }
 
-// AuditSigsBySeq returns the signature stored for each requested sequence number.
-func AuditSigsBySeq(ctx context.Context, q ExecQuerier, seqs []int64) (map[int64]string, error) {
-	out := map[int64]string{}
+// AuditPred is what a chained entry needs to know about its predecessor.
+type AuditPred struct {
+	Sig       string
+	Timestamp time.Time
+}
+
+// AuditPredsBySeq returns the signature and timestamp stored for each
+// requested sequence number.
+func AuditPredsBySeq(ctx context.Context, q ExecQuerier, seqs []int64) (map[int64]AuditPred, error) {
+	out := map[int64]AuditPred{}
 	if len(seqs) == 0 {
 		return out, nil
 	}
 	var rows []struct {
-		Seq int64  `db:"seq"`
-		Sig string `db:"sig"`
+		Seq       int64     `db:"seq"`
+		Sig       string    `db:"sig"`
+		Timestamp time.Time `db:"timestamp"`
 	}
-	if err := q.SelectContext(ctx, &rows, `SELECT seq, sig FROM audit_logs WHERE seq = ANY($1)`, pq.Array(seqs)); err != nil {
+	if err := q.SelectContext(ctx, &rows, `SELECT seq, sig, timestamp FROM audit_logs WHERE seq = ANY($1)`, pq.Array(seqs)); err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		out[r.Seq] = r.Sig
+		out[r.Seq] = AuditPred{Sig: r.Sig, Timestamp: r.Timestamp}
 	}
 	return out, nil
 }
@@ -331,6 +339,11 @@ type AuditFilter struct {
 	Actor        string
 	ActionPrefix string
 	From, To     *time.Time // From inclusive, To exclusive
+	// Seq and ID pick out a single entry (the dashboard links to the entries an
+	// integrity warning names). BySeq orders by chain position instead of time.
+	Seq   *int64
+	ID    *uuid.UUID
+	BySeq bool
 }
 
 func (f AuditFilter) where() (string, []interface{}) {
@@ -349,6 +362,12 @@ func (f AuditFilter) where() (string, []interface{}) {
 		esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.ActionPrefix)
 		add(`action LIKE $%d ESCAPE '\'`, esc+"%")
 	}
+	if f.Seq != nil {
+		add("seq = $%d", *f.Seq)
+	}
+	if f.ID != nil {
+		add("id = $%d", *f.ID)
+	}
 	if f.From != nil {
 		add("timestamp >= $%d", *f.From)
 	}
@@ -365,7 +384,11 @@ func ListAuditLogsFiltered(ctx context.Context, db *sqlx.DB, f AuditFilter, limi
 	logs := make([]*models.AuditLog, 0)
 	where, args := f.where()
 	args = append(args, limit, offset)
-	q := fmt.Sprintf(`SELECT * FROM audit_logs%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+	order := "timestamp DESC"
+	if f.BySeq {
+		order = "seq DESC NULLS LAST, timestamp DESC"
+	}
+	q := fmt.Sprintf(`SELECT * FROM audit_logs%s ORDER BY %s LIMIT $%d OFFSET $%d`, where, order, len(args)-1, len(args))
 	err := db.SelectContext(ctx, &logs, q, args...)
 	return logs, err
 }

@@ -253,7 +253,22 @@ type AuditLog struct {
 	// SigReason says why an entry is AuditSigInvalid (changed, signature
 	// removed, previous entry missing or altered).
 	SigReason string `db:"-" json:"sig_reason,omitempty"`
+	// SigKind separates an entry that was itself altered (AuditKindAltered)
+	// from one whose own content is intact but whose predecessor was altered or
+	// deleted (AuditKindChain). Only set when SigStatus is AuditSigInvalid.
+	SigKind string `db:"-" json:"sig_kind,omitempty"`
+	// SigDetail is a full-sentence explanation of SigReason.
+	SigDetail string `db:"-" json:"sig_detail,omitempty"`
+	// OutOfOrder is true when the entry is dated earlier than the entry before
+	// it in the chain, which cannot happen to an untouched log.
+	OutOfOrder bool `db:"-" json:"out_of_order,omitempty"`
 }
+
+// Kinds of invalid entry reported in AuditLog.SigKind.
+const (
+	AuditKindAltered = "altered"
+	AuditKindChain   = "chain"
+)
 
 // Audit signature states reported in AuditLog.SigStatus.
 const (

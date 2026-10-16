@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+**Upgrade notes:** migration 023 runs at API start (adds `seq`/`prev_sig` to `audit_logs` and the `audit_chain` table). Audit entries written before it stay as they are (unchained); new ones are chained as long as `AUDIT_HMAC_KEY` is set. `POST /sessions` with `allowed_hosts` and without `network_enabled: true` now answers `400`, and `command` containing whitespace (a whole command line) answers `400`: put the arguments in `args`.
+
+### Security
+- **The audit log is hash-chained.** Each entry gets a sequence number and carries the previous entry's signature, both under its own HMAC, and a signed head row (`audit_chain`) records the newest entry, how far retention has pruned and when chaining began. v0.4.4 flagged an edited entry but not one whose signature was cleared and whose timestamp was moved back, and deleted entries left no trace. Now all three tampering styles from the v0.4.4 test, deleted entries in the middle and removal of the newest entries are reported (`sig_status: invalid` with a `sig_reason`, plus holes in `missing_seqs`). Retention prunes the oldest entries as a prefix and records it, so a pruned log still verifies. Still evidence, not proof: whoever holds `AUDIT_HMAC_KEY` can rewrite the chain; ship the log off-box (`AUDIT_EXPORT_URL`) for more.
+- **`GET /api/v1/audit/integrity` verifies the whole log**, and the API repeats that every five minutes and logs `audit: LOG INTEGRITY COMPROMISED` while it fails. The dashboard's Audit page shows the verdict above the table on every page; before, the warning only appeared on the page that held the bad entry.
+
+### Fixed
+- **`allowed_hosts` without `network_enabled: true` is rejected (`400`)** instead of being ignored silently. The Python and Go SDKs refuse it too (Python raises `ValueError`).
+- **A command line passed as `command` is rejected (`400`)** with a hint to use `args` (or `sh -c`), instead of returning `200` with exit code 126 from inside the sandbox.
+- **`scripts/check-env.sh` (run by `make up`) lists what makes the API refuse to start in production mode** (`VAULTRUN_INSECURE_DEV` set but not true); it used to print nothing there. `make dev-env` now also switches `VAULTRUN_INSECURE_DEV=false` to `true`.
+- **Costs page:** sessions are listed by name with a short ID (two sessions with the same name looked like one listed twice), link to the session, are marked `ended` when deleted or stopped, amounts under a cent show four decimals instead of `$0.00`, and sessions that cost nothing are no longer listed.
+- **A deleted (or idle-stopped) session's URL shows "Session not found"** instead of the full session page; its events remain in the audit log.
+- **Deleting a session takes about two seconds instead of ten.** The sandbox's `sleep infinity` ignores SIGTERM, so every stop waited out the full ten-second grace period. The delete dialog shows a spinner and "Deleting…" instead of "Working…".
+- Dashboard: small secondary text and status badges are lighter, and the sessions status filter capitalises its options.
+
+### Added
+- **Python and Go SDKs: `allowed_hosts` (create session) and `secrets` (run, run_async, stream); Python `create_key(allowed_secrets=...)`.** `Session` exposes `allowed_hosts`.
+
 ---
 
 ## [0.4.4] — 2026-10-16

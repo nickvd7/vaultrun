@@ -43,7 +43,7 @@ When a session is created with `allowed_hosts` set and `network_enabled: true`:
 3. The chain allows: DNS (UDP/TCP 53), ESTABLISHED/RELATED replies, and IPs resolved from `allowed_hosts` — everything else is **dropped**
 4. On session stop, rules and the Docker network are removed
 
-Sessions without `allowed_hosts` (but with `network_enabled: true`) use the default bridge without iptables filtering. Sessions with `network_enabled: false` have no network at all.
+Sessions without `allowed_hosts` (but with `network_enabled: true`) use the default bridge without iptables filtering. Sessions with `network_enabled: false` have no network at all, and `allowed_hosts` together with `network_enabled: false` is rejected with `400` (before v0.4.5 the list was ignored without a word).
 
 ### Image Signature Verification (cosign)
 
@@ -189,6 +189,8 @@ command.failed     — failure reason
 ```
 
 Audit logs have no update or delete endpoints.
+
+With `AUDIT_HMAC_KEY` set, entries are also signed and **chained**: each carries its sequence number and the previous entry's signature under its own HMAC, and a signed head row records the newest entry. Someone who can write to the database can therefore no longer edit an entry, clear its signature, move its timestamp or delete entries without it showing: `GET /api/v1/audit/integrity` (and the dashboard's Audit page, on every page) reports the whole log, and the API checks it every five minutes and logs `audit: LOG INTEGRITY COMPROMISED`. Whoever holds the key can still rewrite the chain, so keep the key out of the database host's reach and ship the log to an external store (`AUDIT_EXPORT_URL`) for stronger guarantees. Details: [configuration.md](configuration.md).
 
 ---
 

@@ -68,16 +68,16 @@ export function statusColor(status: string): string {
   switch (status) {
     case "running":
     case "completed":
-      return "text-green-400";
+      return "text-green-300";
     case "created":
-      return "text-blue-400";
+      return "text-blue-300";
     case "failed":
     case "error":
-      return "text-red-400";
+      return "text-red-300";
     case "timeout":
-      return "text-yellow-400";
+      return "text-yellow-300";
     case "stopped":
-      return "text-gray-400";
+      return "text-gray-300";
     default:
       return "text-gray-300";
   }
@@ -86,18 +86,18 @@ export function statusColor(status: string): string {
 export function statusBadgeClass(status: string): string {
   switch (status) {
     case "running":
-      return "bg-green-900/40 text-green-400 border border-green-800";
+      return "bg-green-900/40 text-green-300 border border-green-800";
     case "completed":
-      return "bg-emerald-900/40 text-emerald-400 border border-emerald-800";
+      return "bg-emerald-900/40 text-emerald-300 border border-emerald-800";
     case "created":
-      return "bg-blue-900/40 text-blue-400 border border-blue-800";
+      return "bg-blue-900/40 text-blue-300 border border-blue-800";
     case "failed":
     case "error":
-      return "bg-red-900/40 text-red-400 border border-red-800";
+      return "bg-red-900/40 text-red-300 border border-red-800";
     case "timeout":
-      return "bg-yellow-900/40 text-yellow-400 border border-yellow-800";
+      return "bg-yellow-900/40 text-yellow-300 border border-yellow-800";
     case "stopped":
-      return "bg-gray-900/40 text-gray-400 border border-gray-700";
+      return "bg-gray-900/40 text-gray-300 border border-gray-700";
     default:
       return "bg-gray-800 text-gray-300 border border-gray-700";
   }

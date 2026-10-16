@@ -105,14 +105,14 @@ export default function ArtifactsPage() {
             <p className="text-slate-300 text-sm">
               {filter ? "No artifacts match your filter." : "No shared artifacts yet."}
             </p>
-            <p className="text-slate-300 text-xs">
+            <p className="text-slate-200 text-xs">
               Use <code className="font-mono">create_artifact</code> in the MCP server or the API to promote workspace files.
             </p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Type</th>
                 <th className="px-4 py-3 text-left">Size</th>
@@ -125,10 +125,10 @@ export default function ArtifactsPage() {
               {filtered.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-800/20 transition-colors">
                   <td className="px-4 py-3 text-slate-200 text-sm font-medium">{a.name}</td>
-                  <td className="px-4 py-3 text-slate-300 text-xs font-mono">{a.content_type || "—"}</td>
-                  <td className="px-4 py-3 text-slate-300 text-xs font-mono">{formatBytes(a.size_bytes)}</td>
-                  <td className="px-4 py-3 text-slate-300 text-xs font-mono">{a.created_by}</td>
-                  <td className="px-4 py-3 text-slate-300 text-xs"><Time value={a.created_at} /></td>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono">{a.content_type || "—"}</td>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono">{formatBytes(a.size_bytes)}</td>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono">{a.created_by}</td>
+                  <td className="px-4 py-3 text-slate-200 text-xs"><Time value={a.created_at} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       <button

@@ -96,11 +96,11 @@ interface SigState {
 }
 
 const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
-  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-400" },
+  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-300" },
   invalid: {
     label: "Invalid",
     title: "Signature does not match, or was removed: this entry may have been altered",
-    className: "text-red-400",
+    className: "text-red-300",
   },
   unsigned: {
     label: "Unsigned",
@@ -115,7 +115,7 @@ const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
   unverified: {
     label: "Unverified",
     title: "Signature does not verify (this API does not say whether the entry predates signing)",
-    className: "text-amber-400",
+    className: "text-amber-300",
   },
 };
 
@@ -348,7 +348,7 @@ export default function AuditPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <div className="flex items-center gap-2 text-xs text-slate-300">
+          <div className="flex items-center gap-2 text-xs text-slate-200">
             <label htmlFor="audit-from">From</label>
             <input
               id="audit-from"
@@ -392,7 +392,7 @@ export default function AuditPage() {
                 setFrom("");
                 setTo("");
               }}
-              className="ml-2 text-xs text-indigo-300 hover:underline"
+              className="ml-2 text-xs text-indigo-200 hover:underline"
             >
               Clear filters
             </button>
@@ -409,7 +409,7 @@ export default function AuditPage() {
       )}
 
       {!loading && !error && (
-        <p className="text-xs text-slate-300" aria-live="polite">
+        <p className="text-xs text-slate-200" aria-live="polite">
           {total === 0
             ? "0 events"
             : `Events ${firstShown}–${lastShown} of ${total}`}
@@ -427,7 +427,7 @@ export default function AuditPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th scope="col" className="w-8 px-3 py-3">
                   <span className="sr-only">Details</span>
                 </th>
@@ -460,10 +460,10 @@ export default function AuditPage() {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300 whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-xs text-slate-200 whitespace-nowrap">
                         <Time value={l.timestamp} />
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300 font-mono truncate max-w-[120px]" title={l.actor}>
+                      <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-[120px]" title={l.actor}>
                         {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
                       </td>
                       <td className="px-4 py-2.5">
@@ -507,7 +507,7 @@ export default function AuditPage() {
       </div>
 
       {total > PAGE_SIZE && (
-        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-300">
+        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-200">
           <span>
             Page {page} of {pageCount}
           </span>

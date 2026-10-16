@@ -291,10 +291,10 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 	res.LegacyEntries = n
 
 	if res.InvalidEntries > 0 {
-		res.Problems = append(res.Problems, fmt.Sprintf("%d %s a signature that does not match, or lack one", res.InvalidEntries, pluralEntries(res.InvalidEntries)))
+		res.Problems = append(res.Problems, fmt.Sprintf("%s a signature that does not match, or lack one", entryCount(res.InvalidEntries, "has", "have")))
 	}
 	if res.MissingEntries > 0 {
-		res.Problems = append(res.Problems, fmt.Sprintf("%d %s missing from the chain", res.MissingEntries, pluralEntries(res.MissingEntries)))
+		res.Problems = append(res.Problems, fmt.Sprintf("%s missing from the chain", entryCount(res.MissingEntries, "is", "are")))
 	}
 	switch {
 	case len(res.Problems) > 0:
@@ -307,11 +307,11 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 	return res, nil
 }
 
-func pluralEntries(n int64) string {
+func entryCount(n int64, one, many string) string {
 	if n == 1 {
-		return "entry has"
+		return fmt.Sprintf("1 entry %s", one)
 	}
-	return "entries have"
+	return fmt.Sprintf("%d entries %s", n, many)
 }
 
 func appendRange(rs []string, from, to int64) []string {

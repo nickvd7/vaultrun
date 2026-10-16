@@ -174,7 +174,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </div>
 
             {error && (
-              <p role="alert" className="text-red-400 text-xs">{error}</p>
+              <p role="alert" className="text-red-300 text-xs">{error}</p>
             )}
 
             <button
@@ -186,7 +186,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <p className="text-center text-xs text-slate-300">
+          <p className="text-center text-xs text-slate-200">
             Generate a key with{" "}
             <code className="font-mono text-slate-300">make bootstrap-key</code>
           </p>

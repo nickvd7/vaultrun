@@ -86,7 +86,7 @@ export default function CostsPage() {
           <p className="text-sm text-slate-300 mt-1">Resource usage and cost tracking</p>
         </div>
         <div className="flex items-center gap-2">
-          <label htmlFor="cost-period" className="text-xs text-slate-300">Period:</label>
+          <label htmlFor="cost-period" className="text-xs text-slate-200">Period:</label>
           <input
             id="cost-period"
             type="month"
@@ -106,7 +106,7 @@ export default function CostsPage() {
             <div className="text-3xl font-bold text-slate-100">{formatCost(breakdown.total_cost)}</div>
           </div>
         </div>
-        <div className="text-xs text-slate-300 mt-2">{breakdown.period}</div>
+        <div className="text-xs text-slate-200 mt-2">{breakdown.period}</div>
       </div>
 
       {/* Cost Breakdown */}
@@ -178,7 +178,7 @@ export default function CostsPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-6 py-3 text-left">Session</th>
                 <th className="px-6 py-3 text-left">Compute</th>
                 <th className="px-6 py-3 text-left">Storage</th>
@@ -213,9 +213,9 @@ export default function CostsPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.compute_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.storage_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.network_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.compute_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.storage_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.network_cost)}</td>
                   <td className="px-6 py-3 font-mono text-xs text-slate-200 font-medium">
                     {formatCost(s.total_cost)}
                   </td>
@@ -243,20 +243,20 @@ export default function CostsPage() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(alert.severity)}`}>
                         {alert.severity}
                       </span>
-                      <span className="text-xs text-slate-300">{alert.alert_type}</span>
+                      <span className="text-xs text-slate-200">{alert.alert_type}</span>
                     </div>
                     <div className="text-sm text-slate-200 font-medium mb-1">{alert.title}</div>
-                    <div className="text-xs text-slate-300">{alert.description}</div>
+                    <div className="text-xs text-slate-200">{alert.description}</div>
                     {alert.potential_savings && (
-                      <div className="text-xs text-emerald-400 mt-1">
+                      <div className="text-xs text-emerald-300 mt-1">
                         💰 Potential savings: {formatCost(alert.potential_savings)}/month
                       </div>
                     )}
-                    <div className="text-xs text-slate-300 mt-2">{formatDate(alert.created_at)}</div>
+                    <div className="text-xs text-slate-200 mt-2">{formatDate(alert.created_at)}</div>
                   </div>
                   <button
                     onClick={() => handleResolveAlert(alert.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 border border-emerald-900/50 rounded hover:bg-emerald-900/20"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20"
                   >
                     <CheckCircle className="w-3 h-3" /> Resolve
                   </button>

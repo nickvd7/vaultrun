@@ -131,10 +131,10 @@ export default function SnapshotsPage() {
         }}
         className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3"
       >
-        <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide">New snapshot</h2>
+        <h2 className="text-xs font-medium text-slate-200 uppercase tracking-wide">New snapshot</h2>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
-            <label htmlFor="snap-session" className="block text-xs text-slate-300 mb-1">Session</label>
+            <label htmlFor="snap-session" className="block text-xs text-slate-200 mb-1">Session</label>
             <select
               id="snap-session"
               value={selectedId}
@@ -151,7 +151,7 @@ export default function SnapshotsPage() {
             </select>
           </div>
           <div className="flex-1">
-            <label htmlFor="snap-name" className="block text-xs text-slate-300 mb-1">Snapshot name</label>
+            <label htmlFor="snap-name" className="block text-xs text-slate-200 mb-1">Snapshot name</label>
             <input
               id="snap-name"
               value={newName}
@@ -179,12 +179,12 @@ export default function SnapshotsPage() {
           <div className="p-10 text-center space-y-2">
             <Archive className="w-8 h-8 text-slate-300 mx-auto" aria-hidden="true" />
             <p className="text-slate-300 text-sm">No snapshots yet.</p>
-            <p className="text-slate-300 text-xs">Pick a running session above and give the snapshot a name.</p>
+            <p className="text-slate-200 text-xs">Pick a running session above and give the snapshot a name.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Session</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Size</th>
@@ -204,11 +204,11 @@ export default function SnapshotsPage() {
                       {sessionLabel(snap.session_id)}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-300 text-xs font-mono">{formatBytes(snap.size_bytes)}</td>
-                  <td className="px-4 py-3 text-slate-300 text-xs font-mono" title={snap.created_by}>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono">{formatBytes(snap.size_bytes)}</td>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono" title={snap.created_by}>
                     {snap.created_by.length > 16 ? snap.created_by.slice(0, 16) + "…" : snap.created_by}
                   </td>
-                  <td className="px-4 py-3 text-slate-300 text-xs"><Time value={snap.created_at} /></td>
+                  <td className="px-4 py-3 text-slate-200 text-xs"><Time value={snap.created_at} /></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
                       onClick={() => handleDownload(snap)}

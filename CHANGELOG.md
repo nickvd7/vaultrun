@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **A 500 is always logged.** Failures such as `workspace init failed` (for example a workspaces directory the API cannot write to) were returned to the caller without a line in the API log. About 90 error paths now log their cause, and a middleware logs every 5xx response (method, route, message) as a backstop.
 
 ### Added
+- **Revoked API keys can be deleted:** `DELETE /api/v1/keys/:id?purge=true` removes a key that is already revoked (an active key answers 409), frees its name and is audited as `apikey.deleted`. `GET /api/v1/whoami` tells any key whether it is the master key, so the dashboard no longer probes `/keys` and logs a 403 for ordinary keys.
 - **Version numbers.** `GET /health` returns `version`, the API logs it at start, and `vaultrun-api`, `vaultrun` (CLI), `vaultrun-local` and `vaultrun-mcp` accept `--version`. The MCP server reported a fixed `0.1.0` before. The number comes from `internal/version/VERSION`, which `scripts/check-versions.sh` keeps in step with the other release files.
 
 ---

@@ -322,14 +322,39 @@ paths:
   /api/v1/keys/{id}:
     delete:
       tags: [keys]
-      summary: Revoke an API key
-      description: Master key required.
+      summary: Revoke an API key, or delete a revoked one
+      description: >-
+        Master key required. Without `purge`, revokes the key (idempotent). With
+        `purge=true`, deletes the row of a key that is already revoked, which
+        frees its name; an active key is refused with 409.
       parameters:
         - { $ref: '#/components/parameters/ResourceID' }
+        - name: purge
+          in: query
+          required: false
+          schema: { type: boolean }
       responses:
-        "204": { description: Key revoked }
+        "204": { description: Key revoked, or deleted when purge=true }
         "401": { $ref: '#/components/responses/Unauthorized' }
         "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: purge=true on a key that is still active }
+
+  /api/v1/whoami:
+    get:
+      tags: [keys]
+      summary: Describe the calling key
+      description: Returns the caller's key name and whether it is the master key. Any valid key may call it.
+      responses:
+        "200":
+          description: Caller identity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actor: { type: string }
+                  master: { type: boolean }
+        "401": { $ref: '#/components/responses/Unauthorized' }
 
   # ── Sessions ─────────────────────────────────────────────────────────────────
   /api/v1/sessions:

@@ -37,6 +37,7 @@ const (
 	ActionCommandFailed   = "command.failed"
 	ActionAPIKeyCreated   = "apikey.created"
 	ActionAPIKeyRevoked   = "apikey.revoked"
+	ActionAPIKeyDeleted   = "apikey.deleted"
 	ActionAPIKeySecrets   = "apikey.secrets_updated"
 	ActionSecretDenied    = "secret.denied"
 	ActionFileDeleted     = "file.deleted"

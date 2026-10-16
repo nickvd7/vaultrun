@@ -197,6 +197,7 @@ func newRouter(
 	keysH := handlers.NewKeyHandler(hub)
 	api.POST("/keys", buildMW(masterMWKeys, keysH.Create)...)
 	api.GET("/keys", buildMW(masterMWKeys, keysH.List)...)
+	api.GET("/whoami", buildMW(keysH.Whoami)...)
 	api.DELETE("/keys/:id", buildMW(masterMWKeys, keysH.Revoke)...)
 	api.PUT("/keys/:id/secrets", buildMW(masterMWKeys, keysH.SetSecrets)...)
 

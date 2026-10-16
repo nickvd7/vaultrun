@@ -104,7 +104,7 @@ export default function DashboardPage() {
           ) : sessions.length === 0 ? (
             <div className="p-6 text-center text-slate-300 text-sm">
               No sessions yet.{" "}
-              <Link href="/sessions" className="text-indigo-400 hover:underline">
+              <Link href="/sessions" className="text-indigo-300 underline">
                 Create one
               </Link>
             </div>

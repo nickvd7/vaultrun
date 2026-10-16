@@ -1061,7 +1061,7 @@ function AuditTab({ sessionId }: { sessionId: string }) {
       </div>
       {total > logs.length && (
         <p className="text-xs text-slate-300">
-          Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 hover:underline">Open the audit log</Link> for the full history.
+          Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 underline">Open the audit log</Link> for the full history.
         </p>
       )}
     </div>

@@ -22,12 +22,17 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
-const dateTimeZoneFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-  timeZoneName: "short",
-});
+// dateStyle/timeStyle cannot be combined with timeZoneName, so both formats
+// spell the fields out and differ only by the zone.
+const dateTimeFields: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+};
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, dateTimeFields);
+const dateTimeZoneFormat = new Intl.DateTimeFormat(undefined, { ...dateTimeFields, timeZoneName: "short" });
 
 /**
  * The one absolute date format used across the dashboard, in the viewer's time

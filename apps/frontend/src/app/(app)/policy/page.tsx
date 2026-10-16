@@ -11,7 +11,7 @@ import type { PolicyStatus, PolicyEvalResult } from "@/types";
 type EvalTab = "command" | "file";
 
 export default function PolicyPage() {
-  const { isMaster } = useApiKey();
+  const { isMaster, roleReady } = useApiKey();
   const [loadError, setLoadError] = useState("");
   const [status, setStatus] = useState<PolicyStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,7 @@ export default function PolicyPage() {
   const [evalError, setEvalError] = useState("");
 
   const load = () => {
+    if (!roleReady) return;
     if (isMaster === false) {
       setLoading(false);
       return;
@@ -40,7 +41,7 @@ export default function PolicyPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [isMaster]);
+  useEffect(load, [isMaster, roleReady]);
 
   const handleEval = async () => {
     setEvaluating(true);

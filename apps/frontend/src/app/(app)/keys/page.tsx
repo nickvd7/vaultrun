@@ -42,7 +42,7 @@ function isExpired(expiresAt: string): boolean {
 }
 
 export default function KeysPage() {
-  const { isMaster } = useApiKey();
+  const { isMaster, roleReady } = useApiKey();
   const toast = useToast();
   const [secretsInput, setSecretsInput] = useState("");
   const [revoking, setRevoking] = useState<APIKey | null>(null);
@@ -61,6 +61,7 @@ export default function KeysPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
+    if (!roleReady) return;
     if (isMaster === false) {
       setLoading(false);
       return;
@@ -73,7 +74,7 @@ export default function KeysPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [isMaster]);
+  useEffect(load, [isMaster, roleReady]);
 
   const computeExpiresAt = (): string | undefined => {
     switch (preset) {

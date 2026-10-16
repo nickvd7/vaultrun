@@ -11,6 +11,8 @@ interface ApiKeyContextValue {
   isMaster: boolean | null;
   /** Name of the signed-in key ("master" for the master key); null while unknown. */
   keyName: string | null;
+  /** false until the role check finished (successfully or not); pages that need the role wait for it. */
+  roleReady: boolean;
 }
 
 const ApiKeyContext = createContext<ApiKeyContextValue>({
@@ -19,6 +21,7 @@ const ApiKeyContext = createContext<ApiKeyContextValue>({
   clearApiKey: () => {},
   isMaster: null,
   keyName: null,
+  roleReady: false,
 });
 
 export function useApiKey() {
@@ -35,6 +38,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [testing, setTesting] = useState(false);
   const [isMaster, setIsMaster] = useState<boolean | null>(null);
   const [keyName, setKeyName] = useState<string | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
 
   // Load from localStorage on mount (client-only)
   useEffect(() => {
@@ -46,6 +50,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   // probed through the master-only key list instead (which logs a 403 for
   // ordinary keys in the browser console, the reason /whoami exists).
   useEffect(() => {
+    setRoleReady(false);
     if (!apiKey) {
       setIsMaster(null);
       setKeyName(null);
@@ -74,6 +79,8 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
         setKeyName(null);
       } catch {
         if (!cancelled) setIsMaster(null);
+      } finally {
+        if (!cancelled) setRoleReady(true);
       }
     })();
     return () => {
@@ -189,7 +196,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster, keyName }}>
+    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster, keyName, roleReady }}>
       {children}
     </ApiKeyContext.Provider>
   );

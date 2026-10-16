@@ -68,6 +68,7 @@ func (sh *SnapshotHandler) Create(c *gin.Context) {
 	if err := dbpkg.CreateSnapshot(c.Request.Context(), sh.h.db, snap); err != nil {
 		// Best-effort: remove the archive if DB insert fails.
 		_ = sh.h.ws.DeleteSnapshot(archivePath)
+		slog.Error("persist snapshot failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist snapshot failed"})
 		return
 	}
@@ -98,6 +99,7 @@ func (sh *SnapshotHandler) List(c *gin.Context) {
 
 	snaps, err := dbpkg.ListSnapshots(c.Request.Context(), sh.h.db, sessionID)
 	if err != nil {
+		slog.Error("failed to list snapshots", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list snapshots"})
 		return
 	}
@@ -117,6 +119,7 @@ func (sh *SnapshotHandler) Download(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get snapshot", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get snapshot"})
 		return
 	}
@@ -128,6 +131,7 @@ func (sh *SnapshotHandler) Download(c *gin.Context) {
 
 	snapshotsBase := filepath.Join(sh.h.cfg.Workspace.BaseDir, "snapshots")
 	if !strings.HasPrefix(filepath.Clean(snap.ArchivePath), snapshotsBase+string(os.PathSeparator)) {
+		slog.Error("snapshot path outside snapshots directory", "snapshot_id", snap.ID, "path", snap.ArchivePath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "snapshot path invalid"})
 		return
 	}
@@ -149,6 +153,7 @@ func (sh *SnapshotHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get snapshot", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get snapshot"})
 		return
 	}
@@ -163,6 +168,7 @@ func (sh *SnapshotHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to delete snapshot", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete snapshot"})
 		return
 	}

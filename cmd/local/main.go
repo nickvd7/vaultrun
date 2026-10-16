@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,9 +25,14 @@ import (
 	"time"
 
 	"github.com/nickvd7/vaultrun/internal/localgateway"
+	"github.com/nickvd7/vaultrun/internal/version"
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version") {
+		fmt.Println("vaultrun-local", version.String())
+		return
+	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg, err := localgateway.LoadConfigFromEnv()

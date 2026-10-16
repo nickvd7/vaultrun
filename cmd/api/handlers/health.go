@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/nickvd7/vaultrun/internal/version"
 )
 
 type HealthHandler struct {
@@ -74,7 +76,7 @@ func (hh *HealthHandler) Health(c *gin.Context) {
 		code = http.StatusServiceUnavailable
 	}
 
-	resp := gin.H{"status": status, "checks": checks}
+	resp := gin.H{"status": status, "version": version.Version(), "checks": checks}
 	if hh.h.cfg.MultiRegion.Region != "" {
 		resp["region"] = hh.h.cfg.MultiRegion.Region
 	}

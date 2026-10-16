@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,59 @@ func TestWrongKeyAndUnsigned(t *testing.T) {
 	off := New(nil, "")
 	if off.Enabled() || off.VerifyAuditSig(e) {
 		t.Fatal("signing disabled: nothing verifies")
+	}
+}
+
+func TestSigStatusSeparatesLegacyFromTampered(t *testing.T) {
+	l := New(nil, "k")
+	since := time.Now().UTC().Add(-time.Hour)
+
+	signed := newEntry()
+	signed.Sig = l.sign(signed)
+	if got := l.SigStatus(roundTrip(t, signed), &since); got != models.AuditSigValid {
+		t.Fatalf("intact entry = %q, want valid", got)
+	}
+
+	altered := roundTrip(t, signed)
+	altered.Action = "command.failed"
+	if got := l.SigStatus(altered, &since); got != models.AuditSigInvalid {
+		t.Fatalf("altered entry = %q, want invalid", got)
+	}
+
+	stripped := roundTrip(t, signed)
+	stripped.Sig = ""
+	if got := l.SigStatus(stripped, &since); got != models.AuditSigInvalid {
+		t.Fatalf("entry with its signature removed = %q, want invalid", got)
+	}
+
+	old := newEntry()
+	old.Timestamp = since.Add(-time.Hour)
+	if got := l.SigStatus(old, &since); got != models.AuditSigUnsigned {
+		t.Fatalf("unsigned entry from before signing = %q, want unsigned", got)
+	}
+	old.Sig = "deadbeef"
+	if got := l.SigStatus(old, &since); got != models.AuditSigUnverifiable {
+		t.Fatalf("old-scheme signature from before signing = %q, want unverifiable", got)
+	}
+
+	if got := l.SigStatus(newEntry(), nil); got != models.AuditSigUnsigned {
+		t.Fatalf("nothing verifies yet, no signature = %q, want unsigned", got)
+	}
+	bad := newEntry()
+	bad.Sig = "deadbeef"
+	if got := l.SigStatus(bad, nil); got != models.AuditSigInvalid {
+		t.Fatalf("nothing verifies yet, bad signature = %q, want invalid", got)
+	}
+}
+
+func TestBareHexSignaturesFromV041StillVerify(t *testing.T) {
+	l := New(nil, "k")
+	e := newEntry()
+	e.Sig = strings.TrimPrefix(l.sign(e), SigPrefix)
+	if !l.VerifyAuditSig(roundTrip(t, e)) {
+		t.Fatal("a v0.4.1-v0.4.3 entry (bare hex digest) must keep verifying")
+	}
+	if !strings.HasPrefix(l.sign(e), SigPrefix) {
+		t.Fatal("new signatures carry the marker")
 	}
 }

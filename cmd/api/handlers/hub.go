@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -163,6 +164,7 @@ func (h *Hub) checkSessionAccess(c *gin.Context, sessionID uuid.UUID, minRole st
 		return nil, false
 	}
 	if err != nil {
+		slog.Error("failed to get session", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return nil, false
 	}

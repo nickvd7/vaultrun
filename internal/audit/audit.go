@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,9 +19,21 @@ import (
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
+// SigPrefix marks signatures made since entries became verifiable. Before that
+// (v0.4.0 and earlier) the digest covered nanoseconds the database does not
+// store, so those entries can never verify. The marker lets the API tell "old,
+// expected to fail" from "new, so a failure means tampering" without luck:
+// roughly one legacy entry in a thousand verifies by chance, which makes the
+// first entry that merely verifies a poor boundary. v0.4.1 to v0.4.3 wrote bare
+// hex digests with the same algorithm; they still verify (see VerifyAuditSig).
+const SigPrefix = "v2:"
+
 type Logger struct {
 	db      *sqlx.DB
 	hmacKey []byte
+
+	mu            sync.Mutex
+	verifiedSince *time.Time
 }
 
 // New creates an audit Logger. hmacKey is the raw HMAC-SHA256 signing key
@@ -77,7 +91,7 @@ func (l *Logger) sign(entry *models.AuditLog) string {
 		uuidStr(entry.RunID),
 	)
 	h.Write(canonicalMetadata(entry.Metadata))
-	return hex.EncodeToString(h.Sum(nil))
+	return SigPrefix + hex.EncodeToString(h.Sum(nil))
 }
 
 // canonicalMetadata renders metadata the way it looks after a JSONB round
@@ -115,5 +129,53 @@ func (l *Logger) VerifyAuditSig(entry *models.AuditLog) bool {
 	if len(l.hmacKey) == 0 || entry.Sig == "" {
 		return false
 	}
-	return hmac.Equal([]byte(entry.Sig), []byte(l.sign(entry)))
+	return hmac.Equal([]byte(strings.TrimPrefix(entry.Sig, SigPrefix)), []byte(strings.TrimPrefix(l.sign(entry), SigPrefix)))
+}
+
+// SigStatus classifies an entry read back from the database.
+//
+// verifiedSince is the time of the earliest entry carrying SigPrefix (see
+// VerifiedSince). Entries from before it were written with signing off, or by
+// a version whose signatures could not always be checked, so a missing or
+// non-matching signature there is "unsigned" or "unverifiable", which is
+// expected. From that moment on every entry must verify, so a mismatch, or a
+// missing signature, means the entry was altered or its signature removed and
+// is reported "invalid". Without the second rule, clearing the sig column would
+// turn a tampered entry into an ordinary-looking unsigned one.
+//
+// This is evidence, not proof: someone who can rewrite rows could also move an
+// entry's timestamp back before verifiedSince. Ship the log to a store they
+// cannot write (see the SIEM export) when that matters.
+func (l *Logger) SigStatus(entry *models.AuditLog, verifiedSince *time.Time) string {
+	if entry.Sig != "" && l.VerifyAuditSig(entry) {
+		return models.AuditSigValid
+	}
+	if verifiedSince != nil && entry.Timestamp.Before(*verifiedSince) {
+		if entry.Sig == "" {
+			return models.AuditSigUnsigned
+		}
+		return models.AuditSigUnverifiable
+	}
+	if entry.Sig == "" && verifiedSince == nil {
+		return models.AuditSigUnsigned
+	}
+	return models.AuditSigInvalid
+}
+
+// VerifiedSince returns the time of the earliest entry that carries SigPrefix,
+// or nil when there is none (yet). Once found it is cached: that entry cannot
+// become later.
+func (l *Logger) VerifiedSince(ctx context.Context) *time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.verifiedSince != nil {
+		return l.verifiedSince
+	}
+	ts, err := dbpkg.FirstPrefixedAuditTime(ctx, l.db, SigPrefix)
+	if err != nil {
+		slog.Error("audit: locating first verifiable entry failed", "err", err)
+		return nil
+	}
+	l.verifiedSince = ts
+	return ts
 }

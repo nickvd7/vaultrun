@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -94,6 +95,7 @@ func (h *MissionHandler) List(c *gin.Context) {
 	}
 	list, err := h.manager.List(c.Request.Context(), filter)
 	if err != nil {
+		slog.Error("list missions failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list missions failed"})
 		return
 	}
@@ -112,6 +114,7 @@ func (h *MissionHandler) Get(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -130,6 +133,7 @@ func (h *MissionHandler) GetBySlug(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -150,6 +154,7 @@ func (h *MissionHandler) Create(c *gin.Context) {
 	actor := middleware.Actor(c)
 	orgID, err := h.callerOrg(c, actor)
 	if err != nil {
+		slog.Error("org lookup failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "org lookup failed"})
 		return
 	}
@@ -163,6 +168,7 @@ func (h *MissionHandler) Create(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("create failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create failed"})
 		return
 	}
@@ -181,6 +187,7 @@ func (h *MissionHandler) Update(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -200,6 +207,7 @@ func (h *MissionHandler) Update(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("update failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}
@@ -218,6 +226,7 @@ func (h *MissionHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -227,6 +236,7 @@ func (h *MissionHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.manager.Delete(c.Request.Context(), id); err != nil {
+		slog.Error("delete failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "delete failed"})
 		return
 	}
@@ -246,6 +256,7 @@ func (h *MissionHandler) RecordRun(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -264,6 +275,7 @@ func (h *MissionHandler) RecordRun(c *gin.Context) {
 	orgID, _ := h.callerOrg(c, actor)
 	run, err := h.manager.RecordRun(c.Request.Context(), id, req.SessionID, orgID, "recorded", []any{}, "")
 	if err != nil {
+		slog.Error("record failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "record failed"})
 		return
 	}
@@ -282,6 +294,7 @@ func (h *MissionHandler) ListRuns(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -292,6 +305,7 @@ func (h *MissionHandler) ListRuns(c *gin.Context) {
 	}
 	runs, err := h.manager.ListRuns(c.Request.Context(), id, 50)
 	if err != nil {
+		slog.Error("list runs failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "list runs failed"})
 		return
 	}
@@ -316,6 +330,7 @@ func (h *MissionHandler) GetRun(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -330,6 +345,7 @@ func (h *MissionHandler) GetRun(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get run failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
 		return
 	}
@@ -354,6 +370,7 @@ func (h *MissionHandler) UpdateRun(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -377,6 +394,7 @@ func (h *MissionHandler) UpdateRun(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("update failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update failed"})
 		return
 	}
@@ -417,6 +435,7 @@ func (h *MissionHandler) AttributeRunCosts(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -431,6 +450,7 @@ func (h *MissionHandler) AttributeRunCosts(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get run failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get run failed"})
 		return
 	}
@@ -467,6 +487,7 @@ func (h *MissionHandler) GetRunCosts(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -481,6 +502,7 @@ func (h *MissionHandler) GetRunCosts(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get costs failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get costs failed"})
 		return
 	}
@@ -500,6 +522,7 @@ func (h *MissionHandler) GetMissionCosts(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("get failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get failed"})
 		return
 	}
@@ -510,6 +533,7 @@ func (h *MissionHandler) GetMissionCosts(c *gin.Context) {
 	}
 	summary, err := h.manager.GetMissionCostSummary(c.Request.Context(), missionID)
 	if err != nil {
+		slog.Error("get costs failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "get costs failed"})
 		return
 	}

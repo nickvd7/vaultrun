@@ -277,6 +277,7 @@ func (rh *ReplayHandler) GetCheckpoint(c *gin.Context) {
 	// Verify session access
 	session, err := rh.h.sessionManager.GetSession(c.Request.Context(), sessionID)
 	if err != nil {
+		slog.Error("failed to verify access", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify access"})
 		return
 	}
@@ -325,6 +326,7 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get session", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session"})
 		return
 	}
@@ -426,6 +428,7 @@ func (rh *ReplayHandler) enforceForkLimits(c *gin.Context, actor string, src *mo
 	if limits.MaxSessionsPerActor > 0 && actor != "master" {
 		count, err := dbpkg.CountActiveSessionsByActor(c.Request.Context(), rh.h.db, actor)
 		if err != nil {
+			slog.Error("failed to count sessions", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
 			return err
 		}
@@ -460,6 +463,7 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get checkpoint", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get checkpoint"})
 		return
 	}
@@ -467,6 +471,7 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 	// Verify session access
 	session, err := rh.h.sessionManager.GetSession(c.Request.Context(), checkpoint.SessionID)
 	if err != nil {
+		slog.Error("failed to verify access", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify access"})
 		return
 	}
@@ -562,6 +567,7 @@ func (rh *ReplayHandler) DeleteCheckpoint(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get checkpoint", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get checkpoint"})
 		return
 	}
@@ -575,6 +581,7 @@ func (rh *ReplayHandler) DeleteCheckpoint(c *gin.Context) {
 	// Verify session access
 	session, err := rh.h.sessionManager.GetSession(c.Request.Context(), sessionID)
 	if err != nil {
+		slog.Error("failed to verify access", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify access"})
 		return
 	}

@@ -1,5 +1,7 @@
 # Cost Intelligence Dashboard
 
+> **What is implemented today.** The API bills every session once a minute (`internal/cost/accrual.go`): CPU core-hours and memory GB-hours for the time the sandbox was allocated (its CPU and memory limits, not measured use), priced with the active row of `cost_rates`. A running session is billed in blocks of at least five minutes, a stopped one for its remainder, and a block never crosses a calendar month. Rows are signed and immutable. Costs are stored to four decimals, so a very short session shows `0.0000` while its core-hours are still recorded. Storage, network and GPU are not metered yet (always 0), budgets are stored but not enforced, and nothing creates idle or budget alerts yet. The rest of this document is the design.
+
 ## Executive Summary
 
 Real-time kosten tracking voor self-hosted VaultRun deployments. Track compute, storage, en netwerk kosten per session/org/user. Krijg idle session alerts, resource optimization recommendations, en budget forecasting.

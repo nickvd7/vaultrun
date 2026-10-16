@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Costs are recorded.** `RecordMetric` had no caller, so every session showed 0 whatever it ran. The API now bills sessions every minute for the CPU core-hours and memory GB-hours they had allocated (a running session in blocks of at least five minutes, a stopped one for its remainder, never across a month boundary). After upgrading, sessions that still exist are billed from their start. Storage, network and GPU are not metered yet. Costs are stored to four decimals, so a very short session reads `0.0000` while its core-hours are kept. Metrics are now rounded to the stored precision before they are signed, so they verify after a round trip, and the monthly breakdown assigns a metric to the month it started in (a block ending exactly at midnight on the 1st used to fall in no month).
+- **A tampered audit entry no longer looks like an unsigned one.** Entries now carry `sig_status`: `valid`; `invalid` (changed, or its signature removed, after verifiable signing began); `unsigned` / `unverifiable` (written before that point, for example by v0.4.0 and earlier, which is expected). New signatures start with `v2:`, which marks that point; v0.4.1 to v0.4.3 entries still verify. `sig_valid` stays and is `true` only for `valid`. The dashboard shows the three states differently.
+- **A 500 is always logged.** Failures such as `workspace init failed` (for example a workspaces directory the API cannot write to) were returned to the caller without a line in the API log. About 90 error paths now log their cause, and a middleware logs every 5xx response (method, route, message) as a backstop.
 - **Dashboard: key expiry was off by the time zone offset.** The preset expiry ("7 days") was computed as a UTC wall-clock string and then read back as local time, so a key could expire hours early, and the list showed only a date. Presets are now an exact instant (now + N x 24h), a custom date is read as your local time, and expiry is shown with date, time and zone.
 - **Dashboard: run history keeps the quotes.** Arguments are quoted like a shell would (`python -c 'print(2+2)'`), so the line can be pasted back.
 - **Dashboard: one date notation.** Lists show "5m ago" (exact time on hover) and anything older than a week, and every other date uses the same "Oct 16, 2026, 8:44 AM" format. The audit date filter now means your local days instead of UTC days.
@@ -18,6 +21,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Dashboard: secondary text is lighter** (was slate-400 on near-black, now slate-300).
 
 ### Added
+- **Revoked API keys can be deleted:** `DELETE /api/v1/keys/:id?purge=true` removes a key that is already revoked (an active key answers 409), frees its name and is audited as `apikey.deleted`. `GET /api/v1/whoami` tells any key whether it is the master key, so the dashboard no longer probes `/keys` and logs a 403 for ordinary keys.
+- **Version numbers.** `GET /health` returns `version`, the API logs it at start, and `vaultrun-api`, `vaultrun` (CLI), `vaultrun-local` and `vaultrun-mcp` accept `--version`. The MCP server reported a fixed `0.1.0` before. The number comes from `internal/version/VERSION`, which `scripts/check-versions.sh` keeps in step with the other release files.
 - **Dashboard: revoked keys can be deleted** (trash icon after a confirmation); active keys show a revoke icon instead. Needs the API's `DELETE /keys/:id?purge=true`.
 - **Dashboard: audit signature states.** Verified, Invalid (altered or signature removed, with a warning above the table), Unsigned and Legacy (older entries, expected). Exports carry `sig_status`.
 

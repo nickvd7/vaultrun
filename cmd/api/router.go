@@ -56,6 +56,7 @@ func newRouter(
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
+	r.Use(middleware.ServerErrorLog())
 	r.Use(metrics.HTTPMiddleware())
 
 	// Do not trust X-Forwarded-For from arbitrary proxies; prevents rate-limit
@@ -196,6 +197,7 @@ func newRouter(
 	keysH := handlers.NewKeyHandler(hub)
 	api.POST("/keys", buildMW(masterMWKeys, keysH.Create)...)
 	api.GET("/keys", buildMW(masterMWKeys, keysH.List)...)
+	api.GET("/whoami", buildMW(keysH.Whoami)...)
 	api.DELETE("/keys/:id", buildMW(masterMWKeys, keysH.Revoke)...)
 	api.PUT("/keys/:id/secrets", buildMW(masterMWKeys, keysH.SetSecrets)...)
 

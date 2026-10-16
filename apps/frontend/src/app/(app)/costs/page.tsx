@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { badgeBase, formatDate } from "@/lib/utils";
+import { badgeBase, formatDate, formatMonth } from "@/lib/utils";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import type { CostBreakdown, CostAlert } from "@/types";
@@ -106,7 +106,7 @@ export default function CostsPage() {
             <div className="text-3xl font-bold text-slate-100">{formatCost(breakdown.total_cost)}</div>
           </div>
         </div>
-        <div className="text-xs text-slate-200 mt-2">{breakdown.period}</div>
+        <div className="text-xs text-slate-200 mt-2">{formatMonth(breakdown.period)}</div>
       </div>
 
       {/* Cost Breakdown */}

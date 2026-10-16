@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApiKey } from "@/components/ApiKeyGate";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { badgeBase } from "@/lib/utils";
@@ -44,6 +45,7 @@ const NS_FILTER_ACTIVE: Record<NSFilter, string> = {
 };
 
 const NAMESPACES: NSFilter[] = ["all", "session", "file", "command", "apikey", "secret"];
+const NS_LABEL: Record<NSFilter, string> = { all: "All", session: "Session", file: "File", command: "Command", apikey: "API key", secret: "Secret" };
 const PAGE_SIZE = 50;
 const EXPORT_CAP = 5000;
 
@@ -141,7 +143,7 @@ function SigCell({ log }: { log: AuditLog }) {
 }
 
 /** Verdict over the whole log, so a problem on page 2 is visible from page 1. */
-function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
+function IntegrityBanner({ integrity, isMaster }: { integrity: AuditIntegrity; isMaster: boolean | null }) {
   if (integrity.status === "compromised") {
     return (
       <Notice tone="error" title="The audit log failed verification">
@@ -164,6 +166,15 @@ function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
           are marked Invalid below and in every page of the log; the API logs this too.
         </p>
       </Notice>
+    );
+  }
+  if (integrity.status === "ok" && isMaster !== true) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-emerald-300" role="status">
+        <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+        Log integrity check passed. You only see your own entries here; the check covers the whole log, which only the master key can inspect
+        {" · "}checked <Time value={integrity.checked_at} />
+      </p>
     );
   }
   if (integrity.status === "ok") {
@@ -190,6 +201,7 @@ function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
 // ── page ──────────────────────────────────────────────────────────────────────
 
 export default function AuditPage() {
+  const { isMaster } = useApiKey();
   const toast = useToast();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -307,7 +319,7 @@ export default function AuditPage() {
           <button
             onClick={() => exportAll("csv")}
             disabled={exporting || total === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <Download className="w-3.5 h-3.5" aria-hidden="true" />
             {exporting ? "Exporting…" : "Export CSV"}
@@ -315,7 +327,7 @@ export default function AuditPage() {
           <button
             onClick={() => exportAll("json")}
             disabled={exporting || total === 0}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <Download className="w-3.5 h-3.5" aria-hidden="true" />
             Export JSON
@@ -326,7 +338,7 @@ export default function AuditPage() {
               loadIntegrity(true);
             }}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
             Refresh
@@ -336,7 +348,7 @@ export default function AuditPage() {
 
       {error && <Notice tone="error" title="Could not load the audit log">{error}</Notice>}
 
-      {integrity && <IntegrityBanner integrity={integrity} />}
+      {integrity && <IntegrityBanner integrity={integrity} isMaster={isMaster} />}
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -377,11 +389,11 @@ export default function AuditPage() {
                 key={ns}
                 onClick={() => setNsFilter(ns)}
                 aria-pressed={active}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors capitalize ${
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                   active ? NS_FILTER_ACTIVE[ns] : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-100"
                 }`}
               >
-                {ns}
+                {NS_LABEL[ns]}
               </button>
             );
           })}
@@ -515,14 +527,14 @@ export default function AuditPage() {
             <button
               onClick={() => setPage(page - 1)}
               disabled={page <= 1 || loading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Newer
             </button>
             <button
               onClick={() => setPage(page + 1)}
               disabled={page >= pageCount || loading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-800 disabled:opacity-60"
             >
               Older <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>

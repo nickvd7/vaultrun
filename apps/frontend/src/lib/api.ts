@@ -19,6 +19,13 @@ function getHeaders(): HeadersInit {
 }
 
 /** Error from the API carrying the HTTP status so callers can tell 404 from 403 from 5xx. */
+/** Fired when the API rejects the stored key; ApiKeyGate then returns to the sign-in form. */
+export const UNAUTHORIZED_EVENT = "vaultrun:unauthorized";
+
+export function notifyUnauthorized() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -34,6 +41,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers: { ...getHeaders(), ...(options.headers || {}) },
   });
+
+  if (resp.status === 401) notifyUnauthorized();
 
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({ error: resp.statusText }));

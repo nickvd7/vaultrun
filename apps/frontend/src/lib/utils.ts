@@ -43,6 +43,13 @@ export function formatDate(iso: string): string {
   return dateTimeFormat.format(new Date(iso));
 }
 
+/** "2026-10" as "October 2026", the same wording the browser shows in a month picker. */
+export function formatMonth(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return period;
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
 /** formatDate plus the time zone, for moments that matter (key expiry). */
 export function formatDateWithZone(iso: string): string {
   return dateTimeZoneFormat.format(new Date(iso));

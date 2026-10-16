@@ -194,7 +194,7 @@ export default function KeysPage() {
           <button
             onClick={load}
             disabled={isMaster === false}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
@@ -202,7 +202,7 @@ export default function KeysPage() {
             onClick={() => { setShowForm(!showForm); setError(null); }}
             disabled={isMaster === false}
             title={isMaster === false ? "Requires the master key" : undefined}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Plus className="w-3.5 h-3.5" /> New Key
           </button>
@@ -320,7 +320,7 @@ export default function KeysPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !name.trim()}
-              className="px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-50"
+              className="px-4 py-2 text-sm text-white bg-indigo-600 rounded hover:bg-indigo-500 disabled:opacity-60"
             >
               {creating ? "Creating…" : "Create Key"}
             </button>

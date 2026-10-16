@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **An expired or revoked saved API key sends you back to the sign-in form** (with a note saying why) instead of showing "Signed in" and an error. Any `401` from the API does this, not only the first check.
+- **Audit banner for a regular key** no longer claims "Whole log verified" next to a partial log: it says the integrity check passed, that you only see your own entries, and omits the whole-log counts.
+- **Policy page for a regular key** shows only the master-key notice; the test form is hidden instead of disabled.
+- **Costs:** the total card shows "October 2026", the same as the month picker, instead of "2026-10".
+- **Not-found page** reads "stopped when idle on Oct 16, 2026, 2:28 PM" instead of "on 7m ago".
+- **Screen readers:** tab and filter names are capitalised text, not lowercase text made to look capitalised with CSS; tab icons are hidden from assistive tech.
+- **Small grey text:** `text-xs` is 13px instead of 12px, the 10/11px labels are 13px, and disabled buttons are dimmed less (60% instead of 40-50%).
+
 ---
 
 ## [0.4.5] — 2026-10-16

@@ -47,6 +47,7 @@ type Session struct {
 	Labels         map[string]string `json:"labels,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
 	StoppedAt      *time.Time        `json:"stopped_at,omitempty"`
+	AllowedHosts   []string          `json:"allowed_hosts,omitempty"`
 }
 
 // Run represents a command execution result.
@@ -86,6 +87,9 @@ type CreateSessionOptions struct {
 	MemoryLimitMB  int
 	TimeoutSeconds int
 	Labels         map[string]string
+	// AllowedHosts limits outbound traffic to these hostnames or CIDRs. It needs
+	// NetworkEnabled; the API rejects the combination otherwise.
+	AllowedHosts []string
 }
 
 // CreateSession creates a new sandbox session.
@@ -105,6 +109,9 @@ func (c *Client) CreateSession(ctx context.Context, opts CreateSessionOptions) (
 	}
 	if len(opts.Labels) > 0 {
 		body["labels"] = opts.Labels
+	}
+	if len(opts.AllowedHosts) > 0 {
+		body["allowed_hosts"] = opts.AllowedHosts
 	}
 
 	var s Session
@@ -169,6 +176,9 @@ type RunOptions struct {
 	Env            map[string]string
 	WorkingDir     string
 	TimeoutSeconds int
+	// Secrets names secrets to inject as environment variables; the API key
+	// must be allowed to use them.
+	Secrets []string
 }
 
 // Run executes a command inside a session and waits for the result.
@@ -183,6 +193,9 @@ func (c *Client) Run(ctx context.Context, sessionID string, opts RunOptions) (*R
 	}
 	if opts.WorkingDir != "" {
 		body["working_dir"] = opts.WorkingDir
+	}
+	if len(opts.Secrets) > 0 {
+		body["secrets"] = opts.Secrets
 	}
 
 	var r Run
@@ -220,6 +233,9 @@ func (c *Client) RunAsync(ctx context.Context, sessionID string, opts AsyncRunOp
 	}
 	if opts.WorkingDir != "" {
 		body["working_dir"] = opts.WorkingDir
+	}
+	if len(opts.Secrets) > 0 {
+		body["secrets"] = opts.Secrets
 	}
 	if opts.CallbackURL != "" {
 		body["callback_url"] = opts.CallbackURL
@@ -756,6 +772,9 @@ func (c *Client) Stream(ctx context.Context, sessionID string, opts RunOptions, 
 	}
 	if opts.WorkingDir != "" {
 		body["working_dir"] = opts.WorkingDir
+	}
+	if len(opts.Secrets) > 0 {
+		body["secrets"] = opts.Secrets
 	}
 
 	b, err := json.Marshal(body)

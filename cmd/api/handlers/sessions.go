@@ -74,6 +74,14 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// An allowlist only means something when the container has a network at
+	// all; without network_enabled the hosts used to be ignored without a word.
+	if len(req.AllowedHosts) > 0 && !req.NetworkEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed_hosts requires network_enabled: true " +
+			"(without a network there is nothing to restrict)"})
+		return
+	}
+
 	// Apply defaults for omitted (zero) values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage

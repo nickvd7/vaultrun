@@ -799,3 +799,56 @@ def test_legacy_sandbox_sdk_alias_still_works():
     from sandbox_sdk.client import VaultRunError as LegacyError
 
     assert LegacyError is vaultrun_sdk.VaultRunError
+
+
+# ---------------------------------------------------------------------------
+# allowed_hosts and secrets
+# ---------------------------------------------------------------------------
+
+@rsps.activate
+def test_create_session_sends_allowed_hosts(client: Client) -> None:
+    import json as _json
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/sessions",
+        json={**SESSION_JSON, "network_enabled": True, "allowed_hosts": ["pypi.org"]},
+        status=201,
+    )
+    session = client.create_session(network_enabled=True, allowed_hosts=["pypi.org"])
+    sent = _json.loads(rsps.calls[0].request.body)
+    assert sent["allowed_hosts"] == ["pypi.org"]
+    assert session.allowed_hosts == ["pypi.org"]
+
+
+def test_allowed_hosts_without_network_is_rejected_before_sending(client: Client) -> None:
+    with pytest.raises(ValueError, match="network_enabled"):
+        client.create_session(allowed_hosts=["pypi.org"])
+
+
+@rsps.activate
+def test_run_sends_secrets(client: Client) -> None:
+    import json as _json
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/run",
+        json=RUN_JSON,
+        status=200,
+    )
+    client.run(SESSION_ID, command="env", secrets=["API_TOKEN"])
+    assert _json.loads(rsps.calls[0].request.body)["secrets"] == ["API_TOKEN"]
+
+
+@rsps.activate
+def test_create_key_sends_allowed_secrets(client: Client) -> None:
+    import json as _json
+
+    rsps.add(
+        rsps.POST,
+        f"{BASE_URL}/api/v1/keys",
+        json={**API_KEY_JSON, "key": "vr_x"},
+        status=201,
+    )
+    client.create_key("restricted", allowed_secrets=[])
+    assert _json.loads(rsps.calls[0].request.body)["allowed_secrets"] == []

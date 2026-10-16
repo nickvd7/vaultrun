@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -86,6 +87,25 @@ type createRunRequest struct {
 	Secrets []string `json:"secrets"`
 }
 
+// validateCommand rejects a command line passed as the executable. Commands
+// are exec'd, not run through a shell, so "python -c 'print(1)'" as one string
+// looks for a program with that exact name and used to fail inside the
+// sandbox with exit 126 and a 200 response.
+func validateCommand(c *gin.Context, command string) bool {
+	if strings.TrimSpace(command) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "command must not be empty"})
+		return false
+	}
+	if strings.ContainsAny(command, " \t\r\n") {
+		first := strings.Fields(command)[0]
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
+			"command must be the executable only and arguments go in args (commands are not run through a shell): "+
+				"use {\"command\": %q, \"args\": [...]} or {\"command\": \"sh\", \"args\": [\"-c\", \"...\"]} for a shell line", first)})
+		return false
+	}
+	return true
+}
+
 // POST /api/v1/sessions/:id/run
 func (rh *RunHandler) Execute(c *gin.Context) {
 	sessionID, ok := parseUUID(c, "id")
@@ -109,6 +129,9 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 	var req createRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !validateCommand(c, req.Command) {
 		return
 	}
 
@@ -189,6 +212,9 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 	var req createRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !validateCommand(c, req.Command) {
 		return
 	}
 
@@ -344,6 +370,9 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !validateCommand(c, req.Command) {
 		return
 	}
 

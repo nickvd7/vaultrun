@@ -37,6 +37,7 @@ class Session:
     name: Optional[str] = None
     container_id: Optional[str] = None
     stopped_at: Optional[str] = None
+    allowed_hosts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -221,8 +222,16 @@ class Client:
         memory_limit_mb: int = 512,
         timeout_seconds: int = 300,
         labels: dict[str, str] | None = None,
+        allowed_hosts: list[str] | None = None,
     ) -> Session:
-        """Create a new sandbox session."""
+        """Create a new sandbox session.
+
+        ``allowed_hosts`` limits outbound traffic to the listed hostnames or
+        CIDRs and needs ``network_enabled=True``; without a network there is
+        nothing to restrict, so the combination raises :class:`ValueError`.
+        """
+        if allowed_hosts and not network_enabled:
+            raise ValueError("allowed_hosts requires network_enabled=True")
         body: dict[str, Any] = {
             "image": image,
             "network_enabled": network_enabled,
@@ -234,6 +243,8 @@ class Client:
             body["name"] = name
         if labels:
             body["labels"] = labels
+        if allowed_hosts:
+            body["allowed_hosts"] = allowed_hosts
 
         data = self._post("/api/v1/sessions", body)
         return self._parse_session(data)
@@ -286,8 +297,14 @@ class Client:
         env: dict[str, str] | None = None,
         working_dir: str = "",
         timeout_seconds: int = 30,
+        secrets: list[str] | None = None,
     ) -> Run:
-        """Execute a command inside a session and return the result (blocking)."""
+        """Execute a command inside a session and return the result (blocking).
+
+        ``command`` is the executable only; arguments go in ``args`` (nothing is
+        run through a shell). ``secrets`` names secrets to inject as environment
+        variables; the API key must be allowed to use them.
+        """
         body: dict[str, Any] = {
             "command": command,
             "args": args or [],
@@ -297,6 +314,9 @@ class Client:
             body["env"] = env
         if working_dir:
             body["working_dir"] = working_dir
+
+        if secrets:
+            body["secrets"] = secrets
 
         data = self._post(f"/api/v1/sessions/{session_id}/run", body)
         return self._parse_run(data)
@@ -311,6 +331,7 @@ class Client:
         working_dir: str = "",
         timeout_seconds: int = 30,
         callback_url: str = "",
+        secrets: list[str] | None = None,
     ) -> AsyncRunResult:
         """Submit a command for non-blocking (async) execution.
 
@@ -328,6 +349,8 @@ class Client:
             body["working_dir"] = working_dir
         if callback_url:
             body["callback_url"] = callback_url
+        if secrets:
+            body["secrets"] = secrets
 
         data = self._post(f"/api/v1/sessions/{session_id}/run/async", body)
         return AsyncRunResult(
@@ -461,9 +484,16 @@ class Client:
         name: str,
         *,
         expires_at: Optional[datetime] = None,
+        allowed_secrets: Optional[list[str]] = None,
     ) -> CreatedKey:
-        """Create a new API key. The plaintext key is only available in the returned object."""
+        """Create a new API key. The plaintext key is only available in the returned object.
+
+        ``allowed_secrets`` limits which secrets runs made with the key may
+        inject: a list restricts it, ``[]`` denies all, ``None`` (default) leaves it unrestricted.
+        """
         body: dict[str, Any] = {"name": name}
+        if allowed_secrets is not None:
+            body["allowed_secrets"] = allowed_secrets
         if expires_at is not None:
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -519,6 +549,7 @@ class Client:
         env: Optional[dict[str, str]] = None,
         working_dir: Optional[str] = None,
         timeout_seconds: int = 30,
+        secrets: Optional[list[str]] = None,
         stdout: Optional[IO[str]] = None,
         stderr: Optional[IO[str]] = None,
     ) -> "StreamResult":
@@ -536,6 +567,7 @@ class Client:
             env: extra environment variables injected into the exec.
             working_dir: working directory inside the container.
             timeout_seconds: server-side execution timeout.
+            secrets: names of secrets to inject as environment variables.
             stdout: writable text stream for stdout chunks (default: discard).
             stderr: writable text stream for stderr chunks (default: discard).
 
@@ -560,6 +592,8 @@ class Client:
             body["env"] = env
         if working_dir:
             body["working_dir"] = working_dir
+        if secrets:
+            body["secrets"] = secrets
 
         resp = self._session.post(
             self.base_url + f"/api/v1/sessions/{session_id}/run/stream",
@@ -838,6 +872,7 @@ class Client:
             labels=labels,
             created_at=d["created_at"],
             stopped_at=d.get("stopped_at"),
+            allowed_hosts=list(d.get("allowed_hosts") or []),
         )
 
     @staticmethod

@@ -161,7 +161,7 @@ func truncateFeatureTables(t *testing.T) {
 			cost_metrics, cost_budgets, cost_alerts,
 			template_usage, session_templates,
 			session_agents, agent_messages, file_versions,
-			audit_logs, files, runs, sessions, api_keys, org_members, organizations
+			audit_logs, audit_chain, files, runs, sessions, api_keys, org_members, organizations
 		CASCADE
 	`)
 	if err != nil {

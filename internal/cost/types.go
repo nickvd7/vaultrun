@@ -104,6 +104,8 @@ type SessionCostSummary struct {
 	StorageCost float64    `db:"storage_cost" json:"storage_cost"`
 	NetworkCost float64    `db:"network_cost" json:"network_cost"`
 	TotalCost   float64    `db:"total_cost"   json:"total_cost"`
+	// StoppedAt is set when the session has ended (deleted, or stopped when idle).
+	StoppedAt   *time.Time `db:"stopped_at"   json:"stopped_at,omitempty"`
 	FirstMetric *time.Time `db:"first_metric" json:"first_metric,omitempty"`
 	LastMetric  *time.Time `db:"last_metric"  json:"last_metric,omitempty"`
 }

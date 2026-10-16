@@ -145,6 +145,11 @@ jobs:
           [ "$(echo "$RESP" | jq '.audit_logs | length')" -gt 0 ]
           [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_valid != true)] | length')" = "0" ]
           [ "$(echo "$RESP" | jq '[.audit_logs[] | select(.sig_status != "valid")] | length')" = "0" ]
+          # The whole log, not one page: signatures, chain links and the signed head.
+          INTEGRITY=$(curl -sS "http://localhost:8080/api/v1/audit/integrity?refresh=true" -H "X-API-Key: $API_KEY")
+          echo "$INTEGRITY" | jq -c .
+          [ "$(echo "$INTEGRITY" | jq -r .status)" = "ok" ]
+          [ "$(echo "$INTEGRITY" | jq '.chained_entries')" -gt 0 ]
 
       - name: Audit filters and cost endpoints
         run: |

@@ -8,7 +8,7 @@ import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { badgeBase } from "@/lib/utils";
 import { Time } from "@/components/ui/Time";
-import type { AuditLog } from "@/types";
+import type { AuditIntegrity, AuditLog } from "@/types";
 
 // ── action colouring ─────────────────────────────────────────────────────────
 
@@ -96,11 +96,11 @@ interface SigState {
 }
 
 const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
-  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-400" },
+  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-300" },
   invalid: {
     label: "Invalid",
     title: "Signature does not match, or was removed: this entry may have been altered",
-    className: "text-red-400",
+    className: "text-red-300",
   },
   unsigned: {
     label: "Unsigned",
@@ -115,7 +115,7 @@ const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
   unverified: {
     label: "Unverified",
     title: "Signature does not verify (this API does not say whether the entry predates signing)",
-    className: "text-amber-400",
+    className: "text-amber-300",
   },
 };
 
@@ -130,11 +130,61 @@ function SigCell({ log }: { log: AuditLog }) {
   if (!st) return null;
   const Icon = st.kind === "valid" ? ShieldCheck : st.kind === "invalid" || st.kind === "unverified" ? ShieldAlert : ShieldQuestion;
   return (
-    <span title={st.title} className={`inline-flex items-center gap-1 text-xs ${st.className}`}>
-      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-      {st.label}
+    <span title={log.sig_reason ? `${st.title} (${log.sig_reason})` : st.title} className={`inline-flex flex-col text-xs ${st.className}`}>
+      <span className="inline-flex items-center gap-1">
+        <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+        {st.label}
+      </span>
+      {st.kind === "invalid" && log.sig_reason && <span className="text-red-300 font-normal">{log.sig_reason}</span>}
     </span>
   );
+}
+
+/** Verdict over the whole log, so a problem on page 2 is visible from page 1. */
+function IntegrityBanner({ integrity }: { integrity: AuditIntegrity }) {
+  if (integrity.status === "compromised") {
+    return (
+      <Notice tone="error" title="The audit log failed verification">
+        <ul className="list-disc pl-5 space-y-0.5">
+          {integrity.problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+        {integrity.missing_seqs && integrity.missing_seqs.length > 0 && (
+          <p className="mt-2">Missing sequence numbers: <span className="font-mono">{integrity.missing_seqs.join(", ")}</span></p>
+        )}
+        {integrity.invalid_ids && integrity.invalid_ids.length > 0 && (
+          <p className="mt-2">
+            Altered entries (ID): <span className="font-mono break-all">{integrity.invalid_ids.join(", ")}</span>
+            {integrity.invalid_entries > integrity.invalid_ids.length && ` and ${integrity.invalid_entries - integrity.invalid_ids.length} more`}
+          </p>
+        )}
+        <p className="mt-2">
+          Entries may have been altered or deleted by someone with write access to the database. The affected entries
+          are marked Invalid below and in every page of the log; the API logs this too.
+        </p>
+      </Notice>
+    );
+  }
+  if (integrity.status === "ok") {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-emerald-300" role="status">
+        <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+        Whole log verified: {integrity.chained_entries} chained {integrity.chained_entries === 1 ? "entry" : "entries"}, none altered or missing
+        {integrity.legacy_entries > 0 && ` (${integrity.legacy_entries} older ${integrity.legacy_entries === 1 ? "entry" : "entries"} from before chaining cannot be chain-checked)`}
+        {" · "}checked <Time value={integrity.checked_at} />
+      </p>
+    );
+  }
+  if (integrity.status === "disabled") {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-amber-300" role="status">
+        <ShieldQuestion className="w-3.5 h-3.5" aria-hidden="true" />
+        Audit signing is off (AUDIT_HMAC_KEY is not set), so entries cannot be verified.
+      </p>
+    );
+  }
+  return null;
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -152,6 +202,14 @@ export default function AuditPage() {
   const [to, setTo] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
+  const [integrity, setIntegrity] = useState<AuditIntegrity | null>(null);
+
+  const loadIntegrity = useCallback((refresh: boolean) => {
+    api.audit
+      .integrity(refresh)
+      .then(setIntegrity)
+      .catch(() => setIntegrity(null));
+  }, []);
 
   // The date inputs are calendar days in the viewer's time zone. Send them as
   // instants (local midnight), not bare dates, which the API reads as UTC.
@@ -188,6 +246,7 @@ export default function AuditPage() {
   }, [query, page]);
 
   useEffect(load, [load]);
+  useEffect(() => loadIntegrity(false), [loadIntegrity]);
   useEffect(() => setPage(1), [query]);
 
   const filtered = useMemo(() => {
@@ -262,7 +321,10 @@ export default function AuditPage() {
             Export JSON
           </button>
           <button
-            onClick={load}
+            onClick={() => {
+              load();
+              loadIntegrity(true);
+            }}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
           >
@@ -274,6 +336,8 @@ export default function AuditPage() {
 
       {error && <Notice tone="error" title="Could not load the audit log">{error}</Notice>}
 
+      {integrity && <IntegrityBanner integrity={integrity} />}
+
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row gap-3">
           <input
@@ -284,7 +348,7 @@ export default function AuditPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <div className="flex items-center gap-2 text-xs text-slate-300">
+          <div className="flex items-center gap-2 text-xs text-slate-200">
             <label htmlFor="audit-from">From</label>
             <input
               id="audit-from"
@@ -328,7 +392,7 @@ export default function AuditPage() {
                 setFrom("");
                 setTo("");
               }}
-              className="ml-2 text-xs text-indigo-300 hover:underline"
+              className="ml-2 text-xs text-indigo-200 hover:underline"
             >
               Clear filters
             </button>
@@ -336,7 +400,7 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {!loading && !error && logs.some((l) => l.sig_status === "invalid") && (
+      {!integrity && !loading && !error && logs.some((l) => l.sig_status === "invalid") && (
         <Notice tone="error" title="Some entries failed signature verification">
           {logs.filter((l) => l.sig_status === "invalid").length} entr
           {logs.filter((l) => l.sig_status === "invalid").length === 1 ? "y" : "ies"} on this page do not match their
@@ -345,7 +409,7 @@ export default function AuditPage() {
       )}
 
       {!loading && !error && (
-        <p className="text-xs text-slate-300" aria-live="polite">
+        <p className="text-xs text-slate-200" aria-live="polite">
           {total === 0
             ? "0 events"
             : `Events ${firstShown}–${lastShown} of ${total}`}
@@ -363,7 +427,7 @@ export default function AuditPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th scope="col" className="w-8 px-3 py-3">
                   <span className="sr-only">Details</span>
                 </th>
@@ -382,7 +446,7 @@ export default function AuditPage() {
                 const hasDetail = Object.keys(l.metadata).length > 0 || !!l.run_id;
                 return (
                   <Fragment key={l.id}>
-                    <tr className="border-t border-slate-800/50 transition-colors hover:bg-slate-800/20">
+                    <tr className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 ${l.sig_status === "invalid" ? "bg-red-950/20" : ""}`}>
                       <td className="px-3 py-2.5 text-slate-300">
                         {hasDetail && (
                           <button
@@ -396,10 +460,10 @@ export default function AuditPage() {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300 whitespace-nowrap">
+                      <td className="px-4 py-2.5 text-xs text-slate-200 whitespace-nowrap">
                         <Time value={l.timestamp} />
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-300 font-mono truncate max-w-[120px]" title={l.actor}>
+                      <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-[120px]" title={l.actor}>
                         {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
                       </td>
                       <td className="px-4 py-2.5">
@@ -443,7 +507,7 @@ export default function AuditPage() {
       </div>
 
       {total > PAGE_SIZE && (
-        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-300">
+        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-200">
           <span>
             Page {page} of {pageCount}
           </span>

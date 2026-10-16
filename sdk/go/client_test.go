@@ -602,3 +602,40 @@ func TestAPIKeyHeader(t *testing.T) {
 		t.Errorf("expected X-API-Key=my-secret-key, got %q", received)
 	}
 }
+
+func TestCreateSessionAndRunSendAllowedHostsAndSecrets(t *testing.T) {
+	var sessionBody, runBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&sessionBody)
+		s := fakeSession("sess-001")
+		s["allowed_hosts"] = []string{"pypi.org"}
+		writeJSON(w, http.StatusCreated, s)
+	})
+	mux.HandleFunc("/api/v1/sessions/sess-001/run", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&runBody)
+		writeJSON(w, http.StatusOK, fakeRun("run-001", "sess-001"))
+	})
+	_, client := newServer(t, mux)
+
+	sess, err := client.CreateSession(context.Background(), vaultrun.CreateSessionOptions{
+		NetworkEnabled: true,
+		AllowedHosts:   []string{"pypi.org"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hosts, _ := sessionBody["allowed_hosts"].([]any); len(hosts) != 1 || hosts[0] != "pypi.org" {
+		t.Errorf("allowed_hosts not sent: %v", sessionBody)
+	}
+	if len(sess.AllowedHosts) != 1 || sess.AllowedHosts[0] != "pypi.org" {
+		t.Errorf("allowed_hosts not parsed: %v", sess.AllowedHosts)
+	}
+
+	if _, err := client.Run(context.Background(), "sess-001", vaultrun.RunOptions{Command: "env", Secrets: []string{"API_TOKEN"}}); err != nil {
+		t.Fatal(err)
+	}
+	if secrets, _ := runBody["secrets"].([]any); len(secrets) != 1 || secrets[0] != "API_TOKEN" {
+		t.Errorf("secrets not sent: %v", runBody)
+	}
+}

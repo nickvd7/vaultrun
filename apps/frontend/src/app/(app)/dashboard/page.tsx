@@ -56,7 +56,7 @@ export default function DashboardPage() {
         ].map(({ label, value, icon: Icon, color }) => (
           <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-slate-300 uppercase tracking-wide">{label}</span>
+              <span className="text-xs text-slate-200 uppercase tracking-wide">{label}</span>
               <Icon className={`w-4 h-4 ${color}`} />
             </div>
             <div className={`text-2xl font-semibold ${color}`}>{value}</div>
@@ -81,7 +81,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <div className="text-sm font-medium text-slate-200">{label}</div>
-              <div className="text-xs text-slate-300">{desc}</div>
+              <div className="text-xs text-slate-200">{desc}</div>
             </div>
           </Link>
         ))}
@@ -93,7 +93,7 @@ export default function DashboardPage() {
           <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide">
             Recent Sessions
           </h2>
-          <Link href="/sessions" className="text-xs text-indigo-400 hover:text-indigo-300">
+          <Link href="/sessions" className="text-xs text-indigo-300 hover:text-indigo-200">
             View all →
           </Link>
         </div>
@@ -111,7 +111,7 @@ export default function DashboardPage() {
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+                <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                   <th scope="col" className="px-4 py-3 text-left">Session</th>
                   <th className="px-4 py-3 text-left">Image</th>
                   <th className="px-4 py-3 text-left">Status</th>
@@ -129,16 +129,16 @@ export default function DashboardPage() {
                       <Link
                         href={`/sessions/${s.id}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="font-mono text-indigo-300 text-xs hover:underline"
+                        className="font-mono text-indigo-200 text-xs hover:underline"
                       >
                         {s.name || `${s.id.slice(0, 8)}…`}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-slate-300 font-mono text-xs">{s.image}</td>
+                    <td className="px-4 py-3 text-slate-200 font-mono text-xs">{s.image}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={s.status} />
                     </td>
-                    <td className="px-4 py-3 text-slate-300 text-xs">
+                    <td className="px-4 py-3 text-slate-200 text-xs">
                       <Time value={s.created_at} />
                     </td>
                   </tr>

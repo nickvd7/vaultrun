@@ -354,6 +354,7 @@ func main() {
 	idleFor := time.Duration(cfg.Docker.IdleTimeoutMins) * time.Minute
 	go cleanup.Start(cleanupCtx, db, docker, al, ws, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
 	go costTracker.StartAccrual(cleanupCtx, time.Minute)
+	go al.WatchIntegrity(cleanupCtx, 5*time.Minute)
 
 	// SIEM audit export — optional; only active when AUDIT_EXPORT_URL is set.
 	if siemExp := siemexport.New(db); siemExp != nil {

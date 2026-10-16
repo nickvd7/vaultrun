@@ -1,4 +1,4 @@
-import type { Session, Run, File, AuditLog, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact, Checkpoint, CostMetric, SessionCostSummary, CostBreakdown, CostAlert } from "@/types";
+import type { Session, Run, File, AuditLog, AuditIntegrity, APIKey, CreatedKey, Pagination, PolicyStatus, PolicyEvalResult, Snapshot, SharedArtifact, Checkpoint, CostMetric, SessionCostSummary, CostBreakdown, CostAlert } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -188,6 +188,12 @@ export const api = {
         limit: r.pagination?.limit ?? (params.limit ?? 50),
       }));
     },
+    /** null when the API predates /audit/integrity. */
+    integrity: (refresh = false) =>
+      request<AuditIntegrity>(`/audit/integrity${refresh ? "?refresh=true" : ""}`).catch((e: unknown) => {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null;
+        throw e;
+      }),
   },
 
   keys: {

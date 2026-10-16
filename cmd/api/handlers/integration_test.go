@@ -152,7 +152,7 @@ func newTestRouter(db *sqlx.DB) *gin.Engine {
 // truncateAll wipes every table so each test starts from an empty DB.
 func truncateAll(t *testing.T) {
 	t.Helper()
-	_, err := testDB.Exec(`TRUNCATE audit_logs, files, runs, sessions, api_keys, org_members, organizations CASCADE`)
+	_, err := testDB.Exec(`TRUNCATE audit_logs, audit_chain, files, runs, sessions, api_keys, org_members, organizations CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}

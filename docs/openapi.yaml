@@ -210,6 +210,37 @@ components:
           type: object
           additionalProperties: true
         created_at: { type: string, format: date-time }
+        seq:
+          type: integer
+          format: int64
+          description: Position in the audit hash chain; absent on entries written before chaining (v0.4.4 and earlier).
+        sig_status:
+          type: string
+          enum: [valid, invalid, unsigned, unverifiable]
+          description: Present when AUDIT_HMAC_KEY is set. invalid means the entry or the chain around it was altered.
+        sig_reason:
+          type: string
+          description: Why the entry is invalid.
+
+    AuditIntegrity:
+      type: object
+      required: [status, checked_at, problems]
+      properties:
+        status:           { type: string, enum: [ok, compromised, not_started, disabled] }
+        checked_at:       { type: string, format: date-time }
+        chained_entries:  { type: integer, format: int64 }
+        legacy_entries:   { type: integer, format: int64 }
+        invalid_entries:  { type: integer, format: int64 }
+        missing_entries:  { type: integer, format: int64 }
+        problems:         { type: array, items: { type: string } }
+        invalid_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: Master key only.
+        missing_seqs:
+          type: array
+          items: { type: string }
+          description: Master key only; sequence numbers or ranges (for example "4-5") that are gone.
 
     # ── Health ─────────────────────────────────────────────────────────────────
     HealthResponse:
@@ -708,6 +739,27 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/AuditEvent' }
                   pagination: { $ref: '#/components/schemas/Pagination' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/audit/integrity:
+    get:
+      tags: [audit]
+      summary: Verify the whole audit log
+      description: |
+        Checks every signature and chain link, holes in the numbering, entries cut off the end and the
+        signed chain head, so a problem on any page of the log is visible. Results are cached for ten
+        seconds; `?refresh=true` forces a new scan. Only the master key sees entry IDs and missing
+        sequence numbers.
+      parameters:
+        - name: refresh
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditIntegrity' }
         "401": { $ref: '#/components/responses/Unauthorized' }
 
   # ── Policy ────────────────────────────────────────────────────────────────

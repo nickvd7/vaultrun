@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { badgeBase, formatDate } from "@/lib/utils";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import type { CostBreakdown, CostAlert } from "@/types";
@@ -40,12 +41,14 @@ export default function CostsPage() {
     }
   };
 
+  // Short sessions cost fractions of a cent; two decimals would show them all as $0.00.
   const formatCost = (cost: number) => {
+    const small = cost > 0 && cost < 0.01;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: small ? 4 : 2,
+      maximumFractionDigits: small ? 4 : 2,
     }).format(cost);
   };
 
@@ -83,7 +86,7 @@ export default function CostsPage() {
           <p className="text-sm text-slate-300 mt-1">Resource usage and cost tracking</p>
         </div>
         <div className="flex items-center gap-2">
-          <label htmlFor="cost-period" className="text-xs text-slate-300">Period:</label>
+          <label htmlFor="cost-period" className="text-xs text-slate-200">Period:</label>
           <input
             id="cost-period"
             type="month"
@@ -103,7 +106,7 @@ export default function CostsPage() {
             <div className="text-3xl font-bold text-slate-100">{formatCost(breakdown.total_cost)}</div>
           </div>
         </div>
-        <div className="text-xs text-slate-300 mt-2">{breakdown.period}</div>
+        <div className="text-xs text-slate-200 mt-2">{breakdown.period}</div>
       </div>
 
       {/* Cost Breakdown */}
@@ -168,11 +171,14 @@ export default function CostsPage() {
           </h2>
         </div>
         {topSessions.length === 0 ? (
-          <div className="p-6 text-center text-slate-300 text-sm">No session costs for this period.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">
+            No session has accrued cost in this period yet. Costs are billed every minute for CPU and memory
+            allocated; sessions whose cost rounds to $0.0000 are not listed.
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-6 py-3 text-left">Session</th>
                 <th className="px-6 py-3 text-left">Compute</th>
                 <th className="px-6 py-3 text-left">Storage</th>
@@ -183,10 +189,33 @@ export default function CostsPage() {
             <tbody className="divide-y divide-slate-800/50">
               {topSessions.map((s) => (
                 <tr key={s.session_id} className="hover:bg-slate-800/20">
-                  <td className="px-6 py-3 font-mono text-xs text-slate-300">{s.session_name}</td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.compute_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.storage_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.network_cost)}</td>
+                  <td className="px-6 py-3 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {s.stopped_at ? (
+                        <span className="font-mono text-slate-300">{s.session_name}</span>
+                      ) : (
+                        <Link href={`/sessions/${s.session_id}`} className="font-mono text-indigo-300 hover:underline">
+                          {s.session_name}
+                        </Link>
+                      )}
+                      {s.stopped_at && (
+                        <span
+                          className={`${badgeBase} bg-gray-800 text-gray-200 border border-gray-600`}
+                          title={`Deleted or stopped ${formatDate(s.stopped_at)}`}
+                        >
+                          ended
+                        </span>
+                      )}
+                    </div>
+                    {s.session_name !== s.session_id && (
+                      <div className="font-mono text-slate-300 mt-0.5" title={s.session_id}>
+                        {s.session_id.slice(0, 8)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.compute_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.storage_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-200">{formatCost(s.network_cost)}</td>
                   <td className="px-6 py-3 font-mono text-xs text-slate-200 font-medium">
                     {formatCost(s.total_cost)}
                   </td>
@@ -214,20 +243,20 @@ export default function CostsPage() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(alert.severity)}`}>
                         {alert.severity}
                       </span>
-                      <span className="text-xs text-slate-300">{alert.alert_type}</span>
+                      <span className="text-xs text-slate-200">{alert.alert_type}</span>
                     </div>
                     <div className="text-sm text-slate-200 font-medium mb-1">{alert.title}</div>
-                    <div className="text-xs text-slate-300">{alert.description}</div>
+                    <div className="text-xs text-slate-200">{alert.description}</div>
                     {alert.potential_savings && (
-                      <div className="text-xs text-emerald-400 mt-1">
+                      <div className="text-xs text-emerald-300 mt-1">
                         💰 Potential savings: {formatCost(alert.potential_savings)}/month
                       </div>
                     )}
-                    <div className="text-xs text-slate-300 mt-2">{formatDate(alert.created_at)}</div>
+                    <div className="text-xs text-slate-200 mt-2">{formatDate(alert.created_at)}</div>
                   </div>
                   <button
                     onClick={() => handleResolveAlert(alert.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 border border-emerald-900/50 rounded hover:bg-emerald-900/20"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20"
                   >
                     <CheckCircle className="w-3 h-3" /> Resolve
                   </button>

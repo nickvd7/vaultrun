@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Time } from "@/components/ui/Time";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
 import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
@@ -63,7 +64,9 @@ export default function SessionDetailPage() {
       .get(id)
       .then((s) => {
         setSession(s);
-        setLoadState("ready");
+        // Stopping is final and stopped sessions drop out of every list, so a
+        // stopped session is "gone" here too; the API keeps the row for history.
+        setLoadState(s.stopped_at ? "notfound" : "ready");
       })
       .catch((e: unknown) => {
         // 400 = malformed id, 403/404 = not yours or gone: all look like "not found" to the user.
@@ -303,9 +306,17 @@ export default function SessionDetailPage() {
     return (
       <div className="space-y-4 py-8">
         <h1 className="text-2xl font-semibold text-slate-100">Session not found</h1>
-        <p className="text-sm text-slate-300">
-          There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
-        </p>
+        {session?.stopped_at ? (
+          <p className="text-sm text-slate-300">
+            The session <span className="font-mono text-slate-200">{session.name || id}</span> no longer exists: it was deleted
+            or stopped when idle on <Time value={session.stopped_at} />. Its events remain in the{" "}
+            <Link href="/audit" className="text-indigo-300 underline">audit log</Link>.
+          </p>
+        ) : (
+          <p className="text-sm text-slate-300">
+            There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
+          </p>
+        )}
         <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-indigo-300 hover:underline">
           <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to sessions
         </Link>
@@ -337,6 +348,7 @@ export default function SessionDetailPage() {
           </>
         }
         confirmLabel="Delete session"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setConfirmDelete(false)}
@@ -354,12 +366,12 @@ export default function SessionDetailPage() {
               </h1>
               <StatusBadge status={session.status} />
             </div>
-            <p className="text-xs text-slate-300 mt-0.5 font-mono">{session.id}</p>
+            <p className="text-xs text-slate-200 mt-0.5 font-mono">{session.id}</p>
           </div>
         </div>
         <button
           onClick={() => setConfirmDelete(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-400 border border-red-900/50 rounded hover:bg-red-900/20"
+          className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-300 border border-red-900/50 rounded hover:bg-red-900/20"
         >
           <Trash2 className="w-3.5 h-3.5" /> Delete
         </button>
@@ -374,7 +386,7 @@ export default function SessionDetailPage() {
           { label: "Network", value: session.network_enabled ? "Enabled" : "Disabled" },
         ].map(({ label, value }) => (
           <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3">
-            <div className="text-xs text-slate-300 mb-1">{label}</div>
+            <div className="text-xs text-slate-200 mb-1">{label}</div>
             <div className="text-sm text-slate-200 font-mono">{value}</div>
           </div>
         ))}
@@ -383,13 +395,13 @@ export default function SessionDetailPage() {
       {/* Labels panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className="text-xs font-medium text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
             <Tag className="w-3.5 h-3.5" /> Labels
           </h2>
           {!editingLabels && (
             <button
               onClick={handleEditLabels}
-              className="text-xs text-slate-300 hover:text-slate-200 border border-slate-700 rounded px-2 py-1"
+              className="text-xs text-slate-200 hover:text-slate-200 border border-slate-700 rounded px-2 py-1"
             >
               Edit
             </button>
@@ -400,12 +412,12 @@ export default function SessionDetailPage() {
           /* View mode */
           <div className="flex flex-wrap gap-2 min-h-[1.5rem]">
             {Object.keys(session.labels ?? {}).length === 0 ? (
-              <span className="text-xs text-slate-300 italic">No labels</span>
+              <span className="text-xs text-slate-200 italic">No labels</span>
             ) : (
               Object.entries(session.labels ?? {}).map(([k, v]) => (
                 <span
                   key={k}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-xs font-mono text-slate-300"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-xs font-mono text-slate-200"
                 >
                   <span className="text-indigo-400">{k}</span>
                   <span className="text-slate-300">=</span>
@@ -421,11 +433,11 @@ export default function SessionDetailPage() {
             {Object.entries(pendingLabels).map(([k, v]) => (
               <div key={k} className="flex items-center gap-2">
                 <input
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-300 w-36 focus:outline-none focus:border-indigo-500"
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-200 w-36 focus:outline-none focus:border-indigo-500"
                   value={k}
                   readOnly
                 />
-                <span className="text-slate-300 text-xs">=</span>
+                <span className="text-slate-200 text-xs">=</span>
                 <input
                   className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={v}
@@ -445,13 +457,13 @@ export default function SessionDetailPage() {
             {/* Add new label row */}
             <div className="flex items-center gap-2 pt-1 border-t border-slate-800">
               <input
-                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-300 w-36 focus:outline-none focus:border-indigo-500"
+                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-indigo-200 w-36 focus:outline-none focus:border-indigo-500"
                 placeholder="key"
                 value={newLabelKey}
                 onChange={(e) => setNewLabelKey(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddPendingLabel()}
               />
-              <span className="text-slate-300 text-xs">=</span>
+              <span className="text-slate-200 text-xs">=</span>
               <input
                 className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 placeholder="value"
@@ -479,7 +491,7 @@ export default function SessionDetailPage() {
               </button>
               <button
                 onClick={() => setEditingLabels(false)}
-                className="px-3 py-1.5 text-xs text-slate-300 border border-slate-700 rounded hover:bg-slate-800"
+                className="px-3 py-1.5 text-xs text-slate-200 border border-slate-700 rounded hover:bg-slate-800"
               >
                 Cancel
               </button>
@@ -490,7 +502,7 @@ export default function SessionDetailPage() {
 
       {/* Execute panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
-        <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide">
+        <h2 className="text-xs font-medium text-slate-200 uppercase tracking-wide">
           Execute Command
         </h2>
         <div className="flex gap-2">
@@ -563,14 +575,14 @@ export default function SessionDetailPage() {
         </div>
 
         {argsError && (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-red-300">
             {argsError}
           </p>
         )}
 
         {/* Async run status */}
         {asyncPolling && asyncRunId && (
-          <div className="text-xs text-amber-400 font-mono">
+          <div className="text-xs text-amber-300 font-mono">
             ⏳ Polling run <span className="opacity-70">{asyncRunId.slice(0, 8)}…</span>
           </div>
         )}
@@ -657,7 +669,7 @@ function RunsTab({
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">ID</th>
                 <th className="px-4 py-3 text-left">Command</th>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -683,22 +695,22 @@ function RunsTab({
                     selectedRun?.id === r.id ? "bg-slate-800/30" : ""
                   }`}
                 >
-                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-400">
+                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">
                     {r.id.slice(0, 8)}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">
                     {formatCommand(r.command, r.args)}
                   </td>
                   <td className="px-4 py-2.5">
                     <StatusBadge status={r.status} />
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">
                     {r.exit_code ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">
+                  <td className="px-4 py-2.5 text-xs text-slate-200">
                     {r.duration_ms ? formatDuration(r.duration_ms) : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">
+                  <td className="px-4 py-2.5 text-xs text-slate-200">
                     {formatDate(r.created_at)}
                   </td>
                 </tr>
@@ -711,7 +723,7 @@ function RunsTab({
       {selectedRun && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-300 font-mono">
+            <span className="text-xs text-slate-200 font-mono">
               {formatCommand(selectedRun.command, selectedRun.args)}
             </span>
             <StatusBadge status={selectedRun.status} />
@@ -725,13 +737,13 @@ function RunsTab({
             </div>
           )}
           {!selectedRun.stdout && !selectedRun.stderr && (
-            <p className="text-xs text-slate-300">
+            <p className="text-xs text-slate-200">
               No output (exit code {selectedRun.exit_code ?? "unknown"}).
             </p>
           )}
           {selectedRun.stderr && (
             <div>
-              <div className="text-xs text-red-400 mb-1 uppercase tracking-wide">stderr</div>
+              <div className="text-xs text-red-300 mb-1 uppercase tracking-wide">stderr</div>
               <pre className="text-red-300 bg-black/30 rounded p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedRun.stderr}
               </pre>
@@ -780,7 +792,7 @@ function FilesTab({
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Path</th>
                 <th className="px-4 py-3 text-left">Size</th>
                 <th className="px-4 py-3 text-left">Type</th>
@@ -791,14 +803,14 @@ function FilesTab({
             <tbody className="divide-y divide-slate-800/50">
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-800/20">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">{f.path}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">{formatBytes(f.size_bytes)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono">{f.content_type}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">{formatDate(f.updated_at)}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">{f.path}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200">{formatBytes(f.size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono">{f.content_type}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200">{formatDate(f.updated_at)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       onClick={() => handleDownload(f.path)}
-                      className="text-xs text-indigo-400 hover:text-indigo-300"
+                      className="text-xs text-indigo-300 hover:text-indigo-200"
                     >
                       Download
                     </button>
@@ -874,7 +886,7 @@ function CheckpointsTab({
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center">
           <History className="w-12 h-12 mx-auto mb-3 text-slate-300" />
           <p className="text-slate-300 text-sm mb-2">No checkpoints yet</p>
-          <p className="text-slate-300 text-xs">
+          <p className="text-slate-200 text-xs">
             Checkpoints are automatically created after each command execution when replay is enabled.
           </p>
         </div>
@@ -884,7 +896,7 @@ function CheckpointsTab({
         {checkpoints.length > 0 && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">#</th>
                 <th className="px-4 py-3 text-left">Description</th>
                 <th className="px-4 py-3 text-left">Command</th>
@@ -902,19 +914,19 @@ function CheckpointsTab({
                     selectedCheckpoint?.id === cp.id ? "bg-slate-800/30" : ""
                   }`}
                 >
-                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-400">
+                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">
                     #{cp.checkpoint_number}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300 max-w-xs truncate">
+                  <td className="px-4 py-2.5 text-xs text-slate-200 max-w-xs truncate">
                     {cp.name || cp.description}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300 max-w-xs truncate">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200 max-w-xs truncate">
                     {cp.command || "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">
+                  <td className="px-4 py-2.5 text-xs text-slate-200">
                     {formatBytes(cp.size_bytes)}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300">
+                  <td className="px-4 py-2.5 text-xs text-slate-200">
                     {formatDate(cp.created_at)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
@@ -922,7 +934,7 @@ function CheckpointsTab({
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRestore(cp.id); }}
                         disabled={restoring}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-400 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-40"
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-40"
                         title="Restore to this checkpoint"
                       >
                         <RotateCcw className="w-3 h-3" /> Restore
@@ -930,14 +942,14 @@ function CheckpointsTab({
                       <button
                         onClick={(e) => { e.stopPropagation(); handleFork(cp.id); }}
                         disabled={forking}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-400 border border-indigo-900/50 rounded hover:bg-indigo-900/20 disabled:opacity-40"
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-300 border border-indigo-900/50 rounded hover:bg-indigo-900/20 disabled:opacity-40"
                         title="Fork new session from this checkpoint"
                       >
                         <GitFork className="w-3 h-3" /> Fork
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(cp.id); }}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 border border-red-900/50 rounded hover:bg-red-900/20"
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-red-300 border border-red-900/50 rounded hover:bg-red-900/20"
                         title="Delete checkpoint"
                         aria-label="Delete checkpoint"
                       >
@@ -955,21 +967,21 @@ function CheckpointsTab({
       {selectedCheckpoint && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-300 font-mono">
+            <span className="text-xs text-slate-200 font-mono">
               Checkpoint #{selectedCheckpoint.checkpoint_number}
             </span>
-            <span className="text-xs text-slate-300">{selectedCheckpoint.id.slice(0, 16)}</span>
+            <span className="text-xs text-slate-200">{selectedCheckpoint.id.slice(0, 16)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-slate-300 mb-1">Exit Code</div>
+              <div className="text-xs text-slate-200 mb-1">Exit Code</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.exit_code ?? "—"}
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-300 mb-1">Duration</div>
+              <div className="text-xs text-slate-200 mb-1">Duration</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.duration_ms ? formatDuration(selectedCheckpoint.duration_ms) : "—"}
               </div>
@@ -987,7 +999,7 @@ function CheckpointsTab({
 
           {selectedCheckpoint.stderr_preview && (
             <div>
-              <div className="text-xs text-red-400 mb-1 uppercase tracking-wide">stderr (preview)</div>
+              <div className="text-xs text-red-300 mb-1 uppercase tracking-wide">stderr (preview)</div>
               <pre className="text-red-300 bg-black/30 rounded p-3 max-h-32 overflow-auto text-xs font-mono whitespace-pre-wrap">
                 {selectedCheckpoint.stderr_preview}
               </pre>
@@ -1035,7 +1047,7 @@ function AuditTab({ sessionId }: { sessionId: string }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th scope="col" className="px-4 py-3 text-left font-medium">Time</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
@@ -1045,12 +1057,12 @@ function AuditTab({ sessionId }: { sessionId: string }) {
             <tbody className="divide-y divide-slate-800/50">
               {logs.map((l) => (
                 <tr key={l.id} className="hover:bg-slate-800/20">
-                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono" title={l.actor}>
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono" title={l.actor}>
                     {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">{l.action}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
+                  <td className="px-4 py-2.5 font-mono text-xs text-indigo-200">{l.action}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
                     {JSON.stringify(l.metadata)}
                   </td>
                 </tr>
@@ -1060,7 +1072,7 @@ function AuditTab({ sessionId }: { sessionId: string }) {
         )}
       </div>
       {total > logs.length && (
-        <p className="text-xs text-slate-300">
+        <p className="text-xs text-slate-200">
           Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 underline">Open the audit log</Link> for the full history.
         </p>
       )}

@@ -285,14 +285,14 @@ export default function SessionsPage() {
               </Field>
             )}
             <div>
-              <span className="block text-xs text-slate-300 mb-1.5">Network</span>
+              <span className="block text-xs text-slate-200 mb-1.5">Network</span>
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={form.network_enabled} onChange={(e) => setForm({ ...form, network_enabled: e.target.checked })} className="accent-indigo-500" />
                 <span className="text-slate-300 text-sm">Enable network access</span>
               </label>
             </div>
             <div>
-              <span className="block text-xs text-slate-300 mb-1.5">Replay</span>
+              <span className="block text-xs text-slate-200 mb-1.5">Replay</span>
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={form.replay_enabled} onChange={(e) => setForm({ ...form, replay_enabled: e.target.checked })} className="accent-indigo-500" />
                 <span className="text-slate-300 text-sm">Enable session replay checkpoints</span>
@@ -300,7 +300,7 @@ export default function SessionsPage() {
             </div>
           </div>
           {error && (
-            <p role="alert" className="text-red-400 text-xs">
+            <p role="alert" className="text-red-300 text-xs">
               {error}
             </p>
           )}
@@ -347,14 +347,14 @@ export default function SessionsPage() {
           <option value="all">All statuses</option>
           {statuses.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {s.charAt(0).toUpperCase() + s.slice(1)}
             </option>
           ))}
         </select>
       </div>
 
       {total > sessions.length && !orgId && (
-        <p className="text-xs text-slate-300">Showing the {sessions.length} most recent of {total} sessions.</p>
+        <p className="text-xs text-slate-200">Showing the {sessions.length} most recent of {total} sessions.</p>
       )}
 
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
@@ -370,7 +370,7 @@ export default function SessionsPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <SortTh label="Session" active={sortKey === "name"} dir={sortDir} onClick={() => toggleSort("name")} />
                 <th scope="col" className="px-4 py-3 text-left font-medium">Image</th>
                 <SortTh label="Status" active={sortKey === "status"} dir={sortDir} onClick={() => toggleSort("status")} />
@@ -392,21 +392,21 @@ export default function SessionsPage() {
                     <Link
                       href={`/sessions/${s.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="font-mono text-indigo-300 text-xs hover:underline"
+                      className="font-mono text-indigo-200 text-xs hover:underline"
                     >
                       {s.name || `${s.id.slice(0, 12)}…`}
                     </Link>
                     {s.replay_enabled && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-300">replay</span>}
                     <LabelChips labels={s.labels} onPick={(kv) => setQuery(kv)} />
                   </td>
-                  <td className="px-4 py-3 text-slate-300 font-mono text-xs">{s.image}</td>
+                  <td className="px-4 py-3 text-slate-200 font-mono text-xs">{s.image}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={s.status} />
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-300">
+                  <td className="px-4 py-3 text-xs text-slate-200">
                     {s.cpu_limit}CPU · {s.memory_limit_mb}MB
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-300"><Time value={s.created_at} /></td>
+                  <td className="px-4 py-3 text-xs text-slate-200"><Time value={s.created_at} /></td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={(e) => {
@@ -428,7 +428,7 @@ export default function SessionsPage() {
       </div>
 
       {visible.length > PAGE_SIZE && (
-        <nav aria-label="Session pages" className="flex items-center justify-between text-xs text-slate-300">
+        <nav aria-label="Session pages" className="flex items-center justify-between text-xs text-slate-200">
           <span>
             Page {currentPage} of {pageCount}
           </span>
@@ -460,6 +460,7 @@ export default function SessionsPage() {
           </>
         }
         confirmLabel="Delete session"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setToDelete(null)}
@@ -490,7 +491,7 @@ function LabelChips({ labels, onPick }: { labels?: Record<string, string>; onPic
           type="button"
           onClick={() => onPick(`${k}=${v}`)}
           title={`Filter by ${k}=${v}`}
-          className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-300 hover:bg-slate-700"
+          className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-200 hover:bg-slate-700"
         >
           <span className="text-indigo-300">{k}</span>
           <span className="text-slate-300">=</span>
@@ -514,12 +515,12 @@ function Field({
   const errId = `${id}-err`;
   return (
     <div>
-      <label htmlFor={id} className="block text-xs text-slate-300 mb-1.5">
+      <label htmlFor={id} className="block text-xs text-slate-200 mb-1.5">
         {label}
       </label>
       {children(id, error ? errId : undefined)}
       {error && (
-        <p id={errId} className="mt-1 text-xs text-red-400">
+        <p id={errId} className="mt-1 text-xs text-red-300">
           {error}
         </p>
       )}

@@ -258,6 +258,7 @@ func newRouter(
 
 	auditH := handlers.NewAuditHandler(hub)
 	authGroup.GET("/audit", auditH.List)
+	authGroup.GET("/audit/integrity", auditH.Integrity)
 
 	// Cost endpoints — session/org cost tracking and budget management
 	costH := handlers.NewCostHandler(hub, costTracker)

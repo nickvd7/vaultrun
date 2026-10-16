@@ -215,13 +215,112 @@ func DeleteFile(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, path stri
 
 // Audit logs
 
-func CreateAuditLog(ctx context.Context, db *sqlx.DB, a *models.AuditLog) error {
+func CreateAuditLog(ctx context.Context, db sqlx.ExtContext, a *models.AuditLog) error {
 	q := `
-		INSERT INTO audit_logs (id, timestamp, actor, session_id, run_id, action, metadata, sig)
-		VALUES (:id, :timestamp, :actor, :session_id, :run_id, :action, :metadata, :sig)
+		INSERT INTO audit_logs (id, timestamp, actor, session_id, run_id, action, metadata, sig, seq, prev_sig)
+		VALUES (:id, :timestamp, :actor, :session_id, :run_id, :action, :metadata, :sig, :seq, :prev_sig)
 	`
-	_, err := db.NamedExecContext(ctx, q, a)
+	_, err := sqlx.NamedExecContext(ctx, db, q, a)
 	return err
+}
+
+// AuditChainHead is the single audit_chain row: the newest chained entry, how
+// far retention has pruned the chain and when chaining began. MAC is computed
+// by the audit package.
+type AuditChainHead struct {
+	Seq           int64     `db:"seq"`
+	LastSig       string    `db:"last_sig"`
+	PrunedThrough int64     `db:"pruned_through"`
+	StartedAt     time.Time `db:"started_at"`
+	MAC           string    `db:"mac"`
+}
+
+// ExecQuerier is the part of *sqlx.DB and *sqlx.Tx the audit chain needs.
+type ExecQuerier interface {
+	sqlx.ExtContext
+	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+}
+
+// GetAuditChainHead reads the chain head; lock takes a row lock (inside a tx).
+// sql.ErrNoRows means chaining has not started.
+func GetAuditChainHead(ctx context.Context, q ExecQuerier, lock bool) (*AuditChainHead, error) {
+	query := `SELECT seq, last_sig, pruned_through, started_at, mac FROM audit_chain WHERE id = 1`
+	if lock {
+		query += ` FOR UPDATE`
+	}
+	var h AuditChainHead
+	if err := q.GetContext(ctx, &h, query); err != nil {
+		return nil, err
+	}
+	return &h, nil
+}
+
+// InsertAuditChainHead creates the head row unless it exists.
+func InsertAuditChainHead(ctx context.Context, q ExecQuerier, h *AuditChainHead) error {
+	_, err := q.ExecContext(ctx, `
+		INSERT INTO audit_chain (id, seq, last_sig, pruned_through, started_at, mac)
+		VALUES (1, $1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
+		h.Seq, h.LastSig, h.PrunedThrough, h.StartedAt, h.MAC)
+	return err
+}
+
+func UpdateAuditChainHead(ctx context.Context, q ExecQuerier, h *AuditChainHead) error {
+	_, err := q.ExecContext(ctx,
+		`UPDATE audit_chain SET seq = $1, last_sig = $2, pruned_through = $3, mac = $4 WHERE id = 1`,
+		h.Seq, h.LastSig, h.PrunedThrough, h.MAC)
+	return err
+}
+
+// LastChainedAuditEntry returns the highest-numbered chained entry, or
+// sql.ErrNoRows.
+func LastChainedAuditEntry(ctx context.Context, q ExecQuerier) (seq int64, sig string, err error) {
+	var row struct {
+		Seq int64  `db:"seq"`
+		Sig string `db:"sig"`
+	}
+	err = q.GetContext(ctx, &row, `SELECT seq, sig FROM audit_logs WHERE seq IS NOT NULL ORDER BY seq DESC LIMIT 1`)
+	return row.Seq, row.Sig, err
+}
+
+// AuditSigsBySeq returns the signature stored for each requested sequence number.
+func AuditSigsBySeq(ctx context.Context, q ExecQuerier, seqs []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(seqs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		Seq int64  `db:"seq"`
+		Sig string `db:"sig"`
+	}
+	if err := q.SelectContext(ctx, &rows, `SELECT seq, sig FROM audit_logs WHERE seq = ANY($1)`, pq.Array(seqs)); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.Seq] = r.Sig
+	}
+	return out, nil
+}
+
+// PruneAuditLogsBefore deletes entries older than before. Chained entries are
+// deleted as a prefix of the chain (everything up to the newest one that is
+// old enough) and the highest deleted number is returned, so the chain head can
+// record it.
+func PruneAuditLogsBefore(ctx context.Context, q ExecQuerier, before time.Time) (deleted int64, maxSeq int64, err error) {
+	var row struct {
+		N   int64 `db:"n"`
+		Max int64 `db:"m"`
+	}
+	err = q.GetContext(ctx, &row, `
+		WITH cut AS (SELECT COALESCE(MAX(seq), 0) AS c FROM audit_logs WHERE timestamp < $1),
+		d AS (
+			DELETE FROM audit_logs
+			 WHERE (seq IS NULL AND timestamp < $1)
+			    OR (seq IS NOT NULL AND seq <= (SELECT c FROM cut))
+			RETURNING seq
+		)
+		SELECT COUNT(*) AS n, COALESCE(MAX(seq), 0) AS m FROM d`, before)
+	return row.N, row.Max, err
 }
 
 // AuditFilter narrows an audit log query. SessionID and Actor are the access

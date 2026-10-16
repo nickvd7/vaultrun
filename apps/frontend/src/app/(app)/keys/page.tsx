@@ -163,6 +163,7 @@ export default function KeysPage() {
           </>
         }
         confirmLabel="Revoke key"
+        busyLabel="Revoking…"
         busy={revokeBusy}
         onConfirm={handleRevoke}
         onCancel={() => !revokeBusy && setRevoking(null)}
@@ -177,6 +178,7 @@ export default function KeysPage() {
           </>
         }
         confirmLabel="Delete key"
+        busyLabel="Deleting…"
         busy={deleteBusy}
         onConfirm={handleDelete}
         onCancel={() => !deleteBusy && setDeleting(null)}
@@ -226,7 +228,7 @@ export default function KeysPage() {
             </p>
           </div>
           {newKey.expires_at && (
-            <p className="text-xs text-emerald-400 flex items-center gap-1">
+            <p className="text-xs text-emerald-300 flex items-center gap-1">
               <Clock className="w-3 h-3" />
               Expires {formatDateWithZone(newKey.expires_at)}
             </p>
@@ -248,7 +250,7 @@ export default function KeysPage() {
           </div>
           <button
             onClick={() => setNewKey(null)}
-            className="text-xs text-slate-300 hover:text-slate-200"
+            className="text-xs text-slate-200 hover:text-slate-200"
           >
             I&apos;ve saved it — dismiss
           </button>
@@ -261,7 +263,7 @@ export default function KeysPage() {
           <h2 className="text-sm font-medium text-slate-300">Create New API Key</h2>
 
           <div>
-            <label htmlFor="key-name" className="block text-xs text-slate-300 mb-1">Key name</label>
+            <label htmlFor="key-name" className="block text-xs text-slate-200 mb-1">Key name</label>
             <input
               id="key-name"
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -274,7 +276,7 @@ export default function KeysPage() {
           </div>
 
           <div>
-            <label htmlFor="key-secrets" className="block text-xs text-slate-300 mb-1">Allowed secrets (optional)</label>
+            <label htmlFor="key-secrets" className="block text-xs text-slate-200 mb-1">Allowed secrets (optional)</label>
             <input
               id="key-secrets"
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
@@ -282,11 +284,11 @@ export default function KeysPage() {
               onChange={(e) => setSecretsInput(e.target.value)}
               placeholder="DB_PASSWORD, API_TOKEN"
             />
-            <p className="mt-1 text-xs text-slate-300">Comma-separated secret names this key may inject into runs. Leave empty to allow any secret.</p>
+            <p className="mt-1 text-xs text-slate-200">Comma-separated secret names this key may inject into runs. Leave empty to allow any secret.</p>
           </div>
 
           <div>
-            <span className="block text-xs text-slate-300 mb-2">Expiry</span>
+            <span className="block text-xs text-slate-200 mb-2">Expiry</span>
             <div className="flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -345,7 +347,7 @@ export default function KeysPage() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Prefix</th>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -363,26 +365,26 @@ export default function KeysPage() {
                 return (
                   <tr key={k.id} className="hover:bg-slate-800/20 transition-colors">
                     <td className="px-4 py-3 text-slate-200 font-medium">{k.name}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-300">{k.prefix}…</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-200">{k.prefix}…</td>
                     <td className="px-4 py-3">
                       {showExpired ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-amber-400">
+                        <span className="inline-flex items-center gap-1 text-xs text-amber-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                           Expired
                         </span>
                       ) : k.active ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                           Active
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-300">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-200">
                           <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                           Revoked
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
+                    <td className="px-4 py-3 text-xs text-slate-200">
                       {k.allowed_secrets == null ? (
                         <span className="text-slate-300">Any</span>
                       ) : k.allowed_secrets.length === 0 ? (
@@ -401,10 +403,10 @@ export default function KeysPage() {
                         <span className="text-slate-300">Never</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
+                    <td className="px-4 py-3 text-xs text-slate-200">
                       <Time value={k.created_at} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-300">
+                    <td className="px-4 py-3 text-xs text-slate-200">
                       {k.last_used_at ? <Time value={k.last_used_at} /> : <span className="text-slate-300">Never</span>}
                     </td>
                     <td className="px-4 py-3 text-right">

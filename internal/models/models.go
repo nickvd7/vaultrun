@@ -236,6 +236,11 @@ type AuditLog struct {
 	// It is empty when AUDIT_HMAC_KEY is not configured. Non-empty values can be
 	// verified with VerifyAuditSig to detect tampering after the fact.
 	Sig string `db:"sig" json:"sig,omitempty"`
+	// Seq numbers chained entries (1, 2, 3, ...) and PrevSig is the signature
+	// of entry Seq-1; both are covered by Sig. Entries written before chaining
+	// (v0.4.4 and earlier, or with signing off) have no Seq.
+	Seq     *int64 `db:"seq"      json:"seq,omitempty"`
+	PrevSig string `db:"prev_sig" json:"-"`
 	// SigValid is computed on read, never stored: true when Sig matches the
 	// entry, false when it does not or the entry is unsigned. It is only
 	// present when AUDIT_HMAC_KEY is configured.
@@ -245,6 +250,9 @@ type AuditLog struct {
 	// for entries written before verifiable signing started, AuditSigInvalid is
 	// not (altered, or its signature removed).
 	SigStatus string `db:"-" json:"sig_status,omitempty"`
+	// SigReason says why an entry is AuditSigInvalid (changed, signature
+	// removed, previous entry missing or altered).
+	SigReason string `db:"-" json:"sig_reason,omitempty"`
 }
 
 // Audit signature states reported in AuditLog.SigStatus.

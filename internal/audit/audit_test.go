@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,5 +116,17 @@ func TestSigStatusSeparatesLegacyFromTampered(t *testing.T) {
 	bad.Sig = "deadbeef"
 	if got := l.SigStatus(bad, nil); got != models.AuditSigInvalid {
 		t.Fatalf("nothing verifies yet, bad signature = %q, want invalid", got)
+	}
+}
+
+func TestBareHexSignaturesFromV041StillVerify(t *testing.T) {
+	l := New(nil, "k")
+	e := newEntry()
+	e.Sig = strings.TrimPrefix(l.sign(e), SigPrefix)
+	if !l.VerifyAuditSig(roundTrip(t, e)) {
+		t.Fatal("a v0.4.1-v0.4.3 entry (bare hex digest) must keep verifying")
+	}
+	if !strings.HasPrefix(l.sign(e), SigPrefix) {
+		t.Fatal("new signatures carry the marker")
 	}
 }

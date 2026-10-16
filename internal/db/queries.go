@@ -862,11 +862,18 @@ func DeleteArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, err
 	return artifactPath, err
 }
 
-// ListSignedAuditLogsAsc returns signed audit entries oldest first, for finding
-// where verifiable signatures begin.
-func ListSignedAuditLogsAsc(ctx context.Context, db *sqlx.DB, limit, offset int) ([]*models.AuditLog, error) {
-	logs := make([]*models.AuditLog, 0)
-	err := db.SelectContext(ctx, &logs,
-		`SELECT * FROM audit_logs WHERE sig <> '' ORDER BY timestamp ASC LIMIT $1 OFFSET $2`, limit, offset)
-	return logs, err
+// FirstPrefixedAuditTime returns the timestamp of the earliest audit entry whose
+// signature starts with prefix, or nil when there is none.
+func FirstPrefixedAuditTime(ctx context.Context, db *sqlx.DB, prefix string) (*time.Time, error) {
+	var ts time.Time
+	err := db.GetContext(ctx, &ts,
+		`SELECT timestamp FROM audit_logs WHERE left(sig, $2::int) = $1 ORDER BY timestamp ASC LIMIT 1`,
+		prefix, len(prefix))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &ts, nil
 }

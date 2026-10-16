@@ -251,6 +251,7 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 			COALESCE(SUM(cm.storage_cost), 0) as storage_cost,
 			COALESCE(SUM(cm.network_cost), 0) as network_cost,
 			COALESCE(SUM(cm.total_cost), 0) as total_cost,
+			s.stopped_at,
 			MIN(cm.period_start) as first_metric,
 			MAX(cm.period_end) as last_metric
 		FROM sessions s
@@ -258,7 +259,8 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 		WHERE cm.period_start >= $1::timestamptz
 		AND cm.period_start < ($1::timestamptz + INTERVAL '1 month')
 		%s
-		GROUP BY s.id, s.name
+		GROUP BY s.id, s.name, s.stopped_at
+		HAVING COALESCE(SUM(cm.total_cost), 0) > 0
 		ORDER BY total_cost DESC
 		LIMIT 10
 	`, sessionFilter), totalsArgs...)

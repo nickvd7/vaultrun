@@ -339,7 +339,10 @@ func (c *Client) StopSandbox(ctx context.Context, containerID string) error {
 		}
 	}
 
-	timeout := 10
+	// The sandbox's PID 1 is `sleep infinity`, which ignores SIGTERM, so any
+	// grace period is spent waiting for nothing; the workspace is a bind mount
+	// and survives the kill. Ten seconds made every delete take ten.
+	timeout := 2
 	if err := c.inner.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout}); err != nil {
 		// If it's already stopped/removed, that's fine.
 		slog.Debug("sandbox: container stop (may already be stopped)", "container_id", containerID, "err", err)

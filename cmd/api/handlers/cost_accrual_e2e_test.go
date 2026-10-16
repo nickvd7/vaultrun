@@ -73,3 +73,53 @@ func TestAccrueUsageBillsSessionsOnce(t *testing.T) {
 		t.Errorf("session total_cost = %v (err %v), want > 0", total, err)
 	}
 }
+
+// The Costs page listed every session that ever recorded a metric, including
+// ones whose cost rounds to nothing, and did not say which had ended.
+func TestCostBreakdownMarksEndedSessionsAndSkipsZeroCost(t *testing.T) {
+	truncateFeatureTables(t)
+	ctx := context.Background()
+	tracker := cost.New(testDB, []byte(testHMACKey))
+
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	ended := seedFeatureSession(t, "alice", nil, false)
+	live := seedFeatureSession(t, "alice", nil, false)
+	blink := seedFeatureSession(t, "alice", nil, false)
+	testDB.MustExec(`UPDATE sessions SET cpu_limit = 2, memory_limit_mb = 1024, created_at = $2, stopped_at = $3 WHERE id = $1`,
+		ended, now.Add(-2*time.Hour), now.Add(-time.Hour))
+	testDB.MustExec(`UPDATE sessions SET cpu_limit = 1, memory_limit_mb = 512, created_at = $2 WHERE id = $1`,
+		live, now.Add(-30*time.Minute))
+	testDB.MustExec(`UPDATE sessions SET cpu_limit = 0.1, memory_limit_mb = 64, created_at = $2, stopped_at = $3 WHERE id = $1`,
+		blink, now.Add(-time.Hour), now.Add(-time.Hour+time.Second))
+
+	if _, err := tracker.AccrueUsage(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	b, err := tracker.GetCostBreakdown(ctx, now.Format("2006-01"), cost.DeploymentScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawEnded, sawLive bool
+	for _, s := range b.TopSessions {
+		switch s.SessionID {
+		case ended:
+			sawEnded = true
+			if s.StoppedAt == nil {
+				t.Error("ended session is not marked as stopped")
+			}
+		case live:
+			sawLive = true
+			if s.StoppedAt != nil {
+				t.Error("running session is marked as stopped")
+			}
+		case blink:
+			t.Errorf("session costing %.4f is listed", s.TotalCost)
+		}
+		if s.TotalCost <= 0 {
+			t.Errorf("zero-cost session %s listed", s.SessionID)
+		}
+	}
+	if !sawEnded || !sawLive {
+		t.Errorf("ended=%v live=%v in %+v", sawEnded, sawLive, b.TopSessions)
+	}
+}

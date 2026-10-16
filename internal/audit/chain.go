@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
@@ -525,9 +526,21 @@ func (l *Logger) WatchIntegrity(ctx context.Context, interval time.Duration) {
 	}
 }
 
+// ErrPruneBlocked is returned by Prune when the entries it would delete do not
+// verify, so retention stops instead of erasing evidence.
+var ErrPruneBlocked = errors.New("audit retention paused")
+
 // Prune deletes entries older than before (retention). Chained entries go as a
 // prefix of the chain, and the chain head records how far, so a pruned log
 // still verifies while a hole elsewhere does not.
+//
+// The prefix is walked from the oldest entry and only extends over entries
+// that are old, numbered without gaps, correctly signed, linked to their
+// predecessor and not dated before it. It ends at the first entry that is not
+// old enough, so an entry whose timestamp was moved back can never pull newer
+// entries into the deletion, and it is refused (ErrPruneBlocked, nothing
+// deleted) when an old entry fails any of those checks, since the signed
+// boundary written afterwards would otherwise make the log verify again.
 func (l *Logger) Prune(ctx context.Context, before time.Time) (int64, error) {
 	if !l.Enabled() {
 		return dbpkg.DeleteOldAuditLogs(ctx, l.db, before)
@@ -545,16 +558,101 @@ func (l *Logger) Prune(ctx context.Context, before time.Time) (int64, error) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
-	deleted, maxSeq, err := dbpkg.PruneAuditLogsBefore(ctx, tx, before)
-	if err != nil {
+	headOK := head != nil && l.headValid(head)
+
+	var chained bool
+	if err := tx.GetContext(ctx, &chained, `SELECT EXISTS (SELECT 1 FROM audit_logs WHERE seq IS NOT NULL)`); err != nil {
 		return 0, err
 	}
-	if head != nil && l.headValid(head) && maxSeq > head.PrunedThrough {
-		head.PrunedThrough = maxSeq
+	if (head != nil && !headOK) || (head == nil && chained) {
+		return 0, l.blocked("the chain head is missing or fails verification")
+	}
+
+	var last int64
+	if headOK {
+		if last, err = l.oldPrefix(ctx, tx, head, before); err != nil {
+			return 0, err
+		}
+	}
+
+	var deleted int64
+	if last > 0 {
+		if deleted, err = dbpkg.DeleteAuditSeqThrough(ctx, tx, last); err != nil {
+			return 0, err
+		}
+		head.PrunedThrough = last
 		head.MAC = l.headMAC(head)
 		if err := dbpkg.UpdateAuditChainHead(ctx, tx, head); err != nil {
 			return 0, err
 		}
 	}
-	return deleted, tx.Commit()
+	var start *time.Time
+	if headOK {
+		start = &head.StartedAt
+	}
+	n, err := dbpkg.DeleteUnchainedAuditBefore(ctx, tx, before, start)
+	if err != nil {
+		return 0, err
+	}
+	return deleted + n, tx.Commit()
+}
+
+func (l *Logger) blocked(why string) error {
+	slog.Warn("audit: retention is paused, nothing was deleted; run GET /api/v1/audit/integrity to see which entries fail", "reason", why)
+	return fmt.Errorf("%w: %s", ErrPruneBlocked, why)
+}
+
+// oldPrefix returns the number of the last entry of the deletable prefix, or
+// 0 when there is none. It returns ErrPruneBlocked when an old entry fails
+// verification.
+func (l *Logger) oldPrefix(ctx context.Context, tx *sqlx.Tx, head *dbpkg.AuditChainHead, before time.Time) (int64, error) {
+	rows, err := tx.QueryxContext(ctx, `SELECT * FROM audit_logs WHERE seq IS NOT NULL ORDER BY seq`)
+	if err != nil {
+		return 0, err
+	}
+	var (
+		last, prevSeq int64
+		prevSig       string
+		prevTime      time.Time
+		first         = true
+		expect        = head.PrunedThrough + 1
+		problem       string
+	)
+	for rows.Next() {
+		var e models.AuditLog
+		if err := rows.StructScan(&e); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		if !e.Timestamp.Before(before) {
+			break
+		}
+		seq := *e.Seq
+		switch {
+		case seq != expect:
+			problem = fmt.Sprintf("entry #%d is missing", expect)
+		case e.Sig == "" || !l.VerifyAuditSig(&e):
+			problem = fmt.Sprintf("entry #%d fails verification", seq)
+		case first && seq == 1 && e.PrevSig != "":
+			problem = fmt.Sprintf("entry #%d claims a predecessor", seq)
+		case !first && e.PrevSig != prevSig:
+			problem = fmt.Sprintf("entry #%d does not match the entry before it (#%d)", seq, prevSeq)
+		case !first && e.Timestamp.Before(prevTime):
+			problem = fmt.Sprintf("entry #%d is dated earlier than the entry before it (#%d)", seq, prevSeq)
+		}
+		if problem != "" {
+			break
+		}
+		last, expect = seq, seq+1
+		first, prevSeq, prevSig, prevTime = false, seq, e.Sig, e.Timestamp
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	if problem != "" {
+		return 0, l.blocked(problem)
+	}
+	return last, nil
 }

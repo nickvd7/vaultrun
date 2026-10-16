@@ -57,13 +57,19 @@ type Logger struct {
 	scanMu      sync.Mutex
 	integrity   *Integrity
 	integrityAt time.Time
+
+	now func() time.Time
 }
 
 // New creates an audit Logger. hmacKey is the raw HMAC-SHA256 signing key
 // (AUDIT_HMAC_KEY env var). Pass an empty string to disable signing.
 func New(db *sqlx.DB, hmacKey string) *Logger {
-	return &Logger{db: db, hmacKey: []byte(hmacKey)}
+	return &Logger{db: db, hmacKey: []byte(hmacKey), now: time.Now}
 }
+
+// SetClock replaces the time source for new entries. It exists for tests that
+// need correctly signed entries with old timestamps.
+func (l *Logger) SetClock(now func() time.Time) { l.now = now }
 
 type Event struct {
 	Actor     string
@@ -78,7 +84,7 @@ func (l *Logger) Log(ctx context.Context, e Event) {
 	// signature can never verify after a round trip.
 	entry := &models.AuditLog{
 		ID:        uuid.New(),
-		Timestamp: time.Now().UTC().Truncate(time.Microsecond),
+		Timestamp: l.now().UTC().Truncate(time.Microsecond),
 		Actor:     e.Actor,
 		SessionID: e.SessionID,
 		RunID:     e.RunID,
@@ -118,7 +124,7 @@ func (l *Logger) logChained(ctx context.Context, entry *models.AuditLog) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, _, lerr := dbpkg.LastChainedAuditEntry(ctx, tx); errors.Is(lerr, sql.ErrNoRows) {
 			// First chained entry ever: start the chain now.
-			h := &dbpkg.AuditChainHead{StartedAt: time.Now().UTC().Truncate(time.Microsecond)}
+			h := &dbpkg.AuditChainHead{StartedAt: l.now().UTC().Truncate(time.Microsecond)}
 			h.MAC = l.headMAC(h)
 			if err := dbpkg.InsertAuditChainHead(ctx, tx, h); err != nil {
 				return err
@@ -153,7 +159,7 @@ func (l *Logger) logChained(ctx context.Context, entry *models.AuditLog) error {
 	next := seq + 1
 	entry.Seq = &next
 	entry.PrevSig = prev
-	entry.Timestamp = time.Now().UTC().Truncate(time.Microsecond)
+	entry.Timestamp = l.now().UTC().Truncate(time.Microsecond)
 	entry.Sig = l.sign(entry)
 	if err := dbpkg.CreateAuditLog(ctx, tx, entry); err != nil {
 		return err

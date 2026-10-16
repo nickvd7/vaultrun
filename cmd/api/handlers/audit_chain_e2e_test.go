@@ -4,6 +4,7 @@ package handlers_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -168,9 +169,35 @@ func TestAuditChainDetectsHeadTampering(t *testing.T) {
 	}
 }
 
+// chainLoggerAged writes oldN correctly signed entries dated 100 days ago and
+// then newN entries dated now, so retention has something legitimate to delete.
+func chainLoggerAged(t *testing.T, oldN, newN int) *audit.Logger {
+	t.Helper()
+	truncateFeatureTables(t)
+	al := audit.New(testDB, testHMACKey)
+	old := time.Now().AddDate(0, 0, -100)
+	al.SetClock(func() time.Time { old = old.Add(time.Second); return old })
+	for i := 1; i <= oldN; i++ {
+		al.Log(context.Background(), audit.Event{Actor: "alice", Action: fmt.Sprintf("test.event%d", i)})
+	}
+	al.SetClock(time.Now)
+	for i := oldN + 1; i <= oldN+newN; i++ {
+		al.Log(context.Background(), audit.Event{Actor: "alice", Action: fmt.Sprintf("test.event%d", i)})
+	}
+	return al
+}
+
+func auditCount(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := testDB.Get(&n, `SELECT COUNT(*) FROM audit_logs`); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestAuditRetentionPrunesChainWithoutBreakingIt(t *testing.T) {
-	al := chainLogger(t, 5)
-	testDB.MustExec(`UPDATE audit_logs SET timestamp = timestamp - interval '100 days' WHERE action IN ('test.event1', 'test.event2')`)
+	al := chainLoggerAged(t, 2, 3)
 	n, err := al.Prune(context.Background(), time.Now().AddDate(0, 0, -30))
 	if err != nil || n != 2 {
 		t.Fatalf("prune: n=%d err=%v", n, err)
@@ -188,6 +215,92 @@ func TestAuditRetentionPrunesChainWithoutBreakingIt(t *testing.T) {
 	testDB.MustExec(`DELETE FROM audit_logs WHERE action = 'test.event4'`)
 	if res := integrity(t, al); res.Status != audit.IntegrityCompromised {
 		t.Fatalf("hole after retention: %+v", res)
+	}
+}
+
+// A recent entry whose timestamp was moved back must not make retention delete
+// the newer entries before it, nor turn the verdict back to ok.
+func TestAuditRetentionIgnoresBackdatedEntry(t *testing.T) {
+	cutoff := time.Now().AddDate(0, 0, -30)
+
+	t.Run("only recent entries", func(t *testing.T) {
+		al := chainLogger(t, 6)
+		testDB.MustExec(`UPDATE audit_logs SET timestamp = '2026-01-01' WHERE action = 'test.event6'`)
+		n, err := al.Prune(context.Background(), cutoff)
+		if err != nil || n != 0 || auditCount(t) != 6 {
+			t.Fatalf("prune: n=%d err=%v left=%d", n, err, auditCount(t))
+		}
+		if res := integrity(t, al); res.Status != audit.IntegrityCompromised || res.MissingEntries != 0 {
+			t.Fatalf("verdict: %+v", res)
+		}
+	})
+
+	t.Run("old entries are still pruned, the backdated one stays", func(t *testing.T) {
+		al := chainLoggerAged(t, 2, 4)
+		testDB.MustExec(`UPDATE audit_logs SET timestamp = '2026-01-01' WHERE action = 'test.event6'`)
+		n, err := al.Prune(context.Background(), cutoff)
+		if err != nil || n != 2 || auditCount(t) != 4 {
+			t.Fatalf("prune: n=%d err=%v left=%d", n, err, auditCount(t))
+		}
+		res := integrity(t, al)
+		if res.Status != audit.IntegrityCompromised || res.AlteredEntries != 1 || res.MissingEntries != 0 {
+			t.Fatalf("the backdated entry must still be reported: %+v", res)
+		}
+	})
+
+	t.Run("backdated entry among the old ones blocks retention", func(t *testing.T) {
+		al := chainLoggerAged(t, 4, 2)
+		testDB.MustExec(`UPDATE audit_logs SET timestamp = timestamp - interval '1 day' WHERE action = 'test.event3'`)
+		n, err := al.Prune(context.Background(), cutoff)
+		if !errors.Is(err, audit.ErrPruneBlocked) || n != 0 || auditCount(t) != 6 {
+			t.Fatalf("prune: n=%d err=%v left=%d", n, err, auditCount(t))
+		}
+		if res := integrity(t, al); res.Status != audit.IntegrityCompromised {
+			t.Fatalf("verdict: %+v", res)
+		}
+	})
+}
+
+func TestAuditRetentionRefusesToPruneAnUnverifiedPrefix(t *testing.T) {
+	cutoff := time.Now().AddDate(0, 0, -30)
+	cases := map[string]string{
+		"altered entry":       `UPDATE audit_logs SET action = 'test.forged' WHERE action = 'test.event2'`,
+		"signature removed":   `UPDATE audit_logs SET sig = '' WHERE action = 'test.event2'`,
+		"deleted entry":       `DELETE FROM audit_logs WHERE action = 'test.event2'`,
+		"deleted first entry": `DELETE FROM audit_logs WHERE action = 'test.event1'`,
+		"altered chain head":  `UPDATE audit_chain SET pruned_through = 0, last_sig = 'x'`,
+	}
+	for name, stmt := range cases {
+		t.Run(name, func(t *testing.T) {
+			al := chainLoggerAged(t, 3, 2)
+			testDB.MustExec(stmt)
+			before := auditCount(t)
+			n, err := al.Prune(context.Background(), cutoff)
+			if !errors.Is(err, audit.ErrPruneBlocked) || n != 0 || auditCount(t) != before {
+				t.Fatalf("prune: n=%d err=%v left=%d of %d", n, err, auditCount(t), before)
+			}
+		})
+	}
+}
+
+func TestAuditRetentionKeepsUnnumberedEntriesFromAfterChainingBegan(t *testing.T) {
+	al := chainLoggerAged(t, 2, 1)
+	testDB.MustExec(`INSERT INTO audit_logs (id, timestamp, actor, action, metadata, sig)
+		VALUES (gen_random_uuid(), now() - interval '50 days', 'alice', 'test.unnumbered', '{}', '')`)
+	testDB.MustExec(`INSERT INTO audit_logs (id, timestamp, actor, action, metadata, sig)
+		VALUES (gen_random_uuid(), now() - interval '200 days', 'alice', 'test.legacy', '{}', '')`)
+	if _, err := al.Prune(context.Background(), time.Now().AddDate(0, 0, -30)); err != nil {
+		t.Fatal(err)
+	}
+	var actions []string
+	if err := testDB.Select(&actions, `SELECT action FROM audit_logs WHERE seq IS NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0] != "test.unnumbered" {
+		t.Fatalf("unnumbered entries left: %v", actions)
+	}
+	if res := integrity(t, al); res.Status != audit.IntegrityCompromised {
+		t.Fatalf("the unnumbered entry must still be reported: %+v", res)
 	}
 }
 

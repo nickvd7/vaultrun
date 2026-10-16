@@ -5,6 +5,7 @@ package cleanup
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -102,6 +103,10 @@ func (cl *cleaner) pruneAuditLogs(ctx context.Context, retentionDays int) {
 		n, err = cl.audit.Prune(ctx, before)
 	} else {
 		n, err = dbpkg.DeleteOldAuditLogs(ctx, cl.db, before)
+	}
+	if errors.Is(err, audit.ErrPruneBlocked) {
+		slog.Warn("cleanup: audit retention paused until the log verifies again", "err", err)
+		return
 	}
 	if err != nil {
 		slog.Error("cleanup: prune audit logs", "err", err)

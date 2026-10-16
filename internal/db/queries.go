@@ -310,25 +310,30 @@ func AuditPredsBySeq(ctx context.Context, q ExecQuerier, seqs []int64) (map[int6
 	return out, nil
 }
 
-// PruneAuditLogsBefore deletes entries older than before. Chained entries are
-// deleted as a prefix of the chain (everything up to the newest one that is
-// old enough) and the highest deleted number is returned, so the chain head can
-// record it.
-func PruneAuditLogsBefore(ctx context.Context, q ExecQuerier, before time.Time) (deleted int64, maxSeq int64, err error) {
-	var row struct {
-		N   int64 `db:"n"`
-		Max int64 `db:"m"`
+// DeleteAuditSeqThrough deletes the chained entries numbered 1 through seq and
+// returns how many rows went. The caller has already checked that they form an
+// intact, old prefix of the chain.
+func DeleteAuditSeqThrough(ctx context.Context, q ExecQuerier, seq int64) (int64, error) {
+	res, err := q.ExecContext(ctx, `DELETE FROM audit_logs WHERE seq IS NOT NULL AND seq <= $1`, seq)
+	if err != nil {
+		return 0, err
 	}
-	err = q.GetContext(ctx, &row, `
-		WITH cut AS (SELECT COALESCE(MAX(seq), 0) AS c FROM audit_logs WHERE timestamp < $1),
-		d AS (
-			DELETE FROM audit_logs
-			 WHERE (seq IS NULL AND timestamp < $1)
-			    OR (seq IS NOT NULL AND seq <= (SELECT c FROM cut))
-			RETURNING seq
-		)
-		SELECT COUNT(*) AS n, COALESCE(MAX(seq), 0) AS m FROM d`, before)
-	return row.N, row.Max, err
+	return res.RowsAffected()
+}
+
+// DeleteUnchainedAuditBefore deletes entries that never had a chain number and
+// are older than before. When chainStart is set, only those written before
+// chaining began count: an unnumbered entry from later is not legacy, it is an
+// entry whose number was removed, and it is evidence.
+func DeleteUnchainedAuditBefore(ctx context.Context, q ExecQuerier, before time.Time, chainStart *time.Time) (int64, error) {
+	if chainStart != nil && chainStart.Before(before) {
+		before = *chainStart
+	}
+	res, err := q.ExecContext(ctx, `DELETE FROM audit_logs WHERE seq IS NULL AND timestamp < $1`, before)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // AuditFilter narrows an audit log query. SessionID and Actor are the access

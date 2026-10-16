@@ -70,9 +70,15 @@ import (
 	"syscall"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/nickvd7/vaultrun/internal/version"
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version") {
+		fmt.Println("vaultrun-mcp", version.String())
+		return
+	}
 	// Configure logging: default to stderr, redirect to file when VAULTRUN_LOG_FILE is set.
 	logWriter := os.Stderr
 	if lf := os.Getenv("VAULTRUN_LOG_FILE"); lf != "" {

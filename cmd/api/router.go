@@ -56,6 +56,7 @@ func newRouter(
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(gin.Logger())
+	r.Use(middleware.ServerErrorLog())
 	r.Use(metrics.HTTPMiddleware())
 
 	// Do not trust X-Forwarded-For from arbitrary proxies; prevents rate-limit

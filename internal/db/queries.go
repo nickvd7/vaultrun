@@ -835,3 +835,12 @@ func DeleteArtifact(ctx context.Context, db *sqlx.DB, id uuid.UUID) (string, err
 	}
 	return artifactPath, err
 }
+
+// ListSignedAuditLogsAsc returns signed audit entries oldest first, for finding
+// where verifiable signatures begin.
+func ListSignedAuditLogsAsc(ctx context.Context, db *sqlx.DB, limit, offset int) ([]*models.AuditLog, error) {
+	logs := make([]*models.AuditLog, 0)
+	err := db.SelectContext(ctx, &logs,
+		`SELECT * FROM audit_logs WHERE sig <> '' ORDER BY timestamp ASC LIMIT $1 OFFSET $2`, limit, offset)
+	return logs, err
+}

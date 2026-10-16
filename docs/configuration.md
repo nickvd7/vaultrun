@@ -291,7 +291,7 @@ See [`docs/multi-region.md`](multi-region.md) for full deployment guides.
 |---|---|---|
 | `LOG_LEVEL` | `info` | Log verbosity: `debug` \| `info` \| `warn` \| `error` |
 | `WEBHOOK_SECRET` | | HMAC-SHA256 signing key for async run callback payloads. Sent as `X-VaultRun-Signature: sha256=<hex>`. Empty = no signing (insecure for internet-facing callbacks). |
-| `AUDIT_HMAC_KEY` | | HMAC-SHA256 key that signs each audit log entry. Empty = unsigned. When set, `GET /api/v1/audit` adds `sig_valid` (true/false) to every entry, recomputed from the stored row, so tampering shows up as `false`. Entries written by v0.4.0 and earlier never verify (their signature covered nanoseconds that the database does not store). |
+| `AUDIT_HMAC_KEY` | | HMAC-SHA256 key that signs each audit log entry. Empty = unsigned. When set, `GET /api/v1/audit` adds `sig_status` to every entry, recomputed from the stored row (`sig_valid` is `true` only for `valid`). `valid`: the signature matches. `invalid`: the entry was altered, or its signature was removed, after verifiable signing began. `unsigned` / `unverifiable`: written before that point (signing was off, or v0.4.0 and earlier, whose signature covered nanoseconds the database does not store) and therefore expected, not suspicious. This is evidence, not proof: someone who can rewrite rows can also move an entry's timestamp, so ship the log to storage they cannot write (`AUDIT_EXPORT_URL`) when that matters. |
 | `STOP_CONTAINERS_ON_SHUTDOWN` | `false` | When `true`, gracefully stop all running session containers on SIGTERM. |
 | `AUDIT_LOG_RETENTION_DAYS` | `90` | Delete audit log entries older than N days on each cleanup sweep. `0` = retain indefinitely. |
 

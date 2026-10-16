@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Costs are recorded.** `RecordMetric` had no caller, so every session showed 0 whatever it ran. The API now bills sessions every minute for the CPU core-hours and memory GB-hours they had allocated (a running session in blocks of at least five minutes, a stopped one for its remainder, never across a month boundary). After upgrading, sessions that still exist are billed from their start. Storage, network and GPU are not metered yet. Costs are stored to four decimals, so a very short session reads `0.0000` while its core-hours are kept. Metrics are now rounded to the stored precision before they are signed, so they verify after a round trip, and the monthly breakdown assigns a metric to the month it started in (a block ending exactly at midnight on the 1st used to fall in no month).
+- **A tampered audit entry no longer looks like an unsigned one.** Entries now carry `sig_status`: `valid`; `invalid` (changed, or its signature removed, after verifiable signing began); `unsigned` / `unverifiable` (written before that point, for example by v0.4.0 and earlier, which is expected). `sig_valid` stays and is `true` only for `valid`. The dashboard shows the three states differently.
+- **A 500 is always logged.** Failures such as `workspace init failed` (for example a workspaces directory the API cannot write to) were returned to the caller without a line in the API log. About 90 error paths now log their cause, and a middleware logs every 5xx response (method, route, message) as a backstop.
+
+### Added
+- **Version numbers.** `GET /health` returns `version`, the API logs it at start, and `vaultrun-api`, `vaultrun` (CLI), `vaultrun-local` and `vaultrun-mcp` accept `--version`. The MCP server reported a fixed `0.1.0` before. The number comes from `internal/version/VERSION`, which `scripts/check-versions.sh` keeps in step with the other release files.
+
 ---
 
 ## [0.4.3] — 2026-10-15

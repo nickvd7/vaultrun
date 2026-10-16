@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +73,7 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 
 	plaintext, key, err := authpkg.GenerateKey(req.Name, expiresAt)
 	if err != nil {
+		slog.Error("key generation failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "key generation failed"})
 		return
 	}
@@ -85,6 +87,7 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "api key name already exists"})
 			return
 		}
+		slog.Error("failed to persist key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist key"})
 		return
 	}
@@ -151,6 +154,7 @@ func (kh *KeyHandler) SetSecrets(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to update key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update key"})
 		return
 	}
@@ -187,6 +191,7 @@ func normalizeSecretNames(in []string) []string {
 func (kh *KeyHandler) List(c *gin.Context) {
 	keys, err := dbpkg.ListAPIKeys(c.Request.Context(), kh.h.db)
 	if err != nil {
+		slog.Error("failed to list keys", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list keys"})
 		return
 	}
@@ -206,6 +211,7 @@ func (kh *KeyHandler) Revoke(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "key not found"})
 		return
 	} else if err != nil {
+		slog.Error("failed to revoke key", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke key"})
 		return
 	}

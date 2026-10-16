@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -58,6 +59,7 @@ func (rh *RunHandler) authorizeSecrets(c *gin.Context, requested []string) bool 
 	}
 	allowed, err := dbpkg.GetAPIKeyAllowedSecrets(c.Request.Context(), rh.h.db, keyID)
 	if err != nil {
+		slog.Error("failed to check secret permissions", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check secret permissions"})
 		return false
 	}
@@ -274,6 +276,7 @@ func (rh *RunHandler) ListBySession(c *gin.Context) {
 	pg := pagination(c)
 	runs, err := dbpkg.ListRuns(c.Request.Context(), rh.h.db, sessionID, pg.limit, pg.offset)
 	if err != nil {
+		slog.Error("failed to list runs", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list runs"})
 		return
 	}
@@ -294,6 +297,7 @@ func (rh *RunHandler) Get(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get run", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get run"})
 		return
 	}

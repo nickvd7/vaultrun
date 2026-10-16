@@ -113,6 +113,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	if limits.MaxSessionsPerActor > 0 && actor != "master" {
 		count, err := dbpkg.CountActiveSessionsByActor(c.Request.Context(), sh.h.db, actor)
 		if err != nil {
+			slog.Error("failed to count sessions", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count sessions"})
 			return
 		}
@@ -152,6 +153,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	wspath, err := sh.h.ws.Create(sessionID)
 	if err != nil {
+		slog.Error("workspace init failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace init failed"})
 		return
 	}
@@ -171,6 +173,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		}
 		if err != nil {
 			_ = sh.h.ws.Delete(sessionID)
+			slog.Error("failed to load snapshot", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load snapshot"})
 			return
 		}
@@ -223,6 +226,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	if err := dbpkg.CreateSession(c.Request.Context(), sh.h.db, session); err != nil {
 		_ = sh.h.ws.Delete(sessionID)
+		slog.Error("persist session failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist session failed"})
 		return
 	}
@@ -295,6 +299,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		// prevent an orphaned container that can never be cleaned up (H-3).
 		_ = sh.h.docker.StopSandbox(context.Background(), containerID)
 		_ = sh.h.ws.Delete(sessionID)
+		slog.Error("update session status failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update session status failed"})
 		return
 	}
@@ -340,6 +345,7 @@ func (sh *SessionHandler) List(c *gin.Context) {
 
 	sessions, err := dbpkg.ListSessionsForActor(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue, pg.limit, pg.offset)
 	if err != nil {
+		slog.Error("failed to list sessions", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list sessions"})
 		return
 	}
@@ -449,6 +455,7 @@ func (sh *SessionHandler) UpdateLabels(c *gin.Context) {
 	}
 
 	if err := dbpkg.UpdateSessionLabels(c.Request.Context(), sh.h.db, id, labels); err != nil {
+		slog.Error("failed to update labels", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update labels"})
 		return
 	}

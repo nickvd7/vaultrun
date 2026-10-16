@@ -283,6 +283,7 @@ func (vh *VerifyHandler) Evidence(c *gin.Context) {
 			return
 		}
 		if err := populateEvidenceFromRecord(&in, rec); err != nil {
+			slog.Error("corrupt verification record", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "corrupt verification record"})
 			return
 		}
@@ -415,6 +416,7 @@ func (vh *VerifyHandler) GetEvidence(c *gin.Context) {
 		IncludeControls: includeControls,
 	}
 	if err := populateEvidenceFromRecord(&in, rec); err != nil {
+		slog.Error("corrupt verification record", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "corrupt verification record"})
 		return
 	}

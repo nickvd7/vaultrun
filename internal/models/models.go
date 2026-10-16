@@ -239,7 +239,20 @@ type AuditLog struct {
 	// entry, false when it does not or the entry is unsigned. It is only
 	// present when AUDIT_HMAC_KEY is configured.
 	SigValid *bool `db:"-" json:"sig_valid,omitempty"`
+	// SigStatus is computed on read like SigValid, but tells the kinds of
+	// "not valid" apart: AuditSigUnsigned and AuditSigUnverifiable are expected
+	// for entries written before verifiable signing started, AuditSigInvalid is
+	// not (altered, or its signature removed).
+	SigStatus string `db:"-" json:"sig_status,omitempty"`
 }
+
+// Audit signature states reported in AuditLog.SigStatus.
+const (
+	AuditSigValid        = "valid"
+	AuditSigInvalid      = "invalid"
+	AuditSigUnsigned     = "unsigned"
+	AuditSigUnverifiable = "unverifiable"
+)
 
 // Org RBAC roles
 const (

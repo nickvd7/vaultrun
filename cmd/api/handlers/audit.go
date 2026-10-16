@@ -72,6 +72,7 @@ func (ah *AuditHandler) List(c *gin.Context) {
 			return
 		}
 		if err != nil {
+			slog.Error("failed to verify session", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify session"})
 			return
 		}
@@ -111,8 +112,10 @@ func (ah *AuditHandler) List(c *gin.Context) {
 	}
 	total, _ := dbpkg.CountAuditLogsFiltered(c.Request.Context(), ah.h.db, filter)
 	if ah.h.audit != nil && ah.h.audit.Enabled() {
+		verifiedSince := ah.h.audit.VerifiedSince(c.Request.Context())
 		for _, l := range logs {
-			valid := ah.h.audit.VerifyAuditSig(l)
+			l.SigStatus = ah.h.audit.SigStatus(l, verifiedSince)
+			valid := l.SigStatus == models.AuditSigValid
 			l.SigValid = &valid
 		}
 	}

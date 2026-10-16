@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,9 @@ import (
 type Logger struct {
 	db      *sqlx.DB
 	hmacKey []byte
+
+	mu            sync.Mutex
+	verifiedSince *time.Time
 }
 
 // New creates an audit Logger. hmacKey is the raw HMAC-SHA256 signing key
@@ -116,4 +120,69 @@ func (l *Logger) VerifyAuditSig(entry *models.AuditLog) bool {
 		return false
 	}
 	return hmac.Equal([]byte(entry.Sig), []byte(l.sign(entry)))
+}
+
+// SigStatus classifies an entry read back from the database.
+//
+// verifiedSince is the time of the earliest entry whose signature verifies,
+// that is where signing that can be checked began (see VerifiedSince). Entries
+// from before it were written by older versions or with signing off: they are
+// "unsigned" (no signature) or "unverifiable" (a signature made by a scheme
+// that can no longer be checked, as before v0.4.1). From that moment on every
+// entry must verify, so a mismatch, or a missing signature, means the entry
+// was altered or its signature removed and is reported "invalid". Without the
+// second rule, clearing the sig column would turn a tampered entry into an
+// ordinary-looking unsigned one.
+//
+// This is evidence, not proof: someone who can rewrite rows could also move an
+// entry's timestamp back before verifiedSince. Ship the log to a store they
+// cannot write (see the SIEM export) when that matters.
+func (l *Logger) SigStatus(entry *models.AuditLog, verifiedSince *time.Time) string {
+	if entry.Sig != "" && l.VerifyAuditSig(entry) {
+		return models.AuditSigValid
+	}
+	if verifiedSince != nil && entry.Timestamp.Before(*verifiedSince) {
+		if entry.Sig == "" {
+			return models.AuditSigUnsigned
+		}
+		return models.AuditSigUnverifiable
+	}
+	if entry.Sig == "" && verifiedSince == nil {
+		return models.AuditSigUnsigned
+	}
+	return models.AuditSigInvalid
+}
+
+// maxVerifiedSinceScan bounds how many legacy entries are checked while looking
+// for the first one that verifies.
+const maxVerifiedSinceScan = 5000
+
+// VerifiedSince returns the time of the earliest entry whose signature
+// verifies, or nil when none does (yet). Once found it is cached: that entry
+// cannot become later.
+func (l *Logger) VerifiedSince(ctx context.Context) *time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.verifiedSince != nil {
+		return l.verifiedSince
+	}
+	const batch = 500
+	for offset := 0; offset < maxVerifiedSinceScan; offset += batch {
+		logs, err := dbpkg.ListSignedAuditLogsAsc(ctx, l.db, batch, offset)
+		if err != nil {
+			slog.Error("audit: locating first verifiable entry failed", "err", err)
+			return nil
+		}
+		for _, e := range logs {
+			if l.VerifyAuditSig(e) {
+				ts := e.Timestamp
+				l.verifiedSince = &ts
+				return l.verifiedSince
+			}
+		}
+		if len(logs) < batch {
+			break
+		}
+	}
+	return nil
 }

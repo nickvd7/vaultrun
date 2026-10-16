@@ -71,6 +71,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	if maxMB := ah.h.cfg.Workspace.MaxArtifactStorageMB; maxMB > 0 && actor != "master" {
 		used, err := dbpkg.TotalArtifactBytes(c.Request.Context(), ah.h.db, actor)
 		if err != nil {
+			slog.Error("quota check failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "quota check failed"})
 			return
 		}
@@ -93,6 +94,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	// Detect content type from the first 512 bytes.
 	ff, err := os.Open(src)
 	if err != nil {
+		slog.Error("open source file failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "open source file failed"})
 		return
 	}
@@ -101,6 +103,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	n, _ := ff.Read(sniff)
 	ct := http.DetectContentType(sniff[:n])
 	if _, err := ff.Seek(0, io.SeekStart); err != nil {
+		slog.Error("seek source file failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "seek source file failed"})
 		return
 	}
@@ -126,6 +129,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	if err := dbpkg.CreateArtifact(c.Request.Context(), ah.h.db, art); err != nil {
 		// Best-effort: remove the stored blob if DB insert fails.
 		_ = ah.h.artifactStore.Delete(c.Request.Context(), artifactID.String())
+		slog.Error("persist artifact failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "persist artifact failed"})
 		return
 	}
@@ -157,6 +161,7 @@ func (ah *ArtifactHandler) List(c *gin.Context) {
 
 	arts, err := dbpkg.ListArtifacts(c.Request.Context(), ah.h.db, listActor, pg.limit, pg.offset)
 	if err != nil {
+		slog.Error("failed to list artifacts", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list artifacts"})
 		return
 	}
@@ -178,6 +183,7 @@ func (ah *ArtifactHandler) Download(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get artifact", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get artifact"})
 		return
 	}
@@ -217,6 +223,7 @@ func (ah *ArtifactHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to get artifact", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get artifact"})
 		return
 	}
@@ -233,6 +240,7 @@ func (ah *ArtifactHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err != nil {
+		slog.Error("failed to delete artifact", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete artifact"})
 		return
 	}

@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/nickvd7/vaultrun/internal/version"
 )
 
 var (
@@ -18,6 +20,7 @@ func Root() *cobra.Command {
 		Long: `VaultRun is a self-hosted secure runtime for AI agents.
 Use this CLI to create sessions, upload files, execute commands, and inspect results.`,
 		SilenceUsage: true,
+		Version:      version.String(),
 	}
 
 	root.PersistentFlags().StringVar(&apiURL, "api-url", envOrDefault("VAULTRUN_API_URL", "http://localhost:8080"), "API base URL")

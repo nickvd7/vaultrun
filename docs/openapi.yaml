@@ -219,6 +219,9 @@ components:
         status:
           type: string
           enum: [ok, degraded]
+        version:
+          type: string
+          description: VaultRun release the API was built from, e.g. "0.4.3".
         checks:
           type: object
           properties:

@@ -45,14 +45,35 @@ func (t *Tracker) RecordMetric(ctx context.Context, metric *CostMetric) error {
 		return fmt.Errorf("get cost rate: %w", err)
 	}
 	
+	if metric.ID == uuid.Nil {
+		metric.ID = uuid.New()
+	}
+	if metric.CreatedAt.IsZero() {
+		metric.CreatedAt = time.Now().UTC()
+	}
 	metric.RateID = &rate.ID
-	
-	// Calculate costs
-	metric.ComputeCost = t.calculateComputeCost(metric, rate)
-	metric.StorageCost = t.calculateStorageCost(metric, rate)
-	metric.NetworkCost = t.calculateNetworkCost(metric, rate)
-	metric.TotalCost = metric.ComputeCost + metric.StorageCost + metric.NetworkCost
-	
+
+	// Postgres stores microseconds; the checksum must cover what is stored.
+	metric.PeriodStart = metric.PeriodStart.UTC().Truncate(time.Microsecond)
+	metric.PeriodEnd = metric.PeriodEnd.UTC().Truncate(time.Microsecond)
+
+	// Round to the precision the columns store before computing the checksum.
+	// Otherwise the checksum covers values the database then rounds, and every
+	// metric would fail VerifyMetric when read back.
+	metric.CPUCoreHours = roundTo(metric.CPUCoreHours, usageDecimals)
+	metric.MemoryGBHours = roundTo(metric.MemoryGBHours, usageDecimals)
+	metric.GPUHours = roundTo(metric.GPUHours, usageDecimals)
+	metric.WorkspaceGBDays = roundTo(metric.WorkspaceGBDays, usageDecimals)
+	metric.SnapshotGBDays = roundTo(metric.SnapshotGBDays, usageDecimals)
+	metric.ArtifactGBDays = roundTo(metric.ArtifactGBDays, usageDecimals)
+	metric.EgressGB = roundTo(metric.EgressGB, usageDecimals)
+	metric.IngressGB = roundTo(metric.IngressGB, usageDecimals)
+
+	metric.ComputeCost = roundTo(t.calculateComputeCost(metric, rate), costDecimals)
+	metric.StorageCost = roundTo(t.calculateStorageCost(metric, rate), costDecimals)
+	metric.NetworkCost = roundTo(t.calculateNetworkCost(metric, rate), costDecimals)
+	metric.TotalCost = roundTo(metric.ComputeCost+metric.StorageCost+metric.NetworkCost, costDecimals)
+
 	// Generate checksum and signature
 	metric.Checksum = t.checksum(metric)
 	metric.Signature = t.sign(metric)
@@ -147,7 +168,7 @@ func (t *Tracker) GetOrgSummary(ctx context.Context, orgID uuid.UUID, month stri
 		LEFT JOIN sessions s ON s.org_id = o.id
 		LEFT JOIN cost_metrics cm ON cm.session_id = s.id 
 			AND cm.period_start >= $2::timestamptz
-			AND cm.period_end < ($2::timestamptz + INTERVAL '1 month')
+			AND cm.period_start < ($2::timestamptz + INTERVAL '1 month')
 		WHERE o.id = $1
 		GROUP BY o.id, o.name
 	`, orgID, month+"-01")
@@ -212,7 +233,7 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 		FROM cost_metrics cm
 		JOIN sessions s ON s.id = cm.session_id
 		WHERE cm.period_start >= $1::timestamptz
-		AND cm.period_end < ($1::timestamptz + INTERVAL '1 month')
+		AND cm.period_start < ($1::timestamptz + INTERVAL '1 month')
 		%s
 	`, sessionFilter), totalsArgs...)
 	
@@ -235,7 +256,7 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 		FROM sessions s
 		INNER JOIN cost_metrics cm ON cm.session_id = s.id
 		WHERE cm.period_start >= $1::timestamptz
-		AND cm.period_end < ($1::timestamptz + INTERVAL '1 month')
+		AND cm.period_start < ($1::timestamptz + INTERVAL '1 month')
 		%s
 		GROUP BY s.id, s.name
 		ORDER BY total_cost DESC
@@ -422,6 +443,17 @@ func (t *Tracker) GetBudget(ctx context.Context, orgID uuid.UUID, month string) 
 		return nil, err
 	}
 	return &budget, nil
+}
+
+// Decimal places of the cost_metrics columns (DECIMAL(12,6) usage, DECIMAL(10,4) cost).
+const (
+	usageDecimals = 6
+	costDecimals  = 4
+)
+
+func roundTo(v float64, places int) float64 {
+	p := math.Pow(10, float64(places))
+	return math.Round(v*p) / p
 }
 
 // Helper methods

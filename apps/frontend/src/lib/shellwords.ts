@@ -63,10 +63,14 @@ export function defaultCommandFor(image: string): { command: string; args: strin
   return { command: "sh", args: '-c "echo hello"' };
 }
 
-/** Renders a command line for display, quoting arguments that contain whitespace or quotes. */
+/**
+ * Renders a command line for display, quoting like Python's shlex.quote: only
+ * arguments made of plainly safe characters stay bare, so `print(2+2)` shows as
+ * `'print(2+2)'` and can be pasted back into splitArgs unchanged.
+ */
 export function formatCommand(command: string, args: string[] | null | undefined): string {
   const quoted = (args ?? []).map((a) =>
-    a === "" ? "''" : /[\s'"\\]/.test(a) ? `'${a.replace(/'/g, `'\\''`)}'` : a
+    a === "" ? "''" : /^[A-Za-z0-9_@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`
   );
   return [command, ...quoted].join(" ");
 }

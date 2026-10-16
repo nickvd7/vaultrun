@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert } from "lucide-react";
+import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { api } from "@/lib/api";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
-import { relativeTime, formatDate, badgeBase } from "@/lib/utils";
+import { badgeBase } from "@/lib/utils";
+import { Time } from "@/components/ui/Time";
 import type { AuditLog } from "@/types";
 
 // ── action colouring ─────────────────────────────────────────────────────────
@@ -50,12 +51,12 @@ const EXPORT_CAP = 5000;
 
 function MetadataPanel({ meta }: { meta: Record<string, unknown> }) {
   const entries = Object.entries(meta);
-  if (entries.length === 0) return <span className="text-slate-400">—</span>;
+  if (entries.length === 0) return <span className="text-slate-300">—</span>;
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
       {entries.map(([k, v]) => (
         <Fragment key={k}>
-          <dt className="text-slate-400 whitespace-nowrap">{k}</dt>
+          <dt className="text-slate-300 whitespace-nowrap">{k}</dt>
           <dd className="text-slate-200 font-mono break-all">{typeof v === "string" ? v : JSON.stringify(v)}</dd>
         </Fragment>
       ))}
@@ -78,11 +79,62 @@ function csvCell(v: unknown): string {
 }
 
 function toCSV(rows: AuditLog[]): string {
-  const header = ["timestamp", "actor", "action", "session_id", "run_id", "sig_valid", "metadata"];
+  const header = ["timestamp", "actor", "action", "session_id", "run_id", "sig_status", "metadata"];
   const lines = rows.map((l) =>
-    [l.timestamp, l.actor, l.action, l.session_id, l.run_id, l.sig_valid, l.metadata].map(csvCell).join(",")
+    [l.timestamp, l.actor, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.metadata].map(csvCell).join(",")
   );
   return [header.join(","), ...lines].join("\n") + "\n";
+}
+
+type SigKind = "valid" | "invalid" | "unsigned" | "unverifiable" | "unverified";
+
+interface SigState {
+  kind: SigKind;
+  label: string;
+  title: string;
+  className: string;
+}
+
+const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
+  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-400" },
+  invalid: {
+    label: "Invalid",
+    title: "Signature does not match, or was removed: this entry may have been altered",
+    className: "text-red-400",
+  },
+  unsigned: {
+    label: "Unsigned",
+    title: "Written before audit signing was enabled",
+    className: "text-slate-300",
+  },
+  unverifiable: {
+    label: "Legacy",
+    title: "Signed by an older version whose signatures cannot be verified",
+    className: "text-slate-300",
+  },
+  unverified: {
+    label: "Unverified",
+    title: "Signature does not verify (this API does not say whether the entry predates signing)",
+    className: "text-amber-400",
+  },
+};
+
+/** What to show for an entry's signature; null when the server does not sign entries. */
+function sigState(l: AuditLog): SigState | null {
+  const kind: SigKind | null = l.sig_status ?? (l.sig_valid === true ? "valid" : l.sig_valid === false ? "unverified" : null);
+  return kind ? { kind, ...SIG_STATES[kind] } : null;
+}
+
+function SigCell({ log }: { log: AuditLog }) {
+  const st = sigState(log);
+  if (!st) return null;
+  const Icon = st.kind === "valid" ? ShieldCheck : st.kind === "invalid" || st.kind === "unverified" ? ShieldAlert : ShieldQuestion;
+  return (
+    <span title={st.title} className={`inline-flex items-center gap-1 text-xs ${st.className}`}>
+      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+      {st.label}
+    </span>
+  );
 }
 
 // ── page ──────────────────────────────────────────────────────────────────────
@@ -101,21 +153,25 @@ export default function AuditPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
 
-  // "to" is inclusive in the UI, exclusive in the API.
+  // The date inputs are calendar days in the viewer's time zone. Send them as
+  // instants (local midnight), not bare dates, which the API reads as UTC.
+  // "to" is inclusive in the UI and exclusive in the API, so it is the start of
+  // the following day.
+  const apiFrom = useMemo(() => (from ? new Date(`${from}T00:00:00`).toISOString() : undefined), [from]);
   const apiTo = useMemo(() => {
     if (!to) return undefined;
-    const d = new Date(`${to}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + 1);
-    return d.toISOString().slice(0, 10);
+    const d = new Date(`${to}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString();
   }, [to]);
 
   const query = useMemo(
     () => ({
       action: nsFilter === "all" ? undefined : `${nsFilter}.`,
-      from: from || undefined,
+      from: apiFrom,
       to: apiTo,
     }),
-    [nsFilter, from, apiTo]
+    [nsFilter, apiFrom, apiTo]
   );
 
   const load = useCallback(() => {
@@ -186,7 +242,7 @@ export default function AuditPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Audit Logs</h1>
-          <p className="text-slate-400 text-sm mt-1">Record of all security-relevant events</p>
+          <p className="text-slate-300 text-sm mt-1">Record of all security-relevant events</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -223,12 +279,12 @@ export default function AuditPage() {
           <input
             type="search"
             aria-label="Search this page by actor, action, session or run ID"
-            className="flex-1 bg-[#0f0f1a] border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+            className="flex-1 bg-[#0f0f1a] border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
             placeholder="Search this page: actor, action, session ID…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <div className="flex items-center gap-2 text-xs text-slate-400">
+          <div className="flex items-center gap-2 text-xs text-slate-300">
             <label htmlFor="audit-from">From</label>
             <input
               id="audit-from"
@@ -280,8 +336,16 @@ export default function AuditPage() {
         </div>
       </div>
 
+      {!loading && !error && logs.some((l) => l.sig_status === "invalid") && (
+        <Notice tone="error" title="Some entries failed signature verification">
+          {logs.filter((l) => l.sig_status === "invalid").length} entr
+          {logs.filter((l) => l.sig_status === "invalid").length === 1 ? "y" : "ies"} on this page do not match their
+          signature, or lost it, since audit signing began. They may have been altered.
+        </Notice>
+      )}
+
       {!loading && !error && (
-        <p className="text-xs text-slate-400" aria-live="polite">
+        <p className="text-xs text-slate-300" aria-live="polite">
           {total === 0
             ? "0 events"
             : `Events ${firstShown}–${lastShown} of ${total}`}
@@ -291,15 +355,15 @@ export default function AuditPage() {
 
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-slate-400 text-sm" role="status">Loading…</div>
+          <div className="p-8 text-center text-slate-300 text-sm" role="status">Loading…</div>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">
+          <div className="p-8 text-center text-slate-300 text-sm">
             {total === 0 && !hasFilters ? "No audit events yet." : "No events match your filters."}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th scope="col" className="w-8 px-3 py-3">
                   <span className="sr-only">Details</span>
                 </th>
@@ -308,7 +372,7 @@ export default function AuditPage() {
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Session</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">
-                  <span className="sr-only">Signature</span>
+                  Signature
                 </th>
               </tr>
             </thead>
@@ -333,7 +397,7 @@ export default function AuditPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-slate-300 whitespace-nowrap">
-                        <span title={formatDate(l.timestamp)}>{relativeTime(l.timestamp)}</span>
+                        <Time value={l.timestamp} />
                       </td>
                       <td className="px-4 py-2.5 text-xs text-slate-300 font-mono truncate max-w-[120px]" title={l.actor}>
                         {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
@@ -347,22 +411,11 @@ export default function AuditPage() {
                             {l.session_id.slice(0, 8)}…
                           </Link>
                         ) : (
-                          <span className="text-slate-400">—</span>
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5">
-                        {l.sig_valid === true && (
-                          <span title="Signature verified" className="text-emerald-400">
-                            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                            <span className="sr-only">Signature verified</span>
-                          </span>
-                        )}
-                        {l.sig_valid === false && (
-                          <span title="Signature does not match: entry may have been altered or predates signing" className="text-amber-400">
-                            <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
-                            <span className="sr-only">Signature does not verify</span>
-                          </span>
-                        )}
+                        <SigCell log={l} />
                       </td>
                     </tr>
 
@@ -372,7 +425,7 @@ export default function AuditPage() {
                         <td colSpan={5} className="px-4 py-3 text-xs">
                           <div className="space-y-2">
                             {l.run_id && (
-                              <p className="text-slate-400">
+                              <p className="text-slate-300">
                                 run: <span className="font-mono text-slate-200">{l.run_id}</span>
                               </p>
                             )}
@@ -390,7 +443,7 @@ export default function AuditPage() {
       </div>
 
       {total > PAGE_SIZE && (
-        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-400">
+        <nav aria-label="Audit log pages" className="flex items-center justify-between text-xs text-slate-300">
           <span>
             Page {page} of {pageCount}
           </span>

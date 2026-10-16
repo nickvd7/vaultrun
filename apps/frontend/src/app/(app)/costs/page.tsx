@@ -65,7 +65,7 @@ export default function CostsPage() {
   }
 
   if (!breakdown) {
-    return <div className="text-slate-400 text-sm p-8" role="status">Loading costs…</div>;
+    return <div className="text-slate-300 text-sm p-8" role="status">Loading costs…</div>;
   }
 
   const topSessions = breakdown.top_sessions ?? [];
@@ -80,10 +80,10 @@ export default function CostsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Cost Dashboard</h1>
-          <p className="text-sm text-slate-400 mt-1">Resource usage and cost tracking</p>
+          <p className="text-sm text-slate-300 mt-1">Resource usage and cost tracking</p>
         </div>
         <div className="flex items-center gap-2">
-          <label htmlFor="cost-period" className="text-xs text-slate-400">Period:</label>
+          <label htmlFor="cost-period" className="text-xs text-slate-300">Period:</label>
           <input
             id="cost-period"
             type="month"
@@ -99,23 +99,23 @@ export default function CostsPage() {
         <div className="flex items-center gap-3 mb-2">
           <DollarSign className="w-8 h-8 text-indigo-400" />
           <div>
-            <div className="text-sm text-slate-400">Total Cost</div>
+            <div className="text-sm text-slate-300">Total Cost</div>
             <div className="text-3xl font-bold text-slate-100">{formatCost(breakdown.total_cost)}</div>
           </div>
         </div>
-        <div className="text-xs text-slate-400 mt-2">{breakdown.period}</div>
+        <div className="text-xs text-slate-300 mt-2">{breakdown.period}</div>
       </div>
 
       {/* Cost Breakdown */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-6">
-        <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide mb-4">Cost Breakdown</h2>
+        <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide mb-4">Cost Breakdown</h2>
         <div className="space-y-4">
           {/* Compute */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Compute (CPU/Memory/GPU)</span>
-              <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.compute_cost)} <span className="text-slate-400">({computePct.toFixed(0)}%)</span>
+              <span className="text-sm font-mono text-slate-300">
+                {formatCost(breakdown.compute_cost)} <span className="text-slate-300">({computePct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -130,8 +130,8 @@ export default function CostsPage() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Storage (Workspace/Snapshots/Artifacts)</span>
-              <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.storage_cost)} <span className="text-slate-400">({storagePct.toFixed(0)}%)</span>
+              <span className="text-sm font-mono text-slate-300">
+                {formatCost(breakdown.storage_cost)} <span className="text-slate-300">({storagePct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -146,8 +146,8 @@ export default function CostsPage() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-slate-300">Network (Egress)</span>
-              <span className="text-sm font-mono text-slate-400">
-                {formatCost(breakdown.network_cost)} <span className="text-slate-400">({networkPct.toFixed(0)}%)</span>
+              <span className="text-sm font-mono text-slate-300">
+                {formatCost(breakdown.network_cost)} <span className="text-slate-300">({networkPct.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -163,16 +163,16 @@ export default function CostsPage() {
       {/* Top Spending Sessions */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-800">
-          <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide flex items-center gap-2">
+          <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Top Spending Sessions
           </h2>
         </div>
         {topSessions.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-sm">No session costs for this period.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">No session costs for this period.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th className="px-6 py-3 text-left">Session</th>
                 <th className="px-6 py-3 text-left">Compute</th>
                 <th className="px-6 py-3 text-left">Storage</th>
@@ -184,9 +184,9 @@ export default function CostsPage() {
               {topSessions.map((s) => (
                 <tr key={s.session_id} className="hover:bg-slate-800/20">
                   <td className="px-6 py-3 font-mono text-xs text-slate-300">{s.session_name}</td>
-                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.compute_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.storage_cost)}</td>
-                  <td className="px-6 py-3 text-xs text-slate-400">{formatCost(s.network_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.compute_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.storage_cost)}</td>
+                  <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.network_cost)}</td>
                   <td className="px-6 py-3 font-mono text-xs text-slate-200 font-medium">
                     {formatCost(s.total_cost)}
                   </td>
@@ -201,7 +201,7 @@ export default function CostsPage() {
       {alerts.length > 0 && (
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-800">
-            <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide flex items-center gap-2">
+            <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" /> Active Alerts ({alerts.length})
             </h2>
           </div>
@@ -214,16 +214,16 @@ export default function CostsPage() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(alert.severity)}`}>
                         {alert.severity}
                       </span>
-                      <span className="text-xs text-slate-400">{alert.alert_type}</span>
+                      <span className="text-xs text-slate-300">{alert.alert_type}</span>
                     </div>
                     <div className="text-sm text-slate-200 font-medium mb-1">{alert.title}</div>
-                    <div className="text-xs text-slate-400">{alert.description}</div>
+                    <div className="text-xs text-slate-300">{alert.description}</div>
                     {alert.potential_savings && (
                       <div className="text-xs text-emerald-400 mt-1">
                         💰 Potential savings: {formatCost(alert.potential_savings)}/month
                       </div>
                     )}
-                    <div className="text-xs text-slate-400 mt-2">{formatDate(alert.created_at)}</div>
+                    <div className="text-xs text-slate-300 mt-2">{formatDate(alert.created_at)}</div>
                   </div>
                   <button
                     onClick={() => handleResolveAlert(alert.id)}

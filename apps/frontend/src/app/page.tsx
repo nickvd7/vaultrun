@@ -168,7 +168,7 @@ export default function LandingPage() {
               href="https://github.com/nickvd7/vaultrun"
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 hover:text-slate-200 text-sm transition-colors"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 hover:text-slate-200 text-sm transition-colors"
             >
               GitHub
             </a>
@@ -193,7 +193,7 @@ export default function LandingPage() {
           <br />
           <span className="text-indigo-400">for AI agents</span>
         </h1>
-        <p className="text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed">
           VaultRun gives your AI agents isolated Docker containers to execute code,
           query databases, call cloud APIs, and manage files — safely, on your own infrastructure.
         </p>
@@ -224,7 +224,7 @@ export default function LandingPage() {
           ].map(({ value, label }) => (
             <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-indigo-400">{value}</div>
-              <div className="text-xs text-slate-400 mt-1">{label}</div>
+              <div className="text-xs text-slate-300 mt-1">{label}</div>
             </div>
           ))}
         </div>
@@ -247,7 +247,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-medium text-slate-100 text-sm">{title}</h3>
               </div>
-              <p className="text-slate-400 text-sm leading-relaxed">{desc}</p>
+              <p className="text-slate-300 text-sm leading-relaxed">{desc}</p>
             </div>
           ))}
         </div>
@@ -261,7 +261,7 @@ export default function LandingPage() {
             <span className="text-xs uppercase tracking-widest text-indigo-400 font-medium">53 MCP tools</span>
           </div>
           <h2 className="text-xl font-semibold text-slate-100 mb-2">All capabilities, one MCP server</h2>
-          <p className="text-slate-400 text-sm mb-8 max-w-2xl">
+          <p className="text-slate-300 text-sm mb-8 max-w-2xl">
             Every VaultRun feature is exposed as an MCP tool — your agent can orchestrate sandboxes,
             query databases, manage cloud resources, and trigger CI without writing any integration code.
           </p>
@@ -271,8 +271,8 @@ export default function LandingPage() {
                 <div className="text-xs font-medium text-indigo-300 uppercase tracking-widest mb-3">{label}</div>
                 <ul className="space-y-1.5">
                   {tools.map((t) => (
-                    <li key={t} className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-                      <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                    <li key={t} className="flex items-center gap-2 text-xs text-slate-300 font-mono">
+                      <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
                       {t}
                     </li>
                   ))}
@@ -295,7 +295,7 @@ export default function LandingPage() {
               <h2 className="text-2xl font-semibold text-slate-100 mb-4">
                 Works with any MCP-compatible AI
               </h2>
-              <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              <p className="text-slate-300 text-sm leading-relaxed mb-4">
                 Add VaultRun to <strong className="text-slate-300">Claude Desktop</strong>, <strong className="text-slate-300">Claude Code</strong>,
                 or any platform that supports the Model Context Protocol — via stdio for Claude, or HTTP for OpenAI, OpenRouter, and custom agents.
               </p>
@@ -306,7 +306,7 @@ export default function LandingPage() {
                   "Bearer token auth + per-IP rate limiting",
                   "TLS via Let's Encrypt or static cert",
                 ].map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-slate-400">
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-300">
                     <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                     {item}
                   </li>
@@ -327,7 +327,7 @@ export default function LandingPage() {
                     <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                     <div className="w-3 h-3 rounded-full bg-green-500/60" />
                   </div>
-                  <span className="text-xs text-slate-400 font-mono">claude_desktop_config.json</span>
+                  <span className="text-xs text-slate-300 font-mono">claude_desktop_config.json</span>
                 </div>
                 <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                   {mcpConfig}
@@ -340,7 +340,7 @@ export default function LandingPage() {
                     <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                     <div className="w-3 h-3 rounded-full bg-green-500/60" />
                   </div>
-                  <span className="text-xs text-slate-400 font-mono">HTTP transport (OpenAI / OpenRouter)</span>
+                  <span className="text-xs text-slate-300 font-mono">HTTP transport (OpenAI / OpenRouter)</span>
                 </div>
                 <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                   {mcpHTTPConfig}
@@ -363,7 +363,7 @@ export default function LandingPage() {
               <h2 className="text-2xl font-semibold text-slate-100 mb-4">
                 Bring your own identity provider
               </h2>
-              <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              <p className="text-slate-300 text-sm leading-relaxed mb-4">
                 Let your team sign in to the dashboard with the IdP they already use.
                 VaultRun speaks both <strong className="text-slate-300">OpenID Connect</strong> (Authorization Code + PKCE)
                 and <strong className="text-slate-300">SAML 2.0</strong> — auto-provisioning a scoped
@@ -376,7 +376,7 @@ export default function LandingPage() {
                   "HttpOnly + Secure session cookies with server-side revocation on logout",
                   "Org-aware RBAC: map IdP groups to viewer / executor / admin roles",
                 ].map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-slate-400">
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-300">
                     <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                     {item}
                   </li>
@@ -403,7 +403,7 @@ export default function LandingPage() {
                   href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-400 text-sm transition-colors"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg border border-slate-700 hover:border-slate-600 text-slate-300 text-sm transition-colors"
                 >
                   SSO setup guide
                 </a>
@@ -416,7 +416,7 @@ export default function LandingPage() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                   <div className="w-3 h-3 rounded-full bg-green-500/60" />
                 </div>
-                <span className="text-xs text-slate-400 font-mono">.env — SSO configuration</span>
+                <span className="text-xs text-slate-300 font-mono">.env — SSO configuration</span>
               </div>
               <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                 {ssoConfig}
@@ -438,7 +438,7 @@ export default function LandingPage() {
               <h2 className="text-2xl font-semibold text-slate-100 mb-4">
                 GitHub CI in a VaultRun sandbox
               </h2>
-              <p className="text-slate-400 text-sm leading-relaxed mb-4">
+              <p className="text-slate-300 text-sm leading-relaxed mb-4">
                 Point a GitHub webhook at the CI runner and every PR automatically runs your test suite
                 inside an isolated VaultRun sandbox. Results are posted back as a PR comment and commit
                 status, with optional Slack and Teams notifications.
@@ -451,7 +451,7 @@ export default function LandingPage() {
                   "Slack Block Kit + Teams Adaptive Card notifications",
                   "NOTIFY_ON_SUCCESS=false to suppress noise on green",
                 ].map((item) => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-slate-400">
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-300">
                     <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                     {item}
                   </li>
@@ -465,7 +465,7 @@ export default function LandingPage() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
                   <div className="w-3 h-3 rounded-full bg-green-500/60" />
                 </div>
-                <span className="text-xs text-slate-400 font-mono">ci-runner env</span>
+                <span className="text-xs text-slate-300 font-mono">ci-runner env</span>
               </div>
               <pre className="bg-[#07070d] border border-slate-800 rounded-xl p-5 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
                 {ciConfig}
@@ -479,7 +479,7 @@ export default function LandingPage() {
       <section className="max-w-6xl mx-auto px-6 pb-24">
         <div className="text-center mb-10">
           <h2 className="text-2xl font-semibold text-slate-100 mb-3">Get started in minutes</h2>
-          <p className="text-slate-400 text-sm">Prerequisites: Docker, Docker Compose, Go 1.23+</p>
+          <p className="text-slate-300 text-sm">Prerequisites: Docker, Docker Compose, Go 1.23+</p>
         </div>
         <div className="grid md:grid-cols-3 gap-4">
           {[
@@ -506,7 +506,7 @@ export default function LandingPage() {
                 </div>
                 <span className="font-medium text-slate-200 text-sm">{title}</span>
               </div>
-              <pre className="text-xs font-mono text-slate-400 leading-relaxed whitespace-pre-wrap">{code}</pre>
+              <pre className="text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap">{code}</pre>
             </div>
           ))}
         </div>
@@ -514,9 +514,9 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-8">
-        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-300">
           <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-slate-400" />
+            <Shield className="w-4 h-4 text-slate-300" />
             <span>VaultRun — self-hosted secure AI agent runtime</span>
           </div>
           <div className="flex items-center gap-4">

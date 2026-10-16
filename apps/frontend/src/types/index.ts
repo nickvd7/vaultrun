@@ -69,6 +69,12 @@ export interface AuditLog {
   metadata: Record<string, unknown>;
   /** Present when the server signs audit entries. */
   sig_valid?: boolean;
+  /**
+   * valid: signature matches. invalid: altered, or signature removed.
+   * unsigned / unverifiable: written before verifiable signing began.
+   * Absent on API versions before 0.4.4.
+   */
+  sig_status?: "valid" | "invalid" | "unsigned" | "unverifiable";
 }
 
 export interface Pagination {

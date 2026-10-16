@@ -66,14 +66,14 @@ export default function PolicyPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Policy</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-300 text-sm mt-1">
             OPA Rego policy controlling command and file access
           </p>
         </div>
         <button
           onClick={load}
           disabled={loading || isMaster === false}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -93,7 +93,7 @@ export default function PolicyPage() {
                 <div>
                   <p className="text-sm font-medium text-emerald-300">OPA policy active</p>
                   {status.file_path && (
-                    <p className="text-xs text-slate-400 font-mono mt-0.5">{status.file_path}</p>
+                    <p className="text-xs text-slate-300 font-mono mt-0.5">{status.file_path}</p>
                   )}
                 </div>
                 <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-400 bg-emerald-900/30 border border-emerald-800/50 px-2 py-0.5 rounded">
@@ -103,15 +103,15 @@ export default function PolicyPage() {
               </>
             ) : (
               <>
-                <ShieldOff className="w-5 h-5 text-slate-400 shrink-0" />
+                <ShieldOff className="w-5 h-5 text-slate-300 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-slate-400">AllowAll (no policy file)</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Set <code className="font-mono text-slate-400">OPA_POLICY_FILE</code> to a{" "}
-                    <code className="font-mono text-slate-400">.rego</code> file to enforce rules
+                  <p className="text-sm font-medium text-slate-300">AllowAll (no policy file)</p>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Set <code className="font-mono text-slate-300">OPA_POLICY_FILE</code> to a{" "}
+                    <code className="font-mono text-slate-300">.rego</code> file to enforce rules
                   </p>
                 </div>
-                <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
+                <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-300 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                   Passthrough
                 </span>
@@ -128,7 +128,7 @@ export default function PolicyPage() {
           {/* Policy content */}
           {status.enabled && status.content && (
             <div className="mt-2">
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Policy source</p>
+              <p className="text-xs text-slate-300 uppercase tracking-wide mb-2">Policy source</p>
               <pre className="bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed whitespace-pre">
                 {status.content}
               </pre>
@@ -138,7 +138,7 @@ export default function PolicyPage() {
       )}
 
       {loading && (
-        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center text-slate-400 text-sm">
+        <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center text-slate-300 text-sm">
           Loading…
         </div>
       )}
@@ -146,7 +146,7 @@ export default function PolicyPage() {
       {/* Test panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-5 space-y-4">
         <h2 className="text-sm font-medium text-slate-300">Policy Test</h2>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-300">
           Dry-run an input against the currently loaded policy without executing anything.
         </p>
 
@@ -159,7 +159,7 @@ export default function PolicyPage() {
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors capitalize ${
                 tab === t
                   ? "bg-indigo-600 text-white"
-                  : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-200"
               }`}
             >
               {t === "command" ? "Command" : "File access"}
@@ -170,7 +170,7 @@ export default function PolicyPage() {
         {tab === "command" ? (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="policy-command" className="block text-xs text-slate-400 mb-1">Command</label>
+              <label htmlFor="policy-command" className="block text-xs text-slate-300 mb-1">Command</label>
               <input
                 id="policy-command"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -180,7 +180,7 @@ export default function PolicyPage() {
               />
             </div>
             <div>
-              <label htmlFor="policy-args" className="block text-xs text-slate-400 mb-1">Args (shell-style quoting)</label>
+              <label htmlFor="policy-args" className="block text-xs text-slate-300 mb-1">Args (shell-style quoting)</label>
               <input
                 id="policy-args"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -193,7 +193,7 @@ export default function PolicyPage() {
         ) : (
           <div className="flex items-end gap-4">
             <div className="flex-1">
-              <label htmlFor="policy-path" className="block text-xs text-slate-400 mb-1">File path</label>
+              <label htmlFor="policy-path" className="block text-xs text-slate-300 mb-1">File path</label>
               <input
                 id="policy-path"
                 className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -202,7 +202,7 @@ export default function PolicyPage() {
                 placeholder="/workspace/output.txt"
               />
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-400 pb-2 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-slate-300 pb-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={fileWrite}

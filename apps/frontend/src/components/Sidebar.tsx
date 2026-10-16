@@ -26,7 +26,7 @@ type SidebarProps = {
 
 export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const { apiKey, clearApiKey } = useApiKey();
+  const { apiKey, clearApiKey, isMaster, keyName } = useApiKey();
   const { orgs, orgId, setOrgId } = useOrg();
 
   return (
@@ -46,7 +46,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
 
       {orgs.length > 0 && (
         <div className="px-3 py-3 border-b border-slate-800">
-          <label htmlFor="org-select" className="block text-[10px] uppercase tracking-wide text-slate-400 mb-1.5">Organization</label>
+          <label htmlFor="org-select" className="block text-[10px] uppercase tracking-wide text-slate-300 mb-1.5">Organization</label>
           <select
             id="org-select"
             value={orgId ?? ""}
@@ -74,7 +74,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
               pathname === href || (href !== "/" && pathname.startsWith(href))
                 ? "bg-indigo-900/40 text-indigo-300"
-                : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                : "text-slate-300 hover:bg-slate-800/50 hover:text-slate-200"
             )}
           >
             <Icon className="w-4 h-4 shrink-0" />
@@ -85,8 +85,13 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
 
       <div className="px-2 py-3 border-t border-slate-800 space-y-1">
         {apiKey && (
-          <div className="px-3 py-1.5 text-xs text-slate-400 font-mono truncate">
-            {apiKey.slice(0, 12)}…
+          <div className="px-3 py-1.5 text-xs text-slate-300">
+            <div className="truncate font-mono" title={keyName ?? undefined}>
+              {keyName ?? "Signed in"}
+            </div>
+            {isMaster !== null && (
+              <div className="text-slate-300">{isMaster ? "Master key" : "Standard key"}</div>
+            )}
           </div>
         )}
         <button
@@ -94,12 +99,12 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
             clearApiKey();
             onNavigate?.();
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-300 hover:bg-slate-800/50 hover:text-white transition-colors"
         >
           <LogOut className="w-3.5 h-3.5" />
           Disconnect
         </button>
-        <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400">
+        <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-300">
           <FileText className="w-3 h-3" />
           <span>v{APP_VERSION}</span>
         </div>

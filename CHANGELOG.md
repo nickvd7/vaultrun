@@ -7,7 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-**Upgrade notes:** migration 023 runs at API start (adds `seq`/`prev_sig` to `audit_logs` and the `audit_chain` table). Audit entries written before it stay as they are (unchained); new ones are chained as long as `AUDIT_HMAC_KEY` is set. `POST /sessions` with `allowed_hosts` and without `network_enabled: true` now answers `400`, and `command` containing whitespace (a whole command line) answers `400`: put the arguments in `args`.
+---
+
+## [0.4.5] — 2026-10-16
+
+**Upgrade notes:** migration 023 runs at API start (adds `seq`/`prev_sig` to `audit_logs` and the `audit_chain` table). Audit entries written before it stay as they are (unchained); new ones are chained as long as `AUDIT_HMAC_KEY` is set. `POST /sessions` with `allowed_hosts` and without `network_enabled: true` now answers `400`, and `command` containing whitespace (a whole command line) answers `400`: put the arguments in `args`. Python SDK `vaultrun-sdk` 0.4.5 is published to PyPI with this release (new `allowed_hosts` / `secrets` parameters).
 
 ### Security
 - **The audit log is hash-chained.** Each entry gets a sequence number and carries the previous entry's signature, both under its own HMAC, and a signed head row (`audit_chain`) records the newest entry, how far retention has pruned and when chaining began. v0.4.4 flagged an edited entry but not one whose signature was cleared and whose timestamp was moved back, and deleted entries left no trace. Now all three tampering styles from the v0.4.4 test, deleted entries in the middle and removal of the newest entries are reported (`sig_status: invalid` with a `sig_reason`, plus holes in `missing_seqs`). Retention prunes the oldest entries as a prefix and records it, so a pruned log still verifies. Still evidence, not proof: whoever holds `AUDIT_HMAC_KEY` can rewrite the chain; ship the log off-box (`AUDIT_EXPORT_URL`) for more.

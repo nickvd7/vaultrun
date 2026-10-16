@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
@@ -112,12 +113,29 @@ func (ah *AuditHandler) List(c *gin.Context) {
 	}
 	total, _ := dbpkg.CountAuditLogsFiltered(c.Request.Context(), ah.h.db, filter)
 	if ah.h.audit != nil && ah.h.audit.Enabled() {
-		verifiedSince := ah.h.audit.VerifiedSince(c.Request.Context())
-		for _, l := range logs {
-			l.SigStatus = ah.h.audit.SigStatus(l, verifiedSince)
-			valid := l.SigStatus == models.AuditSigValid
-			l.SigValid = &valid
-		}
+		ah.h.audit.Classify(c.Request.Context(), logs)
 	}
 	c.JSON(http.StatusOK, gin.H{"audit_logs": logs, "pagination": pg.response(total)})
+}
+
+// GET /api/v1/audit/integrity
+// Verifies the whole log (signatures, chain links, deleted entries, chain head)
+// rather than one page, so a problem on page 2 is visible from page 1. The
+// entry IDs and missing sequence numbers are only shown to the master key.
+func (ah *AuditHandler) Integrity(c *gin.Context) {
+	if ah.h.audit == nil {
+		c.JSON(http.StatusOK, gin.H{"status": audit.IntegrityDisabled, "problems": []string{}})
+		return
+	}
+	res, err := ah.h.audit.Integrity(c.Request.Context(), c.Query("refresh") == "true")
+	if err != nil {
+		slog.Error("audit integrity check failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to verify the audit log"})
+		return
+	}
+	out := *res
+	if middleware.Actor(c) != "master" {
+		out.InvalidIDs, out.MissingSeqs = nil, nil
+	}
+	c.JSON(http.StatusOK, out)
 }

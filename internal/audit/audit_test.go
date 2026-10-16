@@ -130,3 +130,28 @@ func TestBareHexSignaturesFromV041StillVerify(t *testing.T) {
 		t.Fatal("new signatures carry the marker")
 	}
 }
+
+func TestChainedSignatureCoversSequenceAndPredecessor(t *testing.T) {
+	l := New(nil, "k")
+	e := newEntry()
+	seq := int64(7)
+	e.Seq, e.PrevSig = &seq, "v3:abc"
+	e.Sig = l.sign(e)
+	if !strings.HasPrefix(e.Sig, ChainSigPrefix) {
+		t.Fatalf("chained signature prefix: %q", e.Sig)
+	}
+	if !l.VerifyAuditSig(roundTrip(t, e)) {
+		t.Fatal("chained signature must verify after a round trip")
+	}
+	for name, mutate := range map[string]func(*models.AuditLog){
+		"sequence number": func(x *models.AuditLog) { n := int64(8); x.Seq = &n },
+		"predecessor":     func(x *models.AuditLog) { x.PrevSig = "v3:def" },
+		"chain removed":   func(x *models.AuditLog) { x.Seq, x.PrevSig = nil, "" },
+	} {
+		got := roundTrip(t, e)
+		mutate(got)
+		if l.VerifyAuditSig(got) {
+			t.Fatalf("changing the %s must fail verification", name)
+		}
+	}
+}

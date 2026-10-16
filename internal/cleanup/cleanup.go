@@ -96,7 +96,13 @@ func (cl *cleaner) sweep(ctx context.Context, idleFor time.Duration) {
 // Runs after every sweep tick when a retention window is configured.
 func (cl *cleaner) pruneAuditLogs(ctx context.Context, retentionDays int) {
 	before := time.Now().UTC().AddDate(0, 0, -retentionDays)
-	n, err := dbpkg.DeleteOldAuditLogs(ctx, cl.db, before)
+	var n int64
+	var err error
+	if cl.audit != nil {
+		n, err = cl.audit.Prune(ctx, before)
+	} else {
+		n, err = dbpkg.DeleteOldAuditLogs(ctx, cl.db, before)
+	}
 	if err != nil {
 		slog.Error("cleanup: prune audit logs", "err", err)
 		return

@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -28,12 +30,33 @@ import (
 // hex digests with the same algorithm; they still verify (see VerifyAuditSig).
 const SigPrefix = "v2:"
 
+// ChainSigPrefix marks signatures of chained entries: those also cover their
+// sequence number and the previous entry's signature (see the Logger doc).
+const ChainSigPrefix = "v3:"
+
+// chainLockKey is the Postgres advisory lock that serialises chain writers.
+const chainLockKey int64 = 0x76617574 // "vaut"
+
+// Logger writes audit entries. With a signing key it also chains them: every
+// entry gets the next sequence number and carries the previous entry's
+// signature, both under its own HMAC, and a signed head row (audit_chain)
+// records the newest number, how far retention has pruned and when chaining
+// began. Changing an entry, removing its signature, moving its timestamp,
+// deleting an entry in the middle or cutting off the newest entries all become
+// detectable, none of which per-entry signatures alone could do. Whoever holds
+// the key can still rewrite the whole chain, and a database writer who saved an
+// older copy of the head can restore it after truncating the tail; shipping
+// the log to a store they cannot write (the SIEM export) covers that.
 type Logger struct {
 	db      *sqlx.DB
 	hmacKey []byte
 
 	mu            sync.Mutex
 	verifiedSince *time.Time
+
+	scanMu      sync.Mutex
+	integrity   *Integrity
+	integrityAt time.Time
 }
 
 // New creates an audit Logger. hmacKey is the raw HMAC-SHA256 signing key
@@ -65,17 +88,101 @@ func (l *Logger) Log(ctx context.Context, e Event) {
 	if entry.Metadata == nil {
 		entry.Metadata = models.JSONB{}
 	}
-	entry.Sig = l.sign(entry)
 
-	if err := dbpkg.CreateAuditLog(ctx, l.db, entry); err != nil {
+	var err error
+	if l.Enabled() {
+		err = l.logChained(ctx, entry)
+	} else {
+		err = dbpkg.CreateAuditLog(ctx, l.db, entry)
+	}
+	if err != nil {
 		slog.Error("audit log write failed", "action", e.Action, "err", err)
 	}
+}
+
+// logChained appends entry to the chain under a lock on the chain head, so
+// sequence numbers are gapless and ordered like the timestamps.
+func (l *Logger) logChained(ctx context.Context, entry *models.AuditLog) error {
+	tx, err := l.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Serialises writers, including the very first one, when there is no head
+	// row yet to lock.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, chainLockKey); err != nil {
+		return err
+	}
+	head, err := dbpkg.GetAuditChainHead(ctx, tx, true)
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, _, lerr := dbpkg.LastChainedAuditEntry(ctx, tx); errors.Is(lerr, sql.ErrNoRows) {
+			// First chained entry ever: start the chain now.
+			h := &dbpkg.AuditChainHead{StartedAt: time.Now().UTC().Truncate(time.Microsecond)}
+			h.MAC = l.headMAC(h)
+			if err := dbpkg.InsertAuditChainHead(ctx, tx, h); err != nil {
+				return err
+			}
+			head, err = dbpkg.GetAuditChainHead(ctx, tx, true)
+		} else if lerr != nil {
+			return lerr
+		} else {
+			// Chained entries exist but the head row is gone. Keep appending
+			// without recreating it, so the evidence stays.
+			head, err = nil, nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	var seq int64
+	var prev string
+	headTrusted := head != nil && l.headValid(head)
+	if headTrusted {
+		seq, prev = head.Seq, head.LastSig
+	} else {
+		slog.Error("audit: chain head is missing or fails verification; appending without updating it")
+		lastSeq, lastSig, lerr := dbpkg.LastChainedAuditEntry(ctx, tx)
+		if lerr != nil && !errors.Is(lerr, sql.ErrNoRows) {
+			return lerr
+		}
+		seq, prev = lastSeq, lastSig
+	}
+
+	next := seq + 1
+	entry.Seq = &next
+	entry.PrevSig = prev
+	entry.Timestamp = time.Now().UTC().Truncate(time.Microsecond)
+	entry.Sig = l.sign(entry)
+	if err := dbpkg.CreateAuditLog(ctx, tx, entry); err != nil {
+		return err
+	}
+	if headTrusted {
+		head.Seq, head.LastSig = next, entry.Sig
+		head.MAC = l.headMAC(head)
+		if err := dbpkg.UpdateAuditChainHead(ctx, tx, head); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (l *Logger) headMAC(h *dbpkg.AuditChainHead) string {
+	m := hmac.New(sha256.New, l.hmacKey)
+	fmt.Fprintf(m, "audit-chain-head\x00%d\x00%s\x00%d\x00%s",
+		h.Seq, h.LastSig, h.PrunedThrough, h.StartedAt.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+func (l *Logger) headValid(h *dbpkg.AuditChainHead) bool {
+	return hmac.Equal([]byte(h.MAC), []byte(l.headMAC(h)))
 }
 
 // sign computes HMAC-SHA256 over the immutable fields of an audit log entry.
 // Returns "" when no HMAC key is configured.
 // Covered fields: id, timestamp (RFC3339Nano), actor, action, session_id,
-// run_id, metadata JSON. Fields are separated by null bytes to prevent
+// run_id, (for chained entries) seq and prev_sig, metadata JSON. Fields are separated by null bytes to prevent
 // boundary-confusion attacks.
 func (l *Logger) sign(entry *models.AuditLog) string {
 	if len(l.hmacKey) == 0 {
@@ -90,8 +197,13 @@ func (l *Logger) sign(entry *models.AuditLog) string {
 		uuidStr(entry.SessionID),
 		uuidStr(entry.RunID),
 	)
+	prefix := SigPrefix
+	if entry.Seq != nil {
+		fmt.Fprintf(h, "%d\x00%s\x00", *entry.Seq, entry.PrevSig)
+		prefix = ChainSigPrefix
+	}
 	h.Write(canonicalMetadata(entry.Metadata))
-	return SigPrefix + hex.EncodeToString(h.Sum(nil))
+	return prefix + hex.EncodeToString(h.Sum(nil))
 }
 
 // canonicalMetadata renders metadata the way it looks after a JSONB round
@@ -129,7 +241,11 @@ func (l *Logger) VerifyAuditSig(entry *models.AuditLog) bool {
 	if len(l.hmacKey) == 0 || entry.Sig == "" {
 		return false
 	}
-	return hmac.Equal([]byte(strings.TrimPrefix(entry.Sig, SigPrefix)), []byte(strings.TrimPrefix(l.sign(entry), SigPrefix)))
+	return hmac.Equal([]byte(trimSigPrefix(entry.Sig)), []byte(trimSigPrefix(l.sign(entry))))
+}
+
+func trimSigPrefix(s string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(s, SigPrefix), ChainSigPrefix)
 }
 
 // SigStatus classifies an entry read back from the database.

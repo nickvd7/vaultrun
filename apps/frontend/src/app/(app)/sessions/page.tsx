@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
-import { relativeTime } from "@/lib/utils";
+import { Time } from "@/components/ui/Time";
 import { useOrg } from "@/components/OrgContext";
 import type { Session } from "@/types";
 
@@ -183,7 +183,7 @@ export default function SessionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Sessions</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-300 text-sm mt-1">
             {filtering ? `${visible.length} of ${sessions.length}` : sessions.length} session
             {(filtering ? visible.length : sessions.length) !== 1 ? "s" : ""}
             {orgId ? " in selected org" : ""}
@@ -285,14 +285,14 @@ export default function SessionsPage() {
               </Field>
             )}
             <div>
-              <span className="block text-xs text-slate-400 mb-1.5">Network</span>
+              <span className="block text-xs text-slate-300 mb-1.5">Network</span>
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={form.network_enabled} onChange={(e) => setForm({ ...form, network_enabled: e.target.checked })} className="accent-indigo-500" />
                 <span className="text-slate-300 text-sm">Enable network access</span>
               </label>
             </div>
             <div>
-              <span className="block text-xs text-slate-400 mb-1.5">Replay</span>
+              <span className="block text-xs text-slate-300 mb-1.5">Replay</span>
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input type="checkbox" checked={form.replay_enabled} onChange={(e) => setForm({ ...form, replay_enabled: e.target.checked })} className="accent-indigo-500" />
                 <span className="text-slate-300 text-sm">Enable session replay checkpoints</span>
@@ -328,14 +328,14 @@ export default function SessionsPage() {
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" aria-hidden="true" />
           <input
             type="search"
             aria-label="Search sessions by name, ID, image or label"
             placeholder="Search name, ID, image or label (demo=true)…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-[#0f0f1a] border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-[#0f0f1a] border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-200 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <select
@@ -354,23 +354,23 @@ export default function SessionsPage() {
       </div>
 
       {total > sessions.length && !orgId && (
-        <p className="text-xs text-slate-400">Showing the {sessions.length} most recent of {total} sessions.</p>
+        <p className="text-xs text-slate-300">Showing the {sessions.length} most recent of {total} sessions.</p>
       )}
 
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-slate-400 text-sm">Loading…</div>
+          <div className="p-8 text-center text-slate-300 text-sm">Loading…</div>
         ) : sessions.length === 0 ? (
           <div className="p-10 text-center space-y-3">
-            <Terminal className="w-8 h-8 text-slate-400 mx-auto" aria-hidden="true" />
-            <p className="text-slate-400 text-sm">No sessions yet. Create one to get started.</p>
+            <Terminal className="w-8 h-8 text-slate-300 mx-auto" aria-hidden="true" />
+            <p className="text-slate-300 text-sm">No sessions yet. Create one to get started.</p>
           </div>
         ) : visible.length === 0 ? (
-          <div className="p-10 text-center text-slate-400 text-sm">No sessions match your search.</div>
+          <div className="p-10 text-center text-slate-300 text-sm">No sessions match your search.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <SortTh label="Session" active={sortKey === "name"} dir={sortDir} onClick={() => toggleSort("name")} />
                 <th scope="col" className="px-4 py-3 text-left font-medium">Image</th>
                 <SortTh label="Status" active={sortKey === "status"} dir={sortDir} onClick={() => toggleSort("status")} />
@@ -383,26 +383,37 @@ export default function SessionsPage() {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {pageItems.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-800/20 transition-colors">
+                <tr
+                  key={s.id}
+                  onClick={() => router.push(`/sessions/${s.id}`)}
+                  className="hover:bg-slate-800/20 transition-colors cursor-pointer"
+                >
                   <td className="px-4 py-3">
-                    <Link href={`/sessions/${s.id}`} className="font-mono text-indigo-300 text-xs hover:underline">
+                    <Link
+                      href={`/sessions/${s.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-mono text-indigo-300 text-xs hover:underline"
+                    >
                       {s.name || `${s.id.slice(0, 12)}…`}
                     </Link>
-                    {s.replay_enabled && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">replay</span>}
+                    {s.replay_enabled && <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-300">replay</span>}
                     <LabelChips labels={s.labels} onPick={(kv) => setQuery(kv)} />
                   </td>
                   <td className="px-4 py-3 text-slate-300 font-mono text-xs">{s.image}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={s.status} />
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-400">
+                  <td className="px-4 py-3 text-xs text-slate-300">
                     {s.cpu_limit}CPU · {s.memory_limit_mb}MB
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-400">{relativeTime(s.created_at)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-300"><Time value={s.created_at} /></td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => setToDelete(s)}
-                      className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setToDelete(s);
+                      }}
+                      className="p-1.5 rounded text-slate-300 hover:text-red-400 hover:bg-red-900/20 transition-colors"
                       aria-label={`Delete session ${s.name || s.id.slice(0, 8)}`}
                       title="Delete session"
                     >
@@ -417,7 +428,7 @@ export default function SessionsPage() {
       </div>
 
       {visible.length > PAGE_SIZE && (
-        <nav aria-label="Session pages" className="flex items-center justify-between text-xs text-slate-400">
+        <nav aria-label="Session pages" className="flex items-center justify-between text-xs text-slate-300">
           <span>
             Page {currentPage} of {pageCount}
           </span>
@@ -482,7 +493,7 @@ function LabelChips({ labels, onPick }: { labels?: Record<string, string>; onPic
           className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[11px] text-slate-300 hover:bg-slate-700"
         >
           <span className="text-indigo-300">{k}</span>
-          <span className="text-slate-400">=</span>
+          <span className="text-slate-300">=</span>
           {v}
         </button>
       ))}
@@ -503,7 +514,7 @@ function Field({
   const errId = `${id}-err`;
   return (
     <div>
-      <label htmlFor={id} className="block text-xs text-slate-400 mb-1.5">
+      <label htmlFor={id} className="block text-xs text-slate-300 mb-1.5">
         {label}
       </label>
       {children(id, error ? errId : undefined)}
@@ -516,4 +527,4 @@ function Field({
   );
 }
 
-const input = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500 aria-[invalid=true]:border-red-500";
+const input = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400 aria-[invalid=true]:border-red-500";

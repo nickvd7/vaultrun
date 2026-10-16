@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, RefreshCw, Copy, Check, AlertCircle, Clock } from "lucide-react";
+import { Plus, Trash2, Ban, RefreshCw, Copy, Check, AlertCircle, Clock } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { MasterKeyNotice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
+import { Time } from "@/components/ui/Time";
+import { formatDateWithZone, toDateTimeLocalValue } from "@/lib/utils";
 import type { APIKey, CreatedKey } from "@/types";
 
 type ExpiryPreset = "never" | "7d" | "30d" | "90d" | "1y" | "custom";
@@ -20,32 +22,33 @@ const PRESETS: { value: ExpiryPreset; label: string }[] = [
   { value: "custom", label: "Custom…" },
 ];
 
-function addDays(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 16); // "YYYY-MM-DDTHH:MM" for datetime-local
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An exact instant N days from now, as RFC 3339 (UTC on the wire). */
+function inDays(days: number): string {
+  return new Date(Date.now() + days * DAY_MS).toISOString();
 }
 
-function toRFC3339(datetimeLocal: string): string {
+/**
+ * The datetime-local input holds local wall-clock time without a zone;
+ * new Date() reads it as local, so toISOString() is the right instant.
+ */
+function localInputToRFC3339(datetimeLocal: string): string {
   return new Date(datetimeLocal).toISOString();
 }
 
-function formatExpiry(expiresAt: string): { label: string; expired: boolean } {
-  const d = new Date(expiresAt);
-  const now = new Date();
-  const expired = d < now;
-  return {
-    label: d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }),
-    expired,
-  };
+function isExpired(expiresAt: string): boolean {
+  return new Date(expiresAt).getTime() < Date.now();
 }
 
 export default function KeysPage() {
-  const { isMaster } = useApiKey();
+  const { isMaster, roleReady } = useApiKey();
   const toast = useToast();
   const [secretsInput, setSecretsInput] = useState("");
   const [revoking, setRevoking] = useState<APIKey | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
+  const [deleting, setDeleting] = useState<APIKey | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [keys, setKeys] = useState<APIKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -58,6 +61,7 @@ export default function KeysPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
+    if (!roleReady) return;
     if (isMaster === false) {
       setLoading(false);
       return;
@@ -70,16 +74,16 @@ export default function KeysPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [isMaster]);
+  useEffect(load, [isMaster, roleReady]);
 
   const computeExpiresAt = (): string | undefined => {
     switch (preset) {
       case "never": return undefined;
-      case "7d":    return toRFC3339(addDays(7));
-      case "30d":   return toRFC3339(addDays(30));
-      case "90d":   return toRFC3339(addDays(90));
-      case "1y":    return toRFC3339(addDays(365));
-      case "custom": return customDate ? toRFC3339(customDate) : undefined;
+      case "7d":    return inDays(7);
+      case "30d":   return inDays(30);
+      case "90d":   return inDays(90);
+      case "1y":    return inDays(365);
+      case "custom": return customDate ? localInputToRFC3339(customDate) : undefined;
     }
   };
 
@@ -126,6 +130,21 @@ export default function KeysPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await api.keys.remove(deleting.id);
+      toast.success(`Key ${deleting.name} deleted`);
+      setDeleting(null);
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete key");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const copyKey = async () => {
     if (!newKey) return;
     await navigator.clipboard.writeText(newKey.key);
@@ -148,10 +167,24 @@ export default function KeysPage() {
         onConfirm={handleRevoke}
         onCancel={() => !revokeBusy && setRevoking(null)}
       />
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete revoked key?"
+        message={
+          <>
+            Removes <span className="font-mono">{deleting?.name}</span> from the list and frees its name. The key already
+            stopped working when it was revoked.
+          </>
+        }
+        confirmLabel="Delete key"
+        busy={deleteBusy}
+        onConfirm={handleDelete}
+        onCancel={() => !deleteBusy && setDeleting(null)}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">API Keys</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-300 text-sm mt-1">
             Manage keys used to authenticate with the VaultRun API
           </p>
         </div>
@@ -195,7 +228,7 @@ export default function KeysPage() {
           {newKey.expires_at && (
             <p className="text-xs text-emerald-400 flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              Expires {new Date(newKey.expires_at).toLocaleString()}
+              Expires {formatDateWithZone(newKey.expires_at)}
             </p>
           )}
           <div className="flex items-center gap-2">
@@ -215,7 +248,7 @@ export default function KeysPage() {
           </div>
           <button
             onClick={() => setNewKey(null)}
-            className="text-xs text-slate-400 hover:text-slate-200"
+            className="text-xs text-slate-300 hover:text-slate-200"
           >
             I&apos;ve saved it — dismiss
           </button>
@@ -228,7 +261,7 @@ export default function KeysPage() {
           <h2 className="text-sm font-medium text-slate-300">Create New API Key</h2>
 
           <div>
-            <label htmlFor="key-name" className="block text-xs text-slate-400 mb-1">Key name</label>
+            <label htmlFor="key-name" className="block text-xs text-slate-300 mb-1">Key name</label>
             <input
               id="key-name"
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
@@ -241,19 +274,19 @@ export default function KeysPage() {
           </div>
 
           <div>
-            <label htmlFor="key-secrets" className="block text-xs text-slate-400 mb-1">Allowed secrets (optional)</label>
+            <label htmlFor="key-secrets" className="block text-xs text-slate-300 mb-1">Allowed secrets (optional)</label>
             <input
               id="key-secrets"
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
               value={secretsInput}
               onChange={(e) => setSecretsInput(e.target.value)}
               placeholder="DB_PASSWORD, API_TOKEN"
             />
-            <p className="mt-1 text-xs text-slate-400">Comma-separated secret names this key may inject into runs. Leave empty to allow any secret.</p>
+            <p className="mt-1 text-xs text-slate-300">Comma-separated secret names this key may inject into runs. Leave empty to allow any secret.</p>
           </div>
 
           <div>
-            <span className="block text-xs text-slate-400 mb-2">Expiry</span>
+            <span className="block text-xs text-slate-300 mb-2">Expiry</span>
             <div className="flex flex-wrap gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -263,7 +296,7 @@ export default function KeysPage() {
                   className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                     preset === p.value
                       ? "bg-indigo-600 text-white"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-200"
                   }`}
                 >
                   {p.label}
@@ -275,7 +308,7 @@ export default function KeysPage() {
                 type="datetime-local"
                 className="mt-2 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
                 value={customDate}
-                min={new Date().toISOString().slice(0, 16)}
+                min={toDateTimeLocalValue(new Date())}
                 onChange={(e) => setCustomDate(e.target.value)}
               />
             )}
@@ -291,7 +324,7 @@ export default function KeysPage() {
             </button>
             <button
               onClick={() => { setShowForm(false); setName(""); setPreset("never"); setCustomDate(""); }}
-              className="px-4 py-2 text-sm text-slate-400 border border-slate-700 rounded hover:bg-slate-800"
+              className="px-4 py-2 text-sm text-slate-300 border border-slate-700 rounded hover:bg-slate-800"
             >
               Cancel
             </button>
@@ -302,17 +335,17 @@ export default function KeysPage() {
       {/* Keys table */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {isMaster === false ? (
-          <div className="p-8 text-center text-slate-400 text-sm">The key list is only visible to the master key.</div>
+          <div className="p-8 text-center text-slate-300 text-sm">The key list is only visible to the master key.</div>
         ) : loading ? (
-          <div className="p-8 text-center text-slate-400 text-sm" role="status">Loading…</div>
+          <div className="p-8 text-center text-slate-300 text-sm" role="status">Loading…</div>
         ) : keys.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-sm">
+          <div className="p-8 text-center text-slate-300 text-sm">
             No API keys yet. Click &ldquo;New Key&rdquo; to create one.
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Prefix</th>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -325,14 +358,14 @@ export default function KeysPage() {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {keys.map((k) => {
-                const expiry = k.expires_at ? formatExpiry(k.expires_at) : null;
-                const isExpired = k.active && expiry?.expired;
+                const expired = k.expires_at ? isExpired(k.expires_at) : false;
+                const showExpired = k.active && expired;
                 return (
                   <tr key={k.id} className="hover:bg-slate-800/20 transition-colors">
                     <td className="px-4 py-3 text-slate-200 font-medium">{k.name}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-400">{k.prefix}…</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-300">{k.prefix}…</td>
                     <td className="px-4 py-3">
-                      {isExpired ? (
+                      {showExpired ? (
                         <span className="inline-flex items-center gap-1 text-xs text-amber-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                           Expired
@@ -343,7 +376,7 @@ export default function KeysPage() {
                           Active
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-300">
                           <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
                           Revoked
                         </span>
@@ -351,7 +384,7 @@ export default function KeysPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-300">
                       {k.allowed_secrets == null ? (
-                        <span className="text-slate-400">Any</span>
+                        <span className="text-slate-300">Any</span>
                       ) : k.allowed_secrets.length === 0 ? (
                         <span className="text-amber-300">None</span>
                       ) : (
@@ -359,30 +392,37 @@ export default function KeysPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {expiry ? (
-                        <span className={expiry.expired ? "text-amber-500" : "text-slate-400"}>
-                          <Clock className="w-3 h-3 inline mr-1 opacity-60" />
-                          {expiry.label}
+                      {k.expires_at ? (
+                        <span className={expired ? "text-amber-400" : "text-slate-300"} title={new Date(k.expires_at).toISOString()}>
+                          <Clock className="w-3 h-3 inline mr-1 opacity-60" aria-hidden="true" />
+                          {formatDateWithZone(k.expires_at)}
                         </span>
                       ) : (
-                        <span className="text-slate-400">Never</span>
+                        <span className="text-slate-300">Never</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      {new Date(k.created_at).toLocaleString()}
+                    <td className="px-4 py-3 text-xs text-slate-300">
+                      <Time value={k.created_at} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      {k.last_used_at
-                        ? new Date(k.last_used_at).toLocaleString()
-                        : <span className="text-slate-400">Never</span>}
+                    <td className="px-4 py-3 text-xs text-slate-300">
+                      {k.last_used_at ? <Time value={k.last_used_at} /> : <span className="text-slate-300">Never</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {k.active && (
+                      {k.active ? (
                         <button
                           onClick={() => setRevoking(k)}
-                          className="text-slate-400 hover:text-red-400 transition-colors"
+                          className="text-slate-300 hover:text-red-400 transition-colors"
                           title="Revoke key"
                           aria-label={`Revoke key ${k.name}`}
+                        >
+                          <Ban className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setDeleting(k)}
+                          className="text-slate-300 hover:text-red-400 transition-colors"
+                          title="Delete revoked key"
+                          aria-label={`Delete revoked key ${k.name}`}
                         >
                           <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>

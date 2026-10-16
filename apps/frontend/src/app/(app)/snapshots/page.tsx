@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
-import { formatBytes, relativeTime } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
+import { Time } from "@/components/ui/Time";
 import type { Session, Snapshot } from "@/types";
 
 const MAX_SESSIONS = 100;
@@ -101,7 +102,7 @@ export default function SnapshotsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Snapshots</h1>
-          <p className="text-slate-400 text-sm mt-1">Archives of a session&apos;s workspace files</p>
+          <p className="text-slate-300 text-sm mt-1">Archives of a session&apos;s workspace files</p>
         </div>
         <button
           onClick={load}
@@ -133,7 +134,7 @@ export default function SnapshotsPage() {
         <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide">New snapshot</h2>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
-            <label htmlFor="snap-session" className="block text-xs text-slate-400 mb-1">Session</label>
+            <label htmlFor="snap-session" className="block text-xs text-slate-300 mb-1">Session</label>
             <select
               id="snap-session"
               value={selectedId}
@@ -150,13 +151,13 @@ export default function SnapshotsPage() {
             </select>
           </div>
           <div className="flex-1">
-            <label htmlFor="snap-name" className="block text-xs text-slate-400 mb-1">Snapshot name</label>
+            <label htmlFor="snap-name" className="block text-xs text-slate-300 mb-1">Snapshot name</label>
             <input
               id="snap-name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="before-refactor"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
             />
           </div>
           <div className="flex items-end">
@@ -173,17 +174,17 @@ export default function SnapshotsPage() {
 
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-slate-400 text-sm" role="status">Loading snapshots…</div>
+          <div className="p-8 text-center text-slate-300 text-sm" role="status">Loading snapshots…</div>
         ) : snapshots.length === 0 ? (
           <div className="p-10 text-center space-y-2">
-            <Archive className="w-8 h-8 text-slate-400 mx-auto" aria-hidden="true" />
+            <Archive className="w-8 h-8 text-slate-300 mx-auto" aria-hidden="true" />
             <p className="text-slate-300 text-sm">No snapshots yet.</p>
-            <p className="text-slate-400 text-xs">Pick a running session above and give the snapshot a name.</p>
+            <p className="text-slate-300 text-xs">Pick a running session above and give the snapshot a name.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th scope="col" className="px-4 py-3 text-left font-medium">Name</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Session</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Size</th>
@@ -207,13 +208,13 @@ export default function SnapshotsPage() {
                   <td className="px-4 py-3 text-slate-300 text-xs font-mono" title={snap.created_by}>
                     {snap.created_by.length > 16 ? snap.created_by.slice(0, 16) + "…" : snap.created_by}
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{relativeTime(snap.created_at)}</td>
+                  <td className="px-4 py-3 text-slate-300 text-xs"><Time value={snap.created_at} /></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <button
                       onClick={() => handleDownload(snap)}
                       aria-label={`Download snapshot ${snap.name}`}
                       title="Download"
-                      className="p-1.5 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                      className="p-1.5 rounded text-slate-300 hover:text-slate-100 hover:bg-slate-800 transition-colors"
                     >
                       <Download className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
@@ -221,7 +222,7 @@ export default function SnapshotsPage() {
                       onClick={() => setToDelete(snap)}
                       aria-label={`Delete snapshot ${snap.name}`}
                       title="Delete"
-                      className="p-1.5 rounded text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                      className="p-1.5 rounded text-slate-300 hover:text-red-400 hover:bg-red-900/20 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>

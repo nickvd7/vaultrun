@@ -296,14 +296,14 @@ export default function SessionDetailPage() {
   };
 
   if (loadState === "loading" && !session) {
-    return <div className="text-slate-400 text-sm p-8" role="status">Loading session…</div>;
+    return <div className="text-slate-300 text-sm p-8" role="status">Loading session…</div>;
   }
 
   if (loadState === "notfound") {
     return (
       <div className="space-y-4 py-8">
         <h1 className="text-2xl font-semibold text-slate-100">Session not found</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-300">
           There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
         </p>
         <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-indigo-300 hover:underline">
@@ -344,7 +344,7 @@ export default function SessionDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/sessions" aria-label="Back to sessions" className="text-slate-400 hover:text-slate-200">
+          <Link href="/sessions" aria-label="Back to sessions" className="text-slate-300 hover:text-slate-200">
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           </Link>
           <div>
@@ -354,7 +354,7 @@ export default function SessionDetailPage() {
               </h1>
               <StatusBadge status={session.status} />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono">{session.id}</p>
+            <p className="text-xs text-slate-300 mt-0.5 font-mono">{session.id}</p>
           </div>
         </div>
         <button
@@ -374,7 +374,7 @@ export default function SessionDetailPage() {
           { label: "Network", value: session.network_enabled ? "Enabled" : "Disabled" },
         ].map(({ label, value }) => (
           <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3">
-            <div className="text-xs text-slate-400 mb-1">{label}</div>
+            <div className="text-xs text-slate-300 mb-1">{label}</div>
             <div className="text-sm text-slate-200 font-mono">{value}</div>
           </div>
         ))}
@@ -383,13 +383,13 @@ export default function SessionDetailPage() {
       {/* Labels panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+          <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
             <Tag className="w-3.5 h-3.5" /> Labels
           </h2>
           {!editingLabels && (
             <button
               onClick={handleEditLabels}
-              className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 rounded px-2 py-1"
+              className="text-xs text-slate-300 hover:text-slate-200 border border-slate-700 rounded px-2 py-1"
             >
               Edit
             </button>
@@ -400,7 +400,7 @@ export default function SessionDetailPage() {
           /* View mode */
           <div className="flex flex-wrap gap-2 min-h-[1.5rem]">
             {Object.keys(session.labels ?? {}).length === 0 ? (
-              <span className="text-xs text-slate-400 italic">No labels</span>
+              <span className="text-xs text-slate-300 italic">No labels</span>
             ) : (
               Object.entries(session.labels ?? {}).map(([k, v]) => (
                 <span
@@ -408,7 +408,7 @@ export default function SessionDetailPage() {
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 text-xs font-mono text-slate-300"
                 >
                   <span className="text-indigo-400">{k}</span>
-                  <span className="text-slate-400">=</span>
+                  <span className="text-slate-300">=</span>
                   {v}
                 </span>
               ))
@@ -425,7 +425,7 @@ export default function SessionDetailPage() {
                   value={k}
                   readOnly
                 />
-                <span className="text-slate-400 text-xs">=</span>
+                <span className="text-slate-300 text-xs">=</span>
                 <input
                   className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                   value={v}
@@ -451,7 +451,7 @@ export default function SessionDetailPage() {
                 onChange={(e) => setNewLabelKey(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddPendingLabel()}
               />
-              <span className="text-slate-400 text-xs">=</span>
+              <span className="text-slate-300 text-xs">=</span>
               <input
                 className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
                 placeholder="value"
@@ -479,7 +479,7 @@ export default function SessionDetailPage() {
               </button>
               <button
                 onClick={() => setEditingLabels(false)}
-                className="px-3 py-1.5 text-xs text-slate-400 border border-slate-700 rounded hover:bg-slate-800"
+                className="px-3 py-1.5 text-xs text-slate-300 border border-slate-700 rounded hover:bg-slate-800"
               >
                 Cancel
               </button>
@@ -490,7 +490,7 @@ export default function SessionDetailPage() {
 
       {/* Execute panel */}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-4 space-y-3">
-        <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+        <h2 className="text-xs font-medium text-slate-300 uppercase tracking-wide">
           Execute Command
         </h2>
         <div className="flex gap-2">
@@ -603,7 +603,7 @@ export default function SessionDetailPage() {
               className={`pb-2 text-sm capitalize transition-colors ${
                 tab === t
                   ? "text-indigo-400 border-b-2 border-indigo-400"
-                  : "text-slate-400 hover:text-slate-300"
+                  : "text-slate-300 hover:text-white"
               }`}
             >
               {t === "runs" && <Play className="w-3.5 h-3.5 inline mr-1" />}
@@ -653,11 +653,11 @@ function RunsTab({
     <div className="space-y-4">
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {runs.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-sm">No runs yet.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">No runs yet.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">ID</th>
                 <th className="px-4 py-3 text-left">Command</th>
                 <th className="px-4 py-3 text-left">Status</th>
@@ -692,13 +692,13 @@ function RunsTab({
                   <td className="px-4 py-2.5">
                     <StatusBadge status={r.status} />
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300">
                     {r.exit_code ?? "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">
+                  <td className="px-4 py-2.5 text-xs text-slate-300">
                     {r.duration_ms ? formatDuration(r.duration_ms) : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">
+                  <td className="px-4 py-2.5 text-xs text-slate-300">
                     {formatDate(r.created_at)}
                   </td>
                 </tr>
@@ -711,7 +711,7 @@ function RunsTab({
       {selectedRun && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-300 font-mono">
               {formatCommand(selectedRun.command, selectedRun.args)}
             </span>
             <StatusBadge status={selectedRun.status} />
@@ -725,7 +725,7 @@ function RunsTab({
             </div>
           )}
           {!selectedRun.stdout && !selectedRun.stderr && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-300">
               No output (exit code {selectedRun.exit_code ?? "unknown"}).
             </p>
           )}
@@ -776,11 +776,11 @@ function FilesTab({
       </div>
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {files.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-sm">No files uploaded.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">No files uploaded.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">Path</th>
                 <th className="px-4 py-3 text-left">Size</th>
                 <th className="px-4 py-3 text-left">Type</th>
@@ -792,9 +792,9 @@ function FilesTab({
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-800/20">
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-300">{f.path}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">{formatBytes(f.size_bytes)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono">{f.content_type}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">{formatDate(f.updated_at)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300">{formatBytes(f.size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono">{f.content_type}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300">{formatDate(f.updated_at)}</td>
                   <td className="px-4 py-2.5 text-right">
                     <button
                       onClick={() => handleDownload(f.path)}
@@ -872,9 +872,9 @@ function CheckpointsTab({
     <div className="space-y-4">
       {checkpoints.length === 0 && (
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center">
-          <History className="w-12 h-12 mx-auto mb-3 text-slate-400" />
-          <p className="text-slate-400 text-sm mb-2">No checkpoints yet</p>
-          <p className="text-slate-400 text-xs">
+          <History className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+          <p className="text-slate-300 text-sm mb-2">No checkpoints yet</p>
+          <p className="text-slate-300 text-xs">
             Checkpoints are automatically created after each command execution when replay is enabled.
           </p>
         </div>
@@ -884,7 +884,7 @@ function CheckpointsTab({
         {checkpoints.length > 0 && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th className="px-4 py-3 text-left">#</th>
                 <th className="px-4 py-3 text-left">Description</th>
                 <th className="px-4 py-3 text-left">Command</th>
@@ -908,13 +908,13 @@ function CheckpointsTab({
                   <td className="px-4 py-2.5 text-xs text-slate-300 max-w-xs truncate">
                     {cp.name || cp.description}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400 max-w-xs truncate">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-300 max-w-xs truncate">
                     {cp.command || "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">
+                  <td className="px-4 py-2.5 text-xs text-slate-300">
                     {formatBytes(cp.size_bytes)}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400">
+                  <td className="px-4 py-2.5 text-xs text-slate-300">
                     {formatDate(cp.created_at)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
@@ -955,21 +955,21 @@ function CheckpointsTab({
       {selectedCheckpoint && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-slate-300 font-mono">
               Checkpoint #{selectedCheckpoint.checkpoint_number}
             </span>
-            <span className="text-xs text-slate-400">{selectedCheckpoint.id.slice(0, 16)}</span>
+            <span className="text-xs text-slate-300">{selectedCheckpoint.id.slice(0, 16)}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-slate-400 mb-1">Exit Code</div>
+              <div className="text-xs text-slate-300 mb-1">Exit Code</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.exit_code ?? "—"}
               </div>
             </div>
             <div>
-              <div className="text-xs text-slate-400 mb-1">Duration</div>
+              <div className="text-xs text-slate-300 mb-1">Duration</div>
               <div className="text-sm text-slate-300 font-mono">
                 {selectedCheckpoint.duration_ms ? formatDuration(selectedCheckpoint.duration_ms) : "—"}
               </div>
@@ -1024,18 +1024,18 @@ function AuditTab({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
-  if (loading) return <div className="p-6 text-center text-slate-400 text-sm" role="status">Loading audit log…</div>;
+  if (loading) return <div className="p-6 text-center text-slate-300 text-sm" role="status">Loading audit log…</div>;
   if (error) return <Notice tone="error" title="Could not load the audit log">{error}</Notice>;
 
   return (
     <div className="space-y-2">
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {logs.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-sm">No audit events for this session.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">No audit events for this session.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wide">
+              <tr className="border-b border-slate-800 text-xs text-slate-300 uppercase tracking-wide">
                 <th scope="col" className="px-4 py-3 text-left font-medium">Time</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
@@ -1045,12 +1045,12 @@ function AuditTab({ sessionId }: { sessionId: string }) {
             <tbody className="divide-y divide-slate-800/50">
               {logs.map((l) => (
                 <tr key={l.id} className="hover:bg-slate-800/20">
-                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
                   <td className="px-4 py-2.5 text-xs text-slate-300 font-mono" title={l.actor}>
                     {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">{l.action}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-400 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
                     {JSON.stringify(l.metadata)}
                   </td>
                 </tr>
@@ -1060,8 +1060,8 @@ function AuditTab({ sessionId }: { sessionId: string }) {
         )}
       </div>
       {total > logs.length && (
-        <p className="text-xs text-slate-400">
-          Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 hover:underline">Open the audit log</Link> for the full history.
+        <p className="text-xs text-slate-300">
+          Showing the latest {logs.length} of {total} events. <Link href="/audit" className="text-indigo-300 underline">Open the audit log</Link> for the full history.
         </p>
       )}
     </div>

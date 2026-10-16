@@ -206,6 +206,10 @@ export const api = {
 
     revoke: (id: string) =>
       request<void>(`/keys/${id}`, { method: "DELETE" }),
+
+    /** Removes an already revoked key from the list (the API refuses active keys). */
+    remove: (id: string) =>
+      request<void>(`/keys/${id}?purge=true`, { method: "DELETE" }),
   },
 
   policy: {

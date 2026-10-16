@@ -22,17 +22,46 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
 }
 
+// dateStyle/timeStyle cannot be combined with timeZoneName, so both formats
+// spell the fields out and differ only by the zone.
+const dateTimeFields: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+};
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, dateTimeFields);
+const dateTimeZoneFormat = new Intl.DateTimeFormat(undefined, { ...dateTimeFields, timeZoneName: "short" });
+
+/**
+ * The one absolute date format used across the dashboard, in the viewer's time
+ * zone ("Oct 16, 2026, 8:44 AM"). Lists use relativeTime() with this as the
+ * tooltip; there is no third notation.
+ */
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString();
+  return dateTimeFormat.format(new Date(iso));
 }
 
+/** formatDate plus the time zone, for moments that matter (key expiry). */
+export function formatDateWithZone(iso: string): string {
+  return dateTimeZoneFormat.format(new Date(iso));
+}
+
+/** Value for <input type="datetime-local">: local wall-clock time, not UTC. */
+export function toDateTimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "5m ago" for recent times, the absolute format beyond a week. */
 export function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return formatDate(iso);
 }
 
 export function statusColor(status: string): string {

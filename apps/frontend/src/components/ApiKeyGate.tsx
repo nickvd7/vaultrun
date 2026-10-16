@@ -9,6 +9,10 @@ interface ApiKeyContextValue {
   clearApiKey: () => void;
   /** true = master key, false = regular key, null = still checking / unknown. */
   isMaster: boolean | null;
+  /** Name of the signed-in key ("master" for the master key); null while unknown. */
+  keyName: string | null;
+  /** false until the role check finished (successfully or not); pages that need the role wait for it. */
+  roleReady: boolean;
 }
 
 const ApiKeyContext = createContext<ApiKeyContextValue>({
@@ -16,6 +20,8 @@ const ApiKeyContext = createContext<ApiKeyContextValue>({
   setApiKey: () => {},
   clearApiKey: () => {},
   isMaster: null,
+  keyName: null,
+  roleReady: false,
 });
 
 export function useApiKey() {
@@ -31,6 +37,8 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState("");
   const [testing, setTesting] = useState(false);
   const [isMaster, setIsMaster] = useState<boolean | null>(null);
+  const [keyName, setKeyName] = useState<string | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
 
   // Load from localStorage on mount (client-only)
   useEffect(() => {
@@ -38,19 +46,43 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
     setApiKeyState(stored);
   }, []);
 
-  // Only the master key may list API keys, so the response tells the two apart.
+  // Ask the API what this key may do. Older APIs have no /whoami; they are
+  // probed through the master-only key list instead (which logs a 403 for
+  // ordinary keys in the browser console, the reason /whoami exists).
   useEffect(() => {
+    setRoleReady(false);
     if (!apiKey) {
       setIsMaster(null);
+      setKeyName(null);
       return;
     }
     let cancelled = false;
-    fetch("/api/v1/keys?limit=1", { headers: { "X-API-Key": apiKey } })
-      .then((r) => {
+    const headers = { "X-API-Key": apiKey };
+    (async () => {
+      try {
+        const who = await fetch("/api/v1/whoami", { headers });
         if (cancelled) return;
-        setIsMaster(r.ok ? true : r.status === 403 ? false : null);
-      })
-      .catch(() => !cancelled && setIsMaster(null));
+        if (who.ok) {
+          const body = (await who.json()) as { master?: boolean; actor?: string };
+          if (cancelled) return;
+          setIsMaster(Boolean(body.master));
+          setKeyName(body.actor ?? null);
+          return;
+        }
+        if (who.status !== 404) {
+          setIsMaster(null);
+          return;
+        }
+        const probe = await fetch("/api/v1/keys?limit=1", { headers });
+        if (cancelled) return;
+        setIsMaster(probe.ok ? true : probe.status === 403 ? false : null);
+        setKeyName(null);
+      } catch {
+        if (!cancelled) setIsMaster(null);
+      } finally {
+        if (!cancelled) setRoleReady(true);
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -109,7 +141,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold text-slate-100">Connect to VaultRun</h1>
-              <p className="text-slate-400 text-sm mt-1">Enter your API key to continue</p>
+              <p className="text-slate-300 text-sm mt-1">Enter your API key to continue</p>
             </div>
           </div>
 
@@ -123,7 +155,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
                 name="api-key"
                 autoComplete="off"
                 type={showKey ? "text" : "password"}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 pr-10 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 pr-10 text-sm font-mono text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-400"
                 placeholder="vr_…"
                 value={input}
                 onChange={(e) => { setInput(e.target.value); setError(""); }}
@@ -135,7 +167,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
                 onClick={() => setShowKey(!showKey)}
                 aria-label={showKey ? "Hide API key" : "Show API key"}
                 aria-pressed={showKey}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-200"
               >
                 {showKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
@@ -154,9 +186,9 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <p className="text-center text-xs text-slate-400">
+          <p className="text-center text-xs text-slate-300">
             Generate a key with{" "}
-            <code className="font-mono text-slate-400">make bootstrap-key</code>
+            <code className="font-mono text-slate-300">make bootstrap-key</code>
           </p>
         </div>
       </div>
@@ -164,7 +196,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster }}>
+    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster, keyName, roleReady }}>
       {children}
     </ApiKeyContext.Provider>
   );

@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-slate-800 bg-[#0d0d14] shrink-0">
           <button
             type="button"
-            className="p-2 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+            className="p-2 rounded-md text-slate-300 hover:text-slate-200 hover:bg-slate-800/50"
             aria-expanded={mobileOpen}
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             onClick={() => setMobileOpen((o) => !o)}

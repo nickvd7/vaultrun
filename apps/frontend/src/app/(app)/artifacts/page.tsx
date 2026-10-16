@@ -165,6 +165,7 @@ export default function ArtifactsPage() {
           </>
         }
         confirmLabel="Delete artifact"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setToDelete(null)}

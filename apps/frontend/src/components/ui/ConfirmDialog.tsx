@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Loader2 } from "lucide-react";
 
 interface Props {
   open: boolean;
   title: string;
   message: React.ReactNode;
   confirmLabel?: string;
+  /** Shown on the button while busy, e.g. "Deleting…". */
+  busyLabel?: string;
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 /** In-page replacement for window.confirm: focus-trapped enough for a two-button dialog, Escape cancels. */
-export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", busy = false, onConfirm, onCancel }: Props) {
+export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", busyLabel = "Working…", busy = false, onConfirm, onCancel }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
@@ -78,7 +81,14 @@ export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", b
             disabled={busy}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
           >
-            {busy ? "Working…" : confirmLabel}
+            {busy ? (
+              <span className="inline-flex items-center gap-2" role="status">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                {busyLabel}
+              </span>
+            ) : (
+              confirmLabel
+            )}
           </button>
         </div>
       </div>

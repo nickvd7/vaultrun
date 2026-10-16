@@ -75,6 +75,24 @@ export interface AuditLog {
    * Absent on API versions before 0.4.4.
    */
   sig_status?: "valid" | "invalid" | "unsigned" | "unverifiable";
+  /** Why an entry is invalid (API 0.4.5 and later). */
+  sig_reason?: string;
+  /** Position in the hash chain; absent on entries written before chaining. */
+  seq?: number;
+}
+
+/** Verdict over the whole audit log, from GET /audit/integrity (API 0.4.5 and later). */
+export interface AuditIntegrity {
+  status: "ok" | "compromised" | "not_started" | "disabled";
+  checked_at: string;
+  chained_entries: number;
+  legacy_entries: number;
+  invalid_entries: number;
+  missing_entries: number;
+  problems: string[];
+  /** Master key only. */
+  invalid_ids?: string[];
+  missing_seqs?: string[];
 }
 
 export interface Pagination {
@@ -180,6 +198,8 @@ export interface SessionCostSummary {
   storage_cost: number;
   network_cost: number;
   total_cost: number;
+  /** Set when the session has ended (deleted, or stopped when idle). */
+  stopped_at?: string;
   first_metric: string;
   last_metric: string;
 }

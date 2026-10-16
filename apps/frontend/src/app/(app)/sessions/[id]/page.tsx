@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Time } from "@/components/ui/Time";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
 import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
@@ -63,7 +64,9 @@ export default function SessionDetailPage() {
       .get(id)
       .then((s) => {
         setSession(s);
-        setLoadState("ready");
+        // Stopping is final and stopped sessions drop out of every list, so a
+        // stopped session is "gone" here too; the API keeps the row for history.
+        setLoadState(s.stopped_at ? "notfound" : "ready");
       })
       .catch((e: unknown) => {
         // 400 = malformed id, 403/404 = not yours or gone: all look like "not found" to the user.
@@ -303,9 +306,17 @@ export default function SessionDetailPage() {
     return (
       <div className="space-y-4 py-8">
         <h1 className="text-2xl font-semibold text-slate-100">Session not found</h1>
-        <p className="text-sm text-slate-300">
-          There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
-        </p>
+        {session?.stopped_at ? (
+          <p className="text-sm text-slate-300">
+            The session <span className="font-mono text-slate-200">{session.name || id}</span> no longer exists: it was deleted
+            or stopped when idle on <Time value={session.stopped_at} />. Its events remain in the{" "}
+            <Link href="/audit" className="text-indigo-300 underline">audit log</Link>.
+          </p>
+        ) : (
+          <p className="text-sm text-slate-300">
+            There is no session with ID <span className="font-mono text-slate-300">{id}</span>, or you do not have access to it. It may have been deleted.
+          </p>
+        )}
         <Link href="/sessions" className="inline-flex items-center gap-1.5 text-sm text-indigo-300 hover:underline">
           <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to sessions
         </Link>
@@ -337,6 +348,7 @@ export default function SessionDetailPage() {
           </>
         }
         confirmLabel="Delete session"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setConfirmDelete(false)}

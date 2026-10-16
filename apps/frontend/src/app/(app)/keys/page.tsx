@@ -163,6 +163,7 @@ export default function KeysPage() {
           </>
         }
         confirmLabel="Revoke key"
+        busyLabel="Revoking…"
         busy={revokeBusy}
         onConfirm={handleRevoke}
         onCancel={() => !revokeBusy && setRevoking(null)}
@@ -177,6 +178,7 @@ export default function KeysPage() {
           </>
         }
         confirmLabel="Delete key"
+        busyLabel="Deleting…"
         busy={deleteBusy}
         onConfirm={handleDelete}
         onCancel={() => !deleteBusy && setDeleting(null)}

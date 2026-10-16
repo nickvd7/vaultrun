@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { badgeBase, formatDate } from "@/lib/utils";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import type { CostBreakdown, CostAlert } from "@/types";
@@ -40,12 +41,14 @@ export default function CostsPage() {
     }
   };
 
+  // Short sessions cost fractions of a cent; two decimals would show them all as $0.00.
   const formatCost = (cost: number) => {
+    const small = cost > 0 && cost < 0.01;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: small ? 4 : 2,
+      maximumFractionDigits: small ? 4 : 2,
     }).format(cost);
   };
 
@@ -168,7 +171,10 @@ export default function CostsPage() {
           </h2>
         </div>
         {topSessions.length === 0 ? (
-          <div className="p-6 text-center text-slate-300 text-sm">No session costs for this period.</div>
+          <div className="p-6 text-center text-slate-300 text-sm">
+            No session has accrued cost in this period yet. Costs are billed every minute for CPU and memory
+            allocated; sessions whose cost rounds to $0.0000 are not listed.
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -183,7 +189,30 @@ export default function CostsPage() {
             <tbody className="divide-y divide-slate-800/50">
               {topSessions.map((s) => (
                 <tr key={s.session_id} className="hover:bg-slate-800/20">
-                  <td className="px-6 py-3 font-mono text-xs text-slate-300">{s.session_name}</td>
+                  <td className="px-6 py-3 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {s.stopped_at ? (
+                        <span className="font-mono text-slate-300">{s.session_name}</span>
+                      ) : (
+                        <Link href={`/sessions/${s.session_id}`} className="font-mono text-indigo-300 hover:underline">
+                          {s.session_name}
+                        </Link>
+                      )}
+                      {s.stopped_at && (
+                        <span
+                          className={`${badgeBase} bg-gray-800 text-gray-200 border border-gray-600`}
+                          title={`Deleted or stopped ${formatDate(s.stopped_at)}`}
+                        >
+                          ended
+                        </span>
+                      )}
+                    </div>
+                    {s.session_name !== s.session_id && (
+                      <div className="font-mono text-slate-300 mt-0.5" title={s.session_id}>
+                        {s.session_id.slice(0, 8)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.compute_cost)}</td>
                   <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.storage_cost)}</td>
                   <td className="px-6 py-3 text-xs text-slate-300">{formatCost(s.network_cost)}</td>

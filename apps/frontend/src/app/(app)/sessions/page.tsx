@@ -460,6 +460,7 @@ export default function SessionsPage() {
           </>
         }
         confirmLabel="Delete session"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setToDelete(null)}

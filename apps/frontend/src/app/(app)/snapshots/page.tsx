@@ -243,6 +243,7 @@ export default function SnapshotsPage() {
           </>
         }
         confirmLabel="Delete snapshot"
+        busyLabel="Deleting…"
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => !deleting && setToDelete(null)}

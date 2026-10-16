@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Dashboard: key expiry was off by the time zone offset.** The preset expiry ("7 days") was computed as a UTC wall-clock string and then read back as local time, so a key could expire hours early, and the list showed only a date. Presets are now an exact instant (now + N x 24h), a custom date is read as your local time, and expiry is shown with date, time and zone.
+- **Dashboard: run history keeps the quotes.** Arguments are quoted like a shell would (`python -c 'print(2+2)'`), so the line can be pasted back.
+- **Dashboard: one date notation.** Lists show "5m ago" (exact time on hover) and anything older than a week, and every other date uses the same "Oct 16, 2026, 8:44 AM" format. The audit date filter now means your local days instead of UTC days.
+- **Dashboard: the unknown-URL page is shown inside the app** (sidebar and navigation) when you are signed in, still with a real 404 status.
+- **Dashboard: no 403 in the console for ordinary keys.** The dashboard asks `GET /api/v1/whoami` what the key may do instead of probing the master-only key list. (An API older than this release has no `/whoami`; the dashboard falls back to the old probe there.)
+- **Dashboard: the sidebar no longer shows the start of your API key**; it shows the key's name and whether it is the master key.
+- **Dashboard: Recent Sessions shows names, links to the session** (whole row) and uses the same status badge as the sessions list.
+- **Dashboard: secondary text is lighter** (was slate-400 on near-black, now slate-300).
+
+### Added
+- **Dashboard: revoked keys can be deleted** (trash icon after a confirmation); active keys show a revoke icon instead. Needs the API's `DELETE /keys/:id?purge=true`.
+- **Dashboard: audit signature states.** Verified, Invalid (altered or signature removed, with a warning above the table), Unsigned and Legacy (older entries, expected). Exports carry `sig_status`.
+
 ---
 
 ## [0.4.3] — 2026-10-15

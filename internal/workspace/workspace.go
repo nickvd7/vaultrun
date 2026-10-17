@@ -23,43 +23,57 @@ func New(baseDir string) *Manager {
 	return &Manager{baseDir: baseDir}
 }
 
+// SandboxUser returns the user ("uid:gid" or a name) sandbox processes run as.
+//
+// By default sandboxes run as the same uid:gid as the API process. They then
+// own the bind-mounted session directory, which can stay 0o700. If the API runs
+// as root (not the Compose default) there is no private uid to share, so the
+// legacy "nobody" user is used together with world-writable (0o777) session
+// directories. SANDBOX_USER overrides the choice; any value other than the API's
+// own uid:gid keeps the 0o777 directories because the user cannot be assumed to
+// own them.
+func SandboxUser() string {
+	if v := strings.TrimSpace(os.Getenv("SANDBOX_USER")); v != "" {
+		return v
+	}
+	if os.Getuid() != 0 {
+		return ownUser()
+	}
+	return "nobody"
+}
+
+func ownUser() string {
+	return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+}
+
+// PrivateDirs reports whether session directories are owned by the sandbox user
+// and can therefore be created owner-only.
+func PrivateDirs() bool {
+	return SandboxUser() == ownUser()
+}
+
+// DirMode is the mode for session directories: 0o700 when the sandbox user owns
+// them, otherwise 0o777 so a differently-numbered sandbox user (e.g. "nobody",
+// UID 65534) can write. In the 0o777 case the parent WORKSPACE_BASE_DIR is
+// created 0o700 so other host users cannot reach the session directories.
+func DirMode() os.FileMode {
+	if PrivateDirs() {
+		return 0o700
+	}
+	return 0o777
+}
+
 // Create initializes an isolated workspace directory for a session.
 //
-// Why 0o777 is required:
-//   The directory is bind-mounted into the sandbox container, which runs as
-//   the unprivileged user "nobody" (UID 65534). From the Linux kernel's
-//   perspective, UID 65534 is "other" relative to the host process that owns
-//   the workspace, so the container user can only access the directory if the
-//   "other" permission bits are set. Without 0o777 (specifically the world-wx
-//   bits) the container process cannot create output files or traverse into
-//   subdirectories, causing sandbox runs to fail.
-//
-// Why not use a tighter permission model:
-//   The ideal alternative would be a per-session UID combined with a user
-//   namespace so the container runs as a private UID that owns the directory
-//   (allowing 0o700). That approach is out of scope for v1 and requires
-//   additional kernel capabilities or a suid helper binary.
-//
-// Limiting blast radius on the host:
-//   0o777 on the session-specific directory means other host processes running
-//   as arbitrary UIDs can also write to it. To prevent those host processes
-//   from even discovering which session directories exist, the parent baseDir
-//   is created with 0o700 (owner-only) in main.go. Only the owner of the host
-//   process can list baseDir entries; the 0o777 child directories are therefore
-//   not reachable by other host users without already knowing the session UUID.
-//
-// umask behaviour:
-//   os.MkdirAll honours the process umask, which can silently strip the
-//   group/other bits we set (e.g. umask 0o077 → effective 0o700). To
-//   guarantee the intended 0o777 we call os.Chmod after creation; Chmod is
-//   not affected by the umask.
+// os.MkdirAll honours the process umask, which can strip permission bits; the
+// explicit os.Chmod afterwards is umask-independent.
 func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 	path := m.sessionPath(sessionID)
-	if err := os.MkdirAll(path, 0o777); err != nil {
+	if err := os.MkdirAll(path, DirMode()); err != nil {
 		return "", fmt.Errorf("create workspace dir: %w", err)
 	}
 	// Force permissions — os.Chmod is umask-independent.
-	if err := os.Chmod(path, 0o777); err != nil {
+	if err := os.Chmod(path, DirMode()); err != nil {
 		return "", fmt.Errorf("chmod workspace dir: %w", err)
 	}
 	return path, nil
@@ -71,13 +85,17 @@ func (m *Manager) Delete(sessionID uuid.UUID) error {
 	return os.RemoveAll(path)
 }
 
-// SafePath resolves a user-provided path within the workspace, enforcing:
-//  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
-//  2. No ".." path components (checked after full decoding, before Clean)
-//  3. Resolved path stays inside the workspace root (filepath.Clean + HasPrefix)
-func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
-	// URL-decode in a loop until stable to catch double/triple-encoded traversals
-	// (%252e%252e%2f → %2e%2e/ → ../).
+// ErrPathTraversal is returned for a path with a ".." component.
+var ErrPathTraversal = errors.New("path traversal detected")
+
+// CheckPath rejects a user-provided path that contains a ".." component and
+// returns the path with percent-encoding fully decoded. Callers use it to
+// answer with an error instead of quietly rewriting "../x" to "/x".
+//
+// The path is URL-decoded in a loop until stable to catch double/triple-encoded
+// traversals (%252e%252e%2f), and the check is per component, not
+// strings.Contains, so "foo..txt" stays valid.
+func CheckPath(userPath string) (string, error) {
 	decoded := userPath
 	for {
 		next, err := url.PathUnescape(decoded)
@@ -86,16 +104,22 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 		}
 		decoded = next
 	}
-
-	// Reject any path component that is exactly "..".
-	// This is checked AFTER full decoding so encoded variants are caught too.
-	// We use a component-level check (not strings.Contains) so "foo..txt" is
-	// still allowed while "../" traversals are rejected as errors — important
-	// for clients that distinguish traversal attempts from valid paths.
 	for _, part := range strings.Split(filepath.ToSlash(decoded), "/") {
 		if part == ".." {
-			return "", fmt.Errorf("path traversal detected")
+			return "", ErrPathTraversal
 		}
+	}
+	return decoded, nil
+}
+
+// SafePath resolves a user-provided path within the workspace, enforcing:
+//  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
+//  2. No ".." path components (checked after full decoding, before Clean)
+//  3. Resolved path stays inside the workspace root (filepath.Clean + HasPrefix)
+func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
+	decoded, err := CheckPath(userPath)
+	if err != nil {
+		return "", err
 	}
 
 	root := m.sessionPath(sessionID)
@@ -107,7 +131,7 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 	// Belt-and-suspenders: trailing-separator HasPrefix prevents
 	// /data/workspaces/AAAA matching /data/workspaces/AAAA-other/...
 	if !strings.HasPrefix(resolved, root+string(os.PathSeparator)) && resolved != root {
-		return "", fmt.Errorf("path traversal detected")
+		return "", ErrPathTraversal
 	}
 
 	return resolved, nil
@@ -161,10 +185,8 @@ func (m *Manager) Exists(sessionID uuid.UUID, userPath string) (bool, error) {
 //  2. The file is opened with O_NOFOLLOW so that if the final path component
 //     is itself a symlink (e.g. created in a TOCTOU window) the open fails.
 //
-// Permissions: directories are created 0o777 and files 0o644 so that the
-// container process (running as nobody/UID 65534) can read the files and
-// write new output files. os.Chmod is called after creation to bypass the
-// process umask, which would otherwise silently strip the group/other bits.
+// Permissions: directories use DirMode and files 0o644. os.Chmod is called
+// after creation to bypass the process umask.
 func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, maxBytes int64) (int64, error) {
 	dest, err := m.SafePath(sessionID, userPath)
 	if err != nil {
@@ -174,12 +196,12 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 	root := m.sessionPath(sessionID)
 	parentDir := filepath.Dir(dest)
 
-	if err := os.MkdirAll(parentDir, 0o777); err != nil {
+	if err := os.MkdirAll(parentDir, DirMode()); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
 	// Chmod every directory from root down to parentDir to guarantee
 	// world-execute regardless of the process umask.
-	if err := chmodDirs(root, parentDir, 0o777); err != nil {
+	if err := chmodDirs(root, parentDir, DirMode()); err != nil {
 		return 0, fmt.Errorf("chmod parent dirs: %w", err)
 	}
 
@@ -392,10 +414,10 @@ func (m *Manager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath s
 // first so existing files not in the snapshot are preserved.
 func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error {
 	root := m.sessionPath(sessionID)
-	if err := os.MkdirAll(root, 0o777); err != nil {
+	if err := os.MkdirAll(root, DirMode()); err != nil {
 		return fmt.Errorf("create workspace: %w", err)
 	}
-	if err := os.Chmod(root, 0o777); err != nil {
+	if err := os.Chmod(root, DirMode()); err != nil {
 		return fmt.Errorf("chmod workspace: %w", err)
 	}
 
@@ -446,12 +468,12 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(dest, 0o777); err != nil {
+			if err := os.MkdirAll(dest, DirMode()); err != nil {
 				return fmt.Errorf("mkdir %s: %w", hdr.Name, err)
 			}
-			_ = os.Chmod(dest, 0o777)
+			_ = os.Chmod(dest, DirMode())
 		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
+			if err := os.MkdirAll(filepath.Dir(dest), DirMode()); err != nil {
 				return fmt.Errorf("mkdir parent of %s: %w", hdr.Name, err)
 			}
 			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)

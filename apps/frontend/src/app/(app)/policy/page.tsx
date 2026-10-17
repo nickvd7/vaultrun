@@ -5,7 +5,7 @@ import { RefreshCw, Play, CheckCircle, XCircle, ShieldCheck, ShieldOff } from "l
 import { api } from "@/lib/api";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { MasterKeyNotice, Notice } from "@/components/ui/Notice";
-import { splitArgs } from "@/lib/shellwords";
+import { splitCommandLine } from "@/lib/shellwords";
 import type { PolicyStatus, PolicyEvalResult } from "@/types";
 
 type EvalTab = "command" | "file";
@@ -50,7 +50,7 @@ export default function PolicyPage() {
     try {
       const req =
         tab === "command"
-          ? { type: "command" as const, command, args: splitArgs(args) }
+          ? { type: "command" as const, ...splitCommandLine(command, args) }
           : { type: "file" as const, path: filePath, write: fileWrite };
       const res = await api.policy.eval(req);
       setResult(res);

@@ -163,6 +163,8 @@ type Session struct {
 	// For full egress enforcement, operators should pair this with host iptables.
 	AllowedHosts    StringArray `db:"allowed_hosts"    json:"allowed_hosts,omitempty"`
 	CreatedBy       string      `db:"created_by"       json:"created_by"`
+	// CreatedByName is the API key name for CreatedBy, filled in on read.
+	CreatedByName   string      `db:"-"                json:"created_by_name,omitempty"`
 	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
 	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
 	StoppedAt       *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`
@@ -228,6 +230,9 @@ type AuditLog struct {
 	ID        uuid.UUID  `db:"id"         json:"id"`
 	Timestamp time.Time  `db:"timestamp"  json:"timestamp"`
 	Actor     string     `db:"actor"      json:"actor"`
+	// ActorName is the API key name for Actor, filled in on read. It is not
+	// stored or signed; Actor stays the immutable identifier.
+	ActorName string     `db:"-"          json:"actor_name,omitempty"`
 	SessionID *uuid.UUID `db:"session_id" json:"session_id,omitempty"`
 	RunID     *uuid.UUID `db:"run_id"     json:"run_id,omitempty"`
 	Action    string     `db:"action"     json:"action"`
@@ -318,6 +323,8 @@ type Snapshot struct {
 	SessionID   uuid.UUID `db:"session_id"   json:"session_id"`
 	Name        string    `db:"name"         json:"name"`
 	CreatedBy   string    `db:"created_by"   json:"created_by"`
+	// CreatedByName is the API key name for CreatedBy, filled in on read.
+	CreatedByName string  `db:"-"            json:"created_by_name,omitempty"`
 	SizeBytes   int64     `db:"size_bytes"   json:"size_bytes"`
 	ArchivePath string    `db:"archive_path" json:"-"` // host path — never expose
 	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
@@ -330,6 +337,8 @@ type SharedArtifact struct {
 	SizeBytes    int64      `db:"size_bytes"    json:"size_bytes"`
 	ContentType  string     `db:"content_type"  json:"content_type"`
 	CreatedBy    string     `db:"created_by"    json:"created_by"`
+	// CreatedByName is the API key name for CreatedBy, filled in on read.
+	CreatedByName string    `db:"-"             json:"created_by_name,omitempty"`
 	SessionID    *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
 	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
 }

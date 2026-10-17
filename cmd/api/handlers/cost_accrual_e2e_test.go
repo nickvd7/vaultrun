@@ -95,7 +95,7 @@ func TestCostBreakdownMarksEndedSessionsAndSkipsZeroCost(t *testing.T) {
 	if _, err := tracker.AccrueUsage(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	b, err := tracker.GetCostBreakdown(ctx, now.Format("2006-01"), cost.DeploymentScope())
+	b, err := tracker.GetCostBreakdown(ctx, now.Format("2006-01"), cost.DeploymentScope(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,5 +121,30 @@ func TestCostBreakdownMarksEndedSessionsAndSkipsZeroCost(t *testing.T) {
 	}
 	if !sawEnded || !sawLive {
 		t.Errorf("ended=%v live=%v in %+v", sawEnded, sawLive, b.TopSessions)
+	}
+}
+
+
+func TestCostBreakdownLimitAndTotalSessions(t *testing.T) {
+	truncateFeatureTables(t)
+	ctx := context.Background()
+	tracker := cost.New(testDB, []byte(testHMACKey))
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for i := 0; i < 14; i++ {
+		id := seedFeatureSession(t, "alice", nil, false)
+		testDB.MustExec(`UPDATE sessions SET cpu_limit = 2, memory_limit_mb = 1024, created_at = $2 WHERE id = $1`, id, now.Add(-2*time.Hour))
+	}
+	if _, err := tracker.AccrueUsage(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	period := now.Format("2006-01")
+	for limit, want := range map[int]int{0: 10, 3: 3, 14: 14, 100: 14} {
+		b, err := tracker.GetCostBreakdown(ctx, period, cost.DeploymentScope(), limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b.TopSessions) != want || b.TotalSessions != 14 {
+			t.Fatalf("limit %d: got %d sessions of %d, want %d of 14", limit, len(b.TopSessions), b.TotalSessions, want)
+		}
 	}
 }

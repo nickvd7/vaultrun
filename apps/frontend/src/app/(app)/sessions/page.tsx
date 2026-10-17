@@ -42,10 +42,17 @@ const emptyForm = (orgId: string): FormState => ({
   replay_enabled: false,
 });
 
-type FormErrors = Partial<Record<"cpu_limit" | "memory_limit_mb" | "timeout_seconds", string>>;
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
+const ALL_STATUSES = ["created", "running", "stopped", "error"];
+
+type FormErrors = Partial<Record<"name" | "cpu_limit" | "memory_limit_mb" | "timeout_seconds", string>>;
 
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {};
+  const name = form.name.trim();
+  if (name !== "" && !NAME_PATTERN.test(name)) {
+    errors.name = "Use up to 64 letters, digits, spaces, '.', '_' or '-', starting with a letter or digit.";
+  }
   const cpu = Number(form.cpu_limit);
   if (form.cpu_limit.trim() === "" || !Number.isFinite(cpu) || cpu <= 0) {
     errors.cpu_limit = "Enter a CPU limit greater than 0 (for example 0.5 or 2).";
@@ -154,7 +161,10 @@ export default function SessionsPage() {
     }
   };
 
-  const statuses = useMemo(() => Array.from(new Set(sessions.map((s) => s.status))).sort(), [sessions]);
+  const statuses = useMemo(
+    () => Array.from(new Set([...ALL_STATUSES, ...sessions.map((s) => s.status)])),
+    [sessions]
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -218,9 +228,17 @@ export default function SessionsPage() {
         >
           <h2 className="text-sm font-medium text-slate-200">New Session</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Name (optional)">
-              {(id) => (
-                <input id={id} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="my-sandbox" className={input} />
+            <Field label="Name (optional)" error={touched || form.name.trim() !== "" ? errors.name : undefined}>
+              {(id, describedBy) => (
+                <input
+                  id={id}
+                  value={form.name}
+                  aria-invalid={!!errors.name}
+                  aria-describedby={describedBy}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="my-sandbox"
+                  className={input}
+                />
               )}
             </Field>
             <Field label="Docker Image">

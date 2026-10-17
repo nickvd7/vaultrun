@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+
+	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 // ExecConfig holds parameters for running a command inside a container.
@@ -107,7 +109,7 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 		WorkingDir:   workingDir,
 		AttachStdout: true,
 		AttachStderr: true,
-		User:         "nobody",
+		User:         workspace.SandboxUser(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("exec create: %w", err)

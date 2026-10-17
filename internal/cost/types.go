@@ -134,5 +134,8 @@ type CostBreakdown struct {
 	NetworkCost  float64              `db:"network_cost" json:"network_cost"`
 	TotalCost    float64              `db:"total_cost"   json:"total_cost"`
 	TopSessions  []SessionCostSummary `db:"-" json:"top_sessions"`
+	// TotalSessions counts every session with a cost in the period, also those
+	// beyond the limit applied to TopSessions.
+	TotalSessions int `db:"-" json:"total_sessions"`
 	AlertCount   int                  `db:"-" json:"alert_count"`
 }

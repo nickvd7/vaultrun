@@ -103,6 +103,15 @@ func (sh *SnapshotHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list snapshots"})
 		return
 	}
+	creators := make([]string, 0, len(snaps))
+	for _, s := range snaps {
+		creators = append(creators, s.CreatedBy)
+	}
+	if names, err := dbpkg.APIKeyNames(c.Request.Context(), sh.h.db, creators); err == nil {
+		for _, s := range snaps {
+			s.CreatedByName = names[s.CreatedBy]
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"snapshots": snaps, "total": len(snaps)})
 }
 

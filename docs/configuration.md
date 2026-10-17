@@ -90,7 +90,7 @@ DB_SSL_KEY=/run/secrets/api-client-key.pem
 | Variable | Default | Description |
 |---|---|---|
 | `REDIS_ADDR` | `localhost:6379` | Redis server address (`host:port`) |
-| `REDIS_PASSWORD` | | Redis `AUTH` password. Required for any non-localhost Redis. |
+| `REDIS_PASSWORD` | | Redis `AUTH` password. Required for any non-localhost Redis. `make up` generates one in `.env` when it is empty and Redis is the bundled one; it also replaces an example `POSTGRES_PASSWORD` (`change-me...`) and rewrites `DATABASE_URL` to match. It never changes values you set yourself, and it leaves the Postgres password alone when a `postgres_data` volume already exists (the old password is stored inside it). |
 | `REDIS_DB` | `0` | Redis logical database (0–15) |
 | `ASYNC_WORKERS` | `4` | Number of concurrent job consumer goroutines |
 | `ASYNC_QUEUE_SIZE` | `256` | In-memory queue depth (only applies when `REDIS_ADDR` is not set) |
@@ -166,6 +166,13 @@ Where the rules are installed depends on how the API runs:
 | Neither | `POST /sessions` with `allowed_hosts` returns `501` and no sandbox is started. |
 
 If the rules cannot be installed, the sandbox is not started.
+
+**What the allowlist does and does not cover**
+
+- Hostnames are resolved **once**, when the session is created, and only those IP addresses are allowed. Content delivery networks, load balancers and cloud services (GitHub, PyPI, npm, S3, Cloudflare-fronted sites, ...) return different addresses over time and per location, so a long-running session can lose access to a listed host or reach a different address than the one it resolved. For such hosts, list the CIDR ranges the provider publishes instead of the name, or recreate the session when connections start failing.
+- A name that resolves to many addresses (CDNs often answer with a rotating subset) may be only partly covered: the sandbox and the host can resolve different subsets, so a connection can be dropped although the name is listed. Prefer CIDR ranges for these hosts.
+- DNS (UDP/TCP 53) is open to any resolver, so the allowlist limits where traffic can go, not which names the sandbox can look up. Do not treat DNS as a confidential channel.
+- Private, loopback, link-local and metadata addresses in the list are rejected.
 
 ---
 
@@ -292,10 +299,11 @@ See [`docs/multi-region.md`](multi-region.md) for full deployment guides.
 | `LOG_LEVEL` | `info` | Log verbosity: `debug` \| `info` \| `warn` \| `error` |
 | `WEBHOOK_SECRET` | | HMAC-SHA256 signing key for async run callback payloads. Sent as `X-VaultRun-Signature: sha256=<hex>`. Empty = no signing (insecure for internet-facing callbacks). |
 | `AUDIT_HMAC_KEY` | | HMAC-SHA256 key that signs and chains the audit log. Empty = unsigned. When set, every entry gets the next sequence number (`seq`) and carries the previous entry's signature, both covered by its own signature, and a signed head row (`audit_chain`) records the newest number, how far retention has pruned and when chaining began. `GET /api/v1/audit` adds `sig_status` to every entry (`sig_valid` is `true` only for `valid`) and, when it is `invalid`, `sig_reason`, `sig_kind` (`altered`: the entry itself was changed; `chain`: it is intact but the entry before it was changed or deleted) and `sig_detail` (a full explanation); `out_of_order` marks an entry dated earlier than the one before it, and `?sort=seq` lists in chain order; `GET /api/v1/audit/integrity` verifies the **whole** log (every signature, every link, holes in the numbering, entries cut off the end, the head) and the API repeats that every five minutes, logging an error while it fails. Reported as `invalid`: an entry that was edited, whose signature or sequence number was removed (also when its timestamp was moved back), whose predecessor was deleted or changed, or an unnumbered entry written after chaining began. Deleted entries leave a hole in `missing_seqs`; removing the newest entries is caught by the head. `unsigned` / `unverifiable` entries predate chaining (signing off, or v0.4.0 and earlier) and are expected. Retention (`AUDIT_LOG_RETENTION_DAYS`) prunes the oldest entries as a prefix and records it in the head, so a pruned log still verifies. This is evidence, not proof: whoever holds the key can rewrite the whole chain, and someone with database access who saved an old copy of the head row can restore it after truncating the end. Ship the log to storage they cannot write (`AUDIT_EXPORT_URL`) when that matters. Changing the key makes every entry and the head fail verification. |
+| `SANDBOX_USER` | API uid:gid | User the sandbox processes run as. By default the API's own `uid:gid`, so sandboxes own their `0700` session directory. Any other value (for example `nobody`) switches session directories to world-writable `0777` because that user does not own them. |
 | `STOP_CONTAINERS_ON_SHUTDOWN` | `false` | When `true`, gracefully stop all running session containers on SIGTERM. |
 | `AUDIT_LOG_RETENTION_DAYS` | `90` | Delete audit log entries older than N days on each cleanup sweep. `0` = retain indefinitely. With `AUDIT_HMAC_KEY` set, only an intact prefix of the chain is deleted (old, gapless, correctly signed, linked, not dated before its predecessor); if an old entry or the chain head fails verification, nothing is deleted and the API logs `audit: retention is paused` every sweep until the log verifies again. |
 
-Prometheus metrics are exposed at `GET /metrics`. The most important metrics:
+Prometheus metrics are exposed at `GET /metrics` and always require authentication: `Authorization: Bearer <METRICS_TOKEN>`, or, when `METRICS_TOKEN` is not set, the master API key (the API logs which one at startup). Example Prometheus job: `authorization: { credentials: <token> }`. The most important metrics:
 
 | Metric | Type | Description |
 |---|---|---|

@@ -139,6 +139,17 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		return
 	}
 	total, _ := dbpkg.CountAuditLogsFiltered(c.Request.Context(), ah.h.db, filter)
+	actors := make([]string, 0, len(logs))
+	for _, l := range logs {
+		actors = append(actors, l.Actor)
+	}
+	if names, err := dbpkg.APIKeyNames(c.Request.Context(), ah.h.db, actors); err != nil {
+		slog.Warn("resolve actor names", "err", err)
+	} else {
+		for _, l := range logs {
+			l.ActorName = names[l.Actor]
+		}
+	}
 	if ah.h.audit != nil && ah.h.audit.Enabled() {
 		ah.h.audit.Classify(c.Request.Context(), logs)
 	}

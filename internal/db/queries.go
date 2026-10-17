@@ -475,6 +475,41 @@ func ListAPIKeys(ctx context.Context, db *sqlx.DB) ([]*models.APIKey, error) {
 	return keys, err
 }
 
+// APIKeyNames maps actor identifiers (API key UUIDs, or "master") to key names.
+// Identifiers that are not UUIDs or belong to a deleted key are left out, so
+// callers fall back to showing the raw identifier.
+func APIKeyNames(ctx context.Context, db *sqlx.DB, actors []string) (map[string]string, error) {
+	names := make(map[string]string)
+	ids := make([]string, 0, len(actors))
+	seen := make(map[string]bool)
+	for _, a := range actors {
+		if a == "master" {
+			names[a] = "master"
+			continue
+		}
+		if _, err := uuid.Parse(a); err != nil || seen[a] {
+			continue
+		}
+		seen[a] = true
+		ids = append(ids, a)
+	}
+	if len(ids) == 0 {
+		return names, nil
+	}
+	rows := []struct {
+		ID   string `db:"id"`
+		Name string `db:"name"`
+	}{}
+	if err := db.SelectContext(ctx, &rows,
+		`SELECT id::text AS id, name FROM api_keys WHERE id::text = ANY($1)`, pq.Array(ids)); err != nil {
+		return names, err
+	}
+	for _, r := range rows {
+		names[r.ID] = r.Name
+	}
+	return names, nil
+}
+
 func RevokeAPIKey(ctx context.Context, db *sqlx.DB, id uuid.UUID) error {
 	// No active=TRUE filter: makes revocation idempotent (revoking an already-
 	// revoked key returns success rather than 404, preventing oracle attacks).

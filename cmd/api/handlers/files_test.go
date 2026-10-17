@@ -69,3 +69,17 @@ func TestDetectContentType(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanUserPathRejectsParentSegments(t *testing.T) {
+	for _, in := range []string{"../x", "a/../../x", "/a/../b", ".."} {
+		if _, err := cleanUserPath(in); err == nil {
+			t.Errorf("cleanUserPath(%q) = nil error, want rejection", in)
+		}
+	}
+	for in, want := range map[string]string{"a/b.txt": "/a/b.txt", "/a//b": "/a/b", "./x": "/x", "a..b/c": "/a..b/c"} {
+		got, err := cleanUserPath(in)
+		if err != nil || got != want {
+			t.Errorf("cleanUserPath(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+}

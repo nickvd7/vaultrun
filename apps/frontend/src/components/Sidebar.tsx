@@ -8,15 +8,17 @@ import { useApiKey } from "@/components/ApiKeyGate";
 import { useOrg } from "@/components/OrgContext";
 import { APP_VERSION } from "@/lib/version";
 
-const nav = [
+type NavItem = { href: string; label: string; icon: typeof Shield; masterOnly?: boolean };
+
+const nav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/sessions", label: "Sessions", icon: Terminal },
   { href: "/snapshots", label: "Snapshots", icon: Archive },
   { href: "/artifacts", label: "Artifacts", icon: Package },
   { href: "/costs", label: "Costs", icon: DollarSign },
-  { href: "/keys", label: "API Keys", icon: KeyRound },
+  { href: "/keys", label: "API Keys", icon: KeyRound, masterOnly: true },
   { href: "/audit", label: "Audit Logs", icon: ScrollText },
-  { href: "/policy", label: "Policy", icon: ShieldCheck },
+  { href: "/policy", label: "Policy", icon: ShieldCheck, masterOnly: true },
 ];
 
 type SidebarProps = {
@@ -64,7 +66,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
       )}
 
       <nav aria-label="Main" className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {nav.map(({ href, label, icon: Icon }) => (
+        {nav.filter((item) => !item.masterOnly || isMaster === true).map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}

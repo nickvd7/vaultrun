@@ -1152,3 +1152,39 @@ func TestOrgNonMemberCannotSeeOrg(t *testing.T) {
 		t.Fatalf("non-member list members: want 404, got %d: %s", wm.Code, wm.Body)
 	}
 }
+
+// TestSessionListResolvesCreatorKeyName checks that the dashboard can show a
+// key's name instead of its UUID, for the creating key and for the master key.
+func TestSessionListResolvesCreatorKeyName(t *testing.T) {
+	truncateAll(t)
+	r := newTestRouter(testDB)
+
+	w := rec(r, "POST", "/api/v1/keys", `{"name":"alice-ci"}`, masterHdr())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create key: %d %s", w.Code, w.Body)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&created)
+	seedSession(t, testDB, created.ID)
+	seedSession(t, testDB, "master")
+
+	w = rec(r, "GET", "/api/v1/sessions", "", masterHdr())
+	var out struct {
+		Sessions []struct {
+			CreatedBy     string `json:"created_by"`
+			CreatedByName string `json:"created_by_name"`
+		} `json:"sessions"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range out.Sessions {
+		got[s.CreatedBy] = s.CreatedByName
+	}
+	if got[created.ID] != "alice-ci" || got["master"] != "master" {
+		t.Errorf("created_by_name = %v, want alice-ci and master", got)
+	}
+}

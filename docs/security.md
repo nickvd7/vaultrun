@@ -97,7 +97,7 @@ This prevents `../../../etc/passwd`, URL-encoded variants, and other traversal p
 
 ### API Authentication
 
-- All API endpoints (except `/health` and `/metrics`) require an API key via `Authorization: Bearer <key>`
+- All API endpoints (except `/health`) require an API key; `/metrics` requires `METRICS_TOKEN`, or the master key when that is unset via `Authorization: Bearer <key>`
 - Keys are stored as SHA-256 hashes — plaintext is never persisted
 - Keys are generated with 32 bytes of cryptographic randomness
 - A `master` key is available for bootstrapping but can be left empty after initial setup

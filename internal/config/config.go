@@ -346,7 +346,7 @@ func (c *Config) ProductionProblems() []string {
 		p = append(p, "TLS is off: set TLS_CERT_FILE+TLS_KEY_FILE or ACME_DOMAIN, or TLS_DISABLED=true if a reverse proxy terminates TLS")
 	}
 	if c.Production.MetricsToken == "" {
-		p = append(p, "/metrics is unauthenticated: set METRICS_TOKEN")
+		p = append(p, "no dedicated /metrics token: set METRICS_TOKEN (without it /metrics takes the master key)")
 	}
 	// An empty key is allowed: docs/security.md recommends clearing it after
 	// bootstrapping. A short one is brute-forceable and grants full admin.

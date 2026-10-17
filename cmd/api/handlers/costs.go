@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,7 +57,8 @@ func (ch *CostHandler) GetSessionCosts(c *gin.Context) {
 	})
 }
 
-// GET /api/v1/costs/breakdown?period=YYYY-MM
+// GET /api/v1/costs/breakdown?period=YYYY-MM&limit=N
+// limit caps top_sessions (default 10, at most 500); total_sessions says how many exist.
 func (ch *CostHandler) GetCostBreakdown(c *gin.Context) {
 	period := c.DefaultQuery("period", time.Now().Format("2006-01"))
 
@@ -66,7 +68,17 @@ func (ch *CostHandler) GetCostBreakdown(c *gin.Context) {
 		return
 	}
 
-	breakdown, err := ch.tracker.GetCostBreakdown(c.Request.Context(), period, callerScope(c))
+	limit := cost.DefaultTopSessions
+	if raw := c.Query("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit: use a whole number of at least 1"})
+			return
+		}
+		limit = n
+	}
+
+	breakdown, err := ch.tracker.GetCostBreakdown(c.Request.Context(), period, callerScope(c), limit)
 	if err != nil {
 		slog.Error("get cost breakdown", "err", err, "period", period)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get breakdown"})

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/models"
+	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 type FileHandler struct {
@@ -60,7 +62,10 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 	}
 	// Normalize before policy eval so rules see the same canonical form that
 	// the filesystem will actually use (prevents ./foo/../secret bypass).
-	userPath = filepath.Clean("/" + userPath)
+	if userPath, err = cleanUserPath(userPath); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	maxBytes := fh.h.cfg.Workspace.MaxFileMB * 1024 * 1024
 
@@ -173,7 +178,11 @@ func (fh *FileHandler) Download(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 		return
 	}
-	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
+	userPath, err := cleanUserPath(userPath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// C-2: verify caller owns the session or is an org viewer (download = read).
 	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleViewer); !ok {
@@ -222,7 +231,11 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 		return
 	}
-	userPath = filepath.Clean("/" + userPath) // normalize for consistent policy eval
+	userPath, err := cleanUserPath(userPath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	// C-2: verify caller owns the session or is an org executor (delete file = write).
 	if _, ok := fh.h.checkSessionAccess(c, sessionID, models.OrgRoleExecutor); !ok {
@@ -376,4 +389,14 @@ func detectContentType(path string) string {
 		}
 	}
 	return "application/octet-stream"
+}
+
+// cleanUserPath normalizes a path from the request ("./a//b" becomes "/a/b") so
+// policy rules see the form the filesystem will use, but refuses ".." instead
+// of silently resolving it.
+func cleanUserPath(raw string) (string, error) {
+	if _, err := workspace.CheckPath(raw); err != nil {
+		return "", errors.New("path must not contain '..'")
+	}
+	return filepath.Clean("/" + raw), nil
 }

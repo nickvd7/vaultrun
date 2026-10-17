@@ -138,13 +138,13 @@ func TestBrowserNavigateAllowsPublicURL(t *testing.T) {
 
 	if _, err := srv.toolBrowserNavigate(context.Background(), map[string]string{
 		"session_id": "s1",
-		"url":        "https://example.com/path?q=1",
+		"url":        "https://93.184.216.34/path?q=1",
 	}); err != nil {
 		t.Fatalf("navigate to public URL: %v", err)
 	}
 
 	script := scriptArg(t, cap)
-	if !strings.Contains(script, "example.com") {
+	if !strings.Contains(script, "93.184.216.34") {
 		t.Errorf("generated script missing target host: %s", script)
 	}
 }

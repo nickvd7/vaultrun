@@ -101,28 +101,28 @@ func newRouter(
 	// Health endpoint is unauthenticated (needed by load-balancer probes) but
 	// rate-limited to prevent use as a trivial DoS amplifier.
 	r.GET("/health", middleware.RateLimit(120), health.Health)
-	// Prometheus metrics endpoint. Protected by METRICS_TOKEN when set — callers
-	// must send "Authorization: Bearer <token>". When the env var is not set the
-	// endpoint is unprotected; operators MUST restrict it via a firewall or
-	// reverse-proxy in production.
+	// Prometheus metrics endpoint. Callers send "Authorization: Bearer <token>"
+	// with METRICS_TOKEN or, when that is not set, with the master API key (also
+	// accepted as X-API-Key). It is never served without credentials.
 	metricsHandler := gin.WrapH(promhttp.Handler())
-	if metricsToken := os.Getenv("METRICS_TOKEN"); metricsToken != "" {
-		expected := "Bearer " + metricsToken
-		r.GET("/metrics", func(c *gin.Context) {
-			auth := c.GetHeader("Authorization")
-			// Constant-time compare to avoid leaking the token via timing,
-			// consistent with the master-key comparison in internal/auth.
-			if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
-				c.AbortWithStatus(http.StatusUnauthorized)
-				return
-			}
-			metricsHandler(c)
-		})
-	} else {
-		slog.Warn("METRICS_TOKEN is not set — /metrics endpoint is unauthenticated; " +
-			"set METRICS_TOKEN or restrict the endpoint via firewall/reverse-proxy")
-		r.GET("/metrics", metricsHandler)
+	metricsSecret := os.Getenv("METRICS_TOKEN")
+	if metricsSecret == "" {
+		metricsSecret = cfg.Auth.MasterKey
+		slog.Info("METRICS_TOKEN is not set: /metrics requires the master API key (Authorization: Bearer <key>)")
 	}
+	r.GET("/metrics", func(c *gin.Context) {
+		got := c.GetHeader("Authorization")
+		if got == "" {
+			got = "Bearer " + c.GetHeader("X-API-Key")
+		}
+		// Constant-time compare to avoid leaking the token via timing,
+		// consistent with the master-key comparison in internal/auth.
+		if metricsSecret == "" || subtle.ConstantTimeCompare([]byte(got), []byte("Bearer "+metricsSecret)) != 1 {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		metricsHandler(c)
+	})
 
 	// API documentation — OpenAPI spec + Redoc UI.
 	//

@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
-	"github.com/nickvd7/vaultrun/internal/workspace"
+	"github.com/nickvd7/vaultrun/internal/sandboxuser"
 )
 
 // Entry is a pre-warmed container ready for takeover by a new session.
@@ -161,10 +161,10 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 
 	wsID := uuid.New()
 	wsPath := fmt.Sprintf("%s/warm-%s", p.baseDir, wsID.String())
-	if err := os.MkdirAll(wsPath, workspace.DirMode()); err != nil {
+	if err := os.MkdirAll(wsPath, sandboxuser.DirMode()); err != nil {
 		return Entry{}, fmt.Errorf("mkdir workspace: %w", err)
 	}
-	if err := os.Chmod(wsPath, workspace.DirMode()); err != nil {
+	if err := os.Chmod(wsPath, sandboxuser.DirMode()); err != nil {
 		return Entry{}, fmt.Errorf("chmod workspace: %w", err)
 	}
 
@@ -212,7 +212,7 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 			Image:      pinnedImage,
 			Cmd:        []string{"sleep", "infinity"},
 			WorkingDir: "/workspace",
-			User:       workspace.SandboxUser(),
+			User:       sandboxuser.User(),
 			Env:        []string{"HOME=/tmp"},
 		},
 		hostCfg, nil, nil, name,

@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.7] — 2026-10-17
+
 **Upgrade notes:** no migrations. `/metrics` now always requires a token: `METRICS_TOKEN`, or the master API key when it is unset; update Prometheus scrape configs (`authorization.credentials`). New sessions run as the API's uid:gid with `0700` directories (set `SANDBOX_USER=nobody` for the old behaviour); existing session directories keep their mode until the session is deleted. Session names are validated.
 
 ### Added

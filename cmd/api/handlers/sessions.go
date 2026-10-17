@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -51,12 +52,26 @@ type createSessionRequest struct {
 	ReplayEnabled bool `json:"replay_enabled"`
 }
 
+var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`)
+
 // POST /api/v1/sessions
 func (sh *SessionHandler) Create(c *gin.Context) {
 	var req createSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		switch {
+		case name == "":
+			req.Name = nil
+		case !sessionNameRe.MatchString(name) || strings.HasSuffix(name, " "):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid name: use 1-64 letters, digits, spaces, '.', '_' or '-', starting with a letter or digit"})
+			return
+		default:
+			req.Name = &name
+		}
 	}
 
 	limits := sh.h.cfg.SessionLimits()
@@ -358,6 +373,17 @@ func (sh *SessionHandler) List(c *gin.Context) {
 		return
 	}
 	total, _ := dbpkg.CountSessionsForActor(c.Request.Context(), sh.h.db, listActor, labelKey, labelValue)
+	creators := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		creators = append(creators, s.CreatedBy)
+	}
+	if names, err := dbpkg.APIKeyNames(c.Request.Context(), sh.h.db, creators); err != nil {
+		slog.Warn("resolve session creator names", "err", err)
+	} else {
+		for _, s := range sessions {
+			s.CreatedByName = names[s.CreatedBy]
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions, "pagination": pg.response(total)})
 }
 
@@ -370,6 +396,9 @@ func (sh *SessionHandler) Get(c *gin.Context) {
 	session, ok := sh.h.checkSessionAccess(c, id, models.OrgRoleViewer)
 	if !ok {
 		return
+	}
+	if names, err := dbpkg.APIKeyNames(c.Request.Context(), sh.h.db, []string{session.CreatedBy}); err == nil {
+		session.CreatedByName = names[session.CreatedBy]
 	}
 	c.JSON(http.StatusOK, session)
 }

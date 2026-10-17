@@ -516,7 +516,7 @@ export default function SessionDetailPage() {
         </h2>
         <div className="flex gap-2">
           <input
-            className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 w-32 focus:outline-none focus:border-indigo-500"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 w-44 focus:outline-none focus:border-indigo-500"
             value={cmd}
             onChange={(e) => {
               setCmd(e.target.value);

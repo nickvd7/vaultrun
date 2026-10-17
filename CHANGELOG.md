@@ -9,6 +9,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.8] — 2026-10-17
+
+Release fix: v0.4.7 did not build the Windows `vaultrun-mcp` binary (the sandbox user helpers lived in a package that does not compile for Windows), so its GitHub release has no binaries. v0.4.8 moves them to `internal/sandboxuser` and CI now cross-builds the release targets. No other changes; use v0.4.8 instead of v0.4.7 (the Python SDK 0.4.7 on PyPI is identical apart from the version number).
+
+---
+
 ## [0.4.7] — 2026-10-17
 
 **Upgrade notes:** no migrations. `/metrics` now always requires a token: `METRICS_TOKEN`, or the master API key when it is unset; update Prometheus scrape configs (`authorization.credentials`). New sessions run as the API's uid:gid with `0700` directories (set `SANDBOX_USER=nobody` for the old behaviour); existing session directories keep their mode until the session is deleted. Session names are validated.

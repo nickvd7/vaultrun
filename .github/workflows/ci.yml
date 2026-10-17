@@ -24,6 +24,12 @@ jobs:
       - name: Build
         run: go build -ldflags="-s -w" ./cmd/api ./cmd/cli ./cmd/ci-runner ./sdk/mcp/
 
+      - name: Cross-build release targets
+        run: |
+          for t in windows/amd64 darwin/arm64 linux/arm64; do
+            GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0 go build -o /dev/null ./sdk/mcp/
+          done
+
       - name: Unit tests
         run: go test ./internal/... ./cmd/api/middleware/... ./cmd/ci-runner/... ./sdk/go/... ./sdk/mcp/... -race -timeout 120s
 

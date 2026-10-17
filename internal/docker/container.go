@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickvd7/vaultrun/internal/metrics"
-	"github.com/nickvd7/vaultrun/internal/workspace"
+	"github.com/nickvd7/vaultrun/internal/sandboxuser"
 )
 
 // isPrivateIP returns true for loopback, link-local, and private addresses.
@@ -263,7 +263,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 			Image:      pinnedImage,
 			Cmd:        []string{"sleep", "infinity"},
 			WorkingDir: "/workspace",
-			User:       workspace.SandboxUser(),
+			User:       sandboxuser.User(),
 			Env:        []string{"HOME=/tmp"},
 			Labels:     containerLabels,
 		},

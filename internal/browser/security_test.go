@@ -68,6 +68,35 @@ func TestSSRFProtection(t *testing.T) {
 	}
 }
 
+// stubResolver replaces DNS for the duration of a test so results do not depend
+// on the network. Unknown hostnames fail to resolve.
+func stubResolver(t *testing.T, hosts map[string][]net.IP) {
+	t.Helper()
+	orig := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) {
+		if ips, ok := hosts[host]; ok {
+			return ips, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	}
+	t.Cleanup(func() { lookupIP = orig })
+}
+
+// TestSSRFRejectsHostnamesResolvingToPrivateIPs covers DNS rebinding style
+// names: a public-looking hostname must be blocked when any record is private.
+func TestSSRFRejectsHostnamesResolvingToPrivateIPs(t *testing.T) {
+	stubResolver(t, map[string][]net.IP{
+		"internal.corp.test": {net.ParseIP("10.1.2.3")},
+		"mixed.corp.test":    {net.ParseIP("93.184.216.34"), net.ParseIP("192.168.1.10")},
+	})
+	m := newTestManager()
+	for _, u := range []string{"http://internal.corp.test/", "https://mixed.corp.test/", "http://unresolvable.test/"} {
+		if err := m.policy.ValidateURL(u); err == nil {
+			t.Errorf("ValidateURL(%q) = nil, want error", u)
+		}
+	}
+}
+
 // TestSSRFAllowsPublicURLs verifies legitimate public URLs still work — an
 // over-eager blocklist would make the browser layer useless.
 func TestSSRFAllowsPublicURLs(t *testing.T) {
@@ -80,6 +109,11 @@ func TestSSRFAllowsPublicURLs(t *testing.T) {
 		"https://8.8.8.8/",
 	}
 
+	stubResolver(t, map[string][]net.IP{
+		"example.com":    {net.ParseIP("93.184.216.34")},
+		"github.com":     {net.ParseIP("140.82.121.3")},
+		"api.github.com": {net.ParseIP("140.82.121.6")},
+	})
 	m := newTestManager()
 
 	for _, url := range allowed {

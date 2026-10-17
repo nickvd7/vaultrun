@@ -4,8 +4,8 @@
 # Default: stop the compose services only. Sandbox containers, their networks
 # and the workspace files stay, so sessions survive `make up` again.
 # --all:   also remove every sandbox container, per-session network and egress
-#          rule the API created. Sessions and their files are gone afterwards
-#          (the next `make up` closes them and removes their directories).
+#          rule the API created, and the files in the workspace directory
+#          (WORKSPACE_HOST_DIR). Sessions are gone afterwards.
 # Usage: scripts/down.sh [--all] [.env]
 set -u
 ALL=0
@@ -49,3 +49,13 @@ if [ -n "$nets" ]; then
 fi
 
 "${COMPOSE[@]}" down
+
+# Session directories belong to the API user (uid 65532) and are mode 0700, so
+# a throwaway root container removes them. The base directory itself is kept.
+WS=$(sed -n 's/^WORKSPACE_HOST_DIR=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d "\"'")
+WS=${WS:-/var/lib/vaultrun/workspaces}
+if docker run --rm -v "$WS:/ws" alpine:3.21 sh -c 'test -n "$(ls -A /ws)"' >/dev/null 2>&1; then
+  echo "Removing session files in $WS..."
+  docker run --rm -v "$WS:/ws" alpine:3.21 sh -c 'find /ws -mindepth 1 -maxdepth 1 -exec rm -rf {} +' \
+    || echo "Warning: could not remove the contents of $WS; remove them manually with sudo."
+fi

@@ -24,6 +24,9 @@ var blockedHostnames = map[string]bool{
 	"instance-data.ec2.internal": true,
 }
 
+// lookupIP resolves a hostname. It is a variable so tests can run without DNS.
+var lookupIP = net.LookupIP
+
 // ValidateURL reports whether the policy permits navigating to rawURL.
 func (p *NetworkPolicy) ValidateURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
@@ -62,7 +65,7 @@ func (p *NetworkPolicy) ValidateURL(rawURL string) error {
 		return p.checkIP(literal)
 	}
 
-	ips, err := net.LookupIP(hostname)
+	ips, err := lookupIP(hostname)
 	if err != nil {
 		return fmt.Errorf("failed to resolve hostname: %w", err)
 	}

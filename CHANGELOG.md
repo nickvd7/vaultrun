@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+**Upgrade notes:** no migrations. `/metrics` now always requires a token: `METRICS_TOKEN`, or the master API key when it is unset; update Prometheus scrape configs (`authorization.credentials`). New sessions run as the API's uid:gid with `0700` directories (set `SANDBOX_USER=nobody` for the old behaviour); existing session directories keep their mode until the session is deleted. Session names are validated.
+
+### Added
+- `GET /api/v1/costs/breakdown?limit=N` (default 10, maximum 500) and `total_sessions`; the Costs page shows "Showing the N highest of M sessions".
+- `actor_name` on audit entries and `created_by_name` on sessions, snapshots and artifacts; the dashboard shows key names instead of key IDs.
+- `make up` generates `REDIS_PASSWORD` and replaces the example `POSTGRES_PASSWORD` in `.env` (`scripts/ensure-secrets.sh`); the Compose Redis service and its healthcheck use the password.
+- Session names are limited to 64 letters, digits, spaces, `.`, `_` and `-`; anything else returns `400`.
+- Docs: what the `allowed_hosts` allowlist does and does not cover (CDN addresses, one-time DNS resolution, open DNS).
+- Dashboard: a whole command line in the Command field is split into command and arguments; run errors show next to the form; every audit row can be expanded; the sessions status filter lists all statuses; Policy and API Keys are hidden for non-master keys.
+
+### Changed
+- `/metrics` requires authentication (see upgrade notes).
+- File upload, download and delete reject paths containing `..` with `400` instead of silently rewriting them.
+- Sandboxes run as the API's uid:gid with `0700` session directories instead of `nobody` with `0777`.
+- The audit warning uses the same words as the table (Altered, Affected).
+- `make down-all` also removes the files in the workspace directory.
+- The SSRF tests no longer depend on DNS.
+
 ---
 
 ## [0.4.6] — 2026-10-16

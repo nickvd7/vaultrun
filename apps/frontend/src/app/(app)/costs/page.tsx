@@ -169,6 +169,13 @@ export default function CostsPage() {
           <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Top Spending Sessions
           </h2>
+          {breakdown.total_sessions !== undefined && topSessions.length > 0 && (
+            <p className="mt-1 text-xs text-slate-300" role="status">
+              {topSessions.length < breakdown.total_sessions
+                ? `Showing the ${topSessions.length} highest of ${breakdown.total_sessions} sessions.`
+                : `${breakdown.total_sessions} session${breakdown.total_sessions === 1 ? "" : "s"}.`}
+            </p>
+          )}
         </div>
         {topSessions.length === 0 ? (
           <div className="p-6 text-center text-slate-300 text-sm">

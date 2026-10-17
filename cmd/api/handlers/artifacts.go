@@ -166,6 +166,15 @@ func (ah *ArtifactHandler) List(c *gin.Context) {
 		return
 	}
 	total, _ := dbpkg.CountArtifacts(c.Request.Context(), ah.h.db, listActor)
+	creators := make([]string, 0, len(arts))
+	for _, a := range arts {
+		creators = append(creators, a.CreatedBy)
+	}
+	if names, err := dbpkg.APIKeyNames(c.Request.Context(), ah.h.db, creators); err == nil {
+		for _, a := range arts {
+			a.CreatedByName = names[a.CreatedBy]
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"artifacts": arts, "pagination": pg.response(total)})
 }
 

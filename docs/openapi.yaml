@@ -333,8 +333,11 @@ paths:
     get:
       tags: [health]
       summary: Prometheus metrics
-      security: []     # unauthenticated
+      description: Requires `Authorization: Bearer <METRICS_TOKEN>`, or the master API key when `METRICS_TOKEN` is not set.
+      security: []     # METRICS_TOKEN / master key as a bearer token, not an API key
       responses:
+        "401":
+          description: Missing or wrong token
         "200":
           description: Prometheus text exposition format
           content:

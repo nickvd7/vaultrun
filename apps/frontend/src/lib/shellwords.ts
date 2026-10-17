@@ -69,8 +69,23 @@ export function defaultCommandFor(image: string): { command: string; args: strin
  * `'print(2+2)'` and can be pasted back into splitArgs unchanged.
  */
 export function formatCommand(command: string, args: string[] | null | undefined): string {
-  const quoted = (args ?? []).map((a) =>
-    a === "" ? "''" : /^[A-Za-z0-9_@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`
-  );
-  return [command, ...quoted].join(" ");
+  return [command, formatArgs(args)].filter(Boolean).join(" ");
+}
+
+/** Quotes arguments for display and for the Arguments field (inverse of splitArgs). */
+export function formatArgs(args: string[] | null | undefined): string {
+  return (args ?? [])
+    .map((a) => (a === "" ? "''" : /^[A-Za-z0-9_@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`))
+    .join(" ");
+}
+
+/**
+ * Turns the Command and Arguments fields into one program plus its arguments.
+ * A whole command line typed into Command ("python -c 'print(2+2)'") is split
+ * the same way as the Arguments field, so both fields can be used either way.
+ */
+export function splitCommandLine(command: string, args: string): { command: string; args: string[] } {
+  const head = splitArgs(command.trim());
+  const rest = splitArgs(args);
+  return { command: head[0] ?? "", args: [...head.slice(1), ...rest] };
 }

@@ -11,6 +11,8 @@ export interface Session {
   labels: Record<string, string>;
   allowed_hosts?: string[];
   created_by: string;
+  /** Name of the API key that created the session (API 0.4.7 and later). */
+  created_by_name?: string;
   created_at: string;
   updated_at: string;
   stopped_at?: string;
@@ -63,6 +65,8 @@ export interface AuditLog {
   id: string;
   timestamp: string;
   actor: string;
+  /** Name of the API key behind actor (API 0.4.7 and later); absent for deleted keys. */
+  actor_name?: string;
   session_id?: string;
   run_id?: string;
   action: string;
@@ -164,6 +168,7 @@ export interface Snapshot {
   name: string;
   size_bytes: number;
   created_by: string;
+  created_by_name?: string;
   created_at: string;
 }
 
@@ -174,6 +179,7 @@ export interface SharedArtifact {
   size_bytes: number;
   session_id?: string;
   created_by: string;
+  created_by_name?: string;
   created_at: string;
 }
 
@@ -237,6 +243,8 @@ export interface CostBreakdown {
   network_cost: number;
   total_cost: number;
   top_sessions: SessionCostSummary[];
+  /** Sessions with cost in the period, which can exceed top_sessions.length (API 0.4.7 and later). */
+  total_sessions?: number;
   alert_count: number;
 }
 

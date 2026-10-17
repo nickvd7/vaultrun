@@ -51,6 +51,11 @@ const EXPORT_CAP = 5000;
 
 // ── metadata display ─────────────────────────────────────────────────────────
 
+function actorLabel(l: AuditLog): string {
+  const name = l.actor_name || l.actor;
+  return name.length > 20 ? name.slice(0, 20) + "…" : name;
+}
+
 function MetadataPanel({ meta }: { meta: Record<string, unknown> }) {
   const entries = Object.entries(meta);
   if (entries.length === 0) return <span className="text-slate-300">—</span>;
@@ -81,9 +86,9 @@ function csvCell(v: unknown): string {
 }
 
 function toCSV(rows: AuditLog[]): string {
-  const header = ["seq", "timestamp", "actor", "action", "session_id", "run_id", "sig_status", "sig_kind", "sig_reason", "out_of_order", "metadata"];
+  const header = ["seq", "timestamp", "actor", "actor_name", "action", "session_id", "run_id", "sig_status", "sig_kind", "sig_reason", "out_of_order", "metadata"];
   const lines = rows.map((l) =>
-    [l.seq, l.timestamp, l.actor, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.sig_kind, l.sig_reason, l.out_of_order, l.metadata].map(csvCell).join(",")
+    [l.seq, l.timestamp, l.actor, l.actor_name, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.sig_kind, l.sig_reason, l.out_of_order, l.metadata].map(csvCell).join(",")
   );
   return [header.join(","), ...lines].join("\n") + "\n";
 }
@@ -250,8 +255,8 @@ function IntegrityBanner({
           {own
             ? "Entries recorded under other keys are not visible to you, which is why the numbers above can exceed what the table shows. "
             : ""}
-          Entries may have been altered or deleted by someone with write access to the database. Affected entries are marked
-          Invalid in the table and on every page of the log; open a row for the full reason. The API logs this too.
+          Entries may have been altered or deleted by someone with write access to the database. Entries that were changed are marked
+          Altered and the entry after a change is marked Affected, in the table and on every page of the log; open a row for the full reason. The API logs this too.
         </p>
       </Notice>
     );
@@ -364,6 +369,7 @@ export default function AuditPage() {
       (l) =>
         l.action.toLowerCase().includes(q) ||
         l.actor.toLowerCase().includes(q) ||
+        (l.actor_name ?? "").toLowerCase().includes(q) ||
         (l.session_id?.toLowerCase().includes(q) ?? false) ||
         (l.run_id?.toLowerCase().includes(q) ?? false)
     );
@@ -550,7 +556,7 @@ export default function AuditPage() {
         <Notice tone="error" title="Some entries failed signature verification">
           {logs.filter((l) => l.sig_status === "invalid").length} entr
           {logs.filter((l) => l.sig_status === "invalid").length === 1 ? "y" : "ies"} on this page do not match their
-          signature, or lost it, since audit signing began. They may have been altered.
+          signature, or lost it, since audit signing began. They are marked Altered or Affected and may have been changed.
         </Notice>
       )}
 
@@ -593,7 +599,7 @@ export default function AuditPage() {
             <tbody>
               {filtered.map((l) => {
                 const open = expanded.has(l.id);
-                const hasDetail = Object.keys(l.metadata).length > 0 || !!l.run_id || l.sig_status === "invalid" || !!l.out_of_order;
+                const hasDetail = true;
                 return (
                   <Fragment key={l.id}>
                     <tr className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 ${l.sig_status === "invalid" ? (l.sig_kind === "chain" ? "bg-amber-950/20" : "bg-red-950/20") : ""}`}>
@@ -621,8 +627,8 @@ export default function AuditPage() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-[120px]" title={l.actor}>
-                        {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
+                      <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-[140px]" title={l.actor_name ? `${l.actor_name} (${l.actor})` : l.actor}>
+                        {actorLabel(l)}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className={`${badgeBase} ${NS_CHIP[namespace(l.action)]}`}>{l.action}</span>
@@ -676,12 +682,29 @@ export default function AuditPage() {
                                 )}
                               </div>
                             )}
-                            {l.run_id && (
-                              <p className="text-slate-300">
-                                run: <span className="font-mono text-slate-200">{l.run_id}</span>
-                              </p>
+                            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                              <dt className="text-slate-300">entry</dt>
+                              <dd className="text-slate-200 font-mono break-all">{l.id}{l.seq ? ` (#${l.seq})` : ""}</dd>
+                              <dt className="text-slate-300">actor</dt>
+                              <dd className="text-slate-200 font-mono break-all">{l.actor_name ? `${l.actor_name} (${l.actor})` : l.actor}</dd>
+                              {l.session_id && (
+                                <>
+                                  <dt className="text-slate-300">session</dt>
+                                  <dd className="text-slate-200 font-mono break-all">{l.session_id}</dd>
+                                </>
+                              )}
+                              {l.run_id && (
+                                <>
+                                  <dt className="text-slate-300">run</dt>
+                                  <dd className="text-slate-200 font-mono break-all">{l.run_id}</dd>
+                                </>
+                              )}
+                            </dl>
+                            {Object.keys(l.metadata).length > 0 ? (
+                              <MetadataPanel meta={l.metadata} />
+                            ) : (
+                              <p className="text-slate-300">No additional details were recorded for this event.</p>
                             )}
-                            <MetadataPanel meta={l.metadata} />
                           </div>
                         </td>
                       </tr>

@@ -10,7 +10,7 @@ The API refuses to start unless all of these hold:
 |-------|-----------------|------------------|
 | OPA policy | `OPA_POLICY_FILE=/path/policy.rego` | `OPA_ALLOW_ALL=true` (accept AllowAll on purpose) |
 | TLS | `TLS_CERT_FILE` + `TLS_KEY_FILE`, or `ACME_DOMAIN` | `TLS_DISABLED=true` (a reverse proxy terminates TLS) |
-| `/metrics` auth | `METRICS_TOKEN=<random>` (bearer token) | none |
+| `/metrics` auth | `METRICS_TOKEN=<random>` (bearer token). Without it `/metrics` still requires the master API key | none |
 | Master key | if set, at least 32 characters (`openssl rand -hex 32`); empty is allowed once you have bootstrapped | none |
 | Audit signing | `AUDIT_HMAC_KEY=<random>` | none |
 | Redis password | `REDIS_PASSWORD`, checked only when `REDIS_ADDR` is set | none |
@@ -29,7 +29,7 @@ Upgrading from 0.3.4 or earlier: an existing `.env` without `VAULTRUN_INSECURE_D
 
 These need action on your side:
 
-- **Workspace permissions (0777 session directories).** This is intentional and cannot be tightened to 0700/0750 today. Sandboxes run as `nobody` (UID 65534), the API as another UID; the bind-mounted session directory is only writable from the sandbox if the "other" bits are set. The exposure is limited by the parent directory (`WORKSPACE_BASE_DIR`), which is created `0700` (owner only), so other host users cannot list or reach session directories. Keep that parent directory private, keep the host single-tenant, and do not mount it anywhere else. A per-session UID with user namespaces would remove the need for 0777; it is not implemented. Details: `internal/workspace/workspace.go`.
+- **Workspace permissions.** Sandboxes run as the same uid:gid as the API process (65532 under Compose) and own their session directory, which is created `0700`, so no other host user or container can read it. The parent `WORKSPACE_BASE_DIR` is `0700` as well. Only when the API itself runs as root, or when you set `SANDBOX_USER` to another user (for example `nobody`), does VaultRun fall back to world-writable (`0777`) session directories, because that user is "other" to the directory owner; the `0700` parent then limits who can reach them. Keep the host single-tenant and do not mount the workspace directory anywhere else. Directories created by v0.4.6 and earlier stay `0777` until the session is deleted (the parent is `0700`, so they are not reachable by other users). Details: `internal/workspace/workspace.go`.
 - **Docker socket.** The API needs access to `/var/run/docker.sock`, which is effectively root on the host. Run VaultRun on a dedicated host or VM.
 - **Image allowlist.** Set `DOCKER_IMAGE_ALLOWLIST` to the images you approve, and `COSIGN_PUBLIC_KEY` to fail closed on unsigned ones.
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.

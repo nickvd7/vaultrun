@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check, History, RotateCcw, GitFork } from "lucide-react";
 import Link from "next/link";
 import { api, getStoredApiKey, ApiError } from "@/lib/api";
-import { splitArgs, defaultCommandFor, formatCommand } from "@/lib/shellwords";
+import { splitCommandLine, formatArgs, defaultCommandFor, formatCommand } from "@/lib/shellwords";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
@@ -41,6 +41,7 @@ export default function SessionDetailPage() {
   const [cmd, setCmd] = useState("");
   const [args, setArgs] = useState("");
   const [argsError, setArgsError] = useState("");
+  const [runError, setRunError] = useState("");
   const [cmdTouched, setCmdTouched] = useState(false);
   const [runTimeout, setRunTimeout] = useState("30");
   const [executing, setExecuting] = useState(false);
@@ -112,17 +113,22 @@ export default function SessionDetailPage() {
 
   // Returns null (and shows the problem) when the arguments cannot be parsed.
   const buildRunBody = () => {
-    let parsed: string[];
+    let parsed: { command: string; args: string[] };
     try {
-      parsed = splitArgs(args);
+      parsed = splitCommandLine(cmd, args);
     } catch (e) {
       setArgsError(e instanceof Error ? e.message : "Invalid arguments");
       return null;
     }
     setArgsError("");
+    setRunError("");
+    if (parsed.command !== cmd) {
+      setCmd(parsed.command);
+      setArgs(formatArgs(parsed.args));
+    }
     return {
-      command: cmd.trim(),
-      args: parsed,
+      command: parsed.command,
+      args: parsed.args,
       timeout_seconds: parseInt(runTimeout) || 30,
     };
   };
@@ -138,7 +144,7 @@ export default function SessionDetailPage() {
       setSelectedRun(result);
       setTab("runs");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Run failed");
+      setRunError(e instanceof Error ? e.message : "Run failed");
     } finally {
       setExecuting(false);
     }
@@ -227,7 +233,7 @@ export default function SessionDetailPage() {
       setSelectedRun(result);
       setTab("runs");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Async run failed");
+      setRunError(e instanceof Error ? e.message : "Async run failed");
     } finally {
       setAsyncPolling(false);
       setAsyncRunId(null);
@@ -577,9 +583,9 @@ export default function SessionDetailPage() {
           </button>
         </div>
 
-        {argsError && (
+        {(argsError || runError) && (
           <p role="alert" className="text-xs text-red-300">
-            {argsError}
+            {argsError || runError}
           </p>
         )}
 

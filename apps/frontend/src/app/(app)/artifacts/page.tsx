@@ -127,7 +127,9 @@ export default function ArtifactsPage() {
                   <td className="px-4 py-3 text-slate-200 text-sm font-medium">{a.name}</td>
                   <td className="px-4 py-3 text-slate-200 text-xs font-mono">{a.content_type || "—"}</td>
                   <td className="px-4 py-3 text-slate-200 text-xs font-mono">{formatBytes(a.size_bytes)}</td>
-                  <td className="px-4 py-3 text-slate-200 text-xs font-mono">{a.created_by}</td>
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono" title={a.created_by_name ? `${a.created_by_name} (${a.created_by})` : a.created_by}>
+                    {a.created_by_name || (a.created_by.length > 20 ? a.created_by.slice(0, 20) + "…" : a.created_by)}
+                  </td>
                   <td className="px-4 py-3 text-slate-200 text-xs"><Time value={a.created_at} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">

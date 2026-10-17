@@ -205,8 +205,11 @@ export default function SnapshotsPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-slate-200 text-xs font-mono">{formatBytes(snap.size_bytes)}</td>
-                  <td className="px-4 py-3 text-slate-200 text-xs font-mono" title={snap.created_by}>
-                    {snap.created_by.length > 16 ? snap.created_by.slice(0, 16) + "…" : snap.created_by}
+                  <td className="px-4 py-3 text-slate-200 text-xs font-mono" title={snap.created_by_name ? `${snap.created_by_name} (${snap.created_by})` : snap.created_by}>
+                    {(() => {
+                      const who = snap.created_by_name || snap.created_by;
+                      return who.length > 20 ? who.slice(0, 20) + "…" : who;
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-slate-200 text-xs"><Time value={snap.created_at} /></td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">

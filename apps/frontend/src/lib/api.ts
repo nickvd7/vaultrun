@@ -337,8 +337,8 @@ export const api = {
         `/sessions/${sessionId}/costs`
       ),
 
-    getBreakdown: (period?: string) => {
-      const qs = period ? `?period=${period}` : "";
+    getBreakdown: (period?: string, limit = 100) => {
+      const qs = `?limit=${limit}${period ? `&period=${period}` : ""}`;
       return request<CostBreakdown>(`/costs/breakdown${qs}`).then((b) => ({
         ...b,
         top_sessions: b.top_sessions ?? [],

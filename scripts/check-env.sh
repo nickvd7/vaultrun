@@ -47,7 +47,7 @@ if { [ -z "$(env_value TLS_CERT_FILE)" ] || [ -z "$(env_value TLS_KEY_FILE)" ]; 
    [ -z "$(env_value ACME_DOMAIN)" ] && ! is_true "$(env_value TLS_DISABLED)"; then
   problems+=("TLS is off: set TLS_CERT_FILE+TLS_KEY_FILE or ACME_DOMAIN, or TLS_DISABLED=true if a reverse proxy terminates TLS")
 fi
-[ -z "$(env_value METRICS_TOKEN)" ] && problems+=("/metrics is unauthenticated: set METRICS_TOKEN")
+[ -z "$(env_value METRICS_TOKEN)" ] && problems+=("no dedicated /metrics token: set METRICS_TOKEN (without it /metrics takes the master key)")
 master="$(env_value MASTER_API_KEY)"
 if [ -n "$master" ] && [ "${#master}" -lt 32 ]; then
   problems+=("MASTER_API_KEY is shorter than 32 characters")

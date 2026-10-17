@@ -323,6 +323,8 @@ type Snapshot struct {
 	SessionID   uuid.UUID `db:"session_id"   json:"session_id"`
 	Name        string    `db:"name"         json:"name"`
 	CreatedBy   string    `db:"created_by"   json:"created_by"`
+	// CreatedByName is the API key name for CreatedBy, filled in on read.
+	CreatedByName string  `db:"-"            json:"created_by_name,omitempty"`
 	SizeBytes   int64     `db:"size_bytes"   json:"size_bytes"`
 	ArchivePath string    `db:"archive_path" json:"-"` // host path — never expose
 	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
@@ -335,6 +337,8 @@ type SharedArtifact struct {
 	SizeBytes    int64      `db:"size_bytes"    json:"size_bytes"`
 	ContentType  string     `db:"content_type"  json:"content_type"`
 	CreatedBy    string     `db:"created_by"    json:"created_by"`
+	// CreatedByName is the API key name for CreatedBy, filled in on read.
+	CreatedByName string    `db:"-"             json:"created_by_name,omitempty"`
 	SessionID    *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
 	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
 }

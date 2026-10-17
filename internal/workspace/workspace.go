@@ -71,13 +71,17 @@ func (m *Manager) Delete(sessionID uuid.UUID) error {
 	return os.RemoveAll(path)
 }
 
-// SafePath resolves a user-provided path within the workspace, enforcing:
-//  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
-//  2. No ".." path components (checked after full decoding, before Clean)
-//  3. Resolved path stays inside the workspace root (filepath.Clean + HasPrefix)
-func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
-	// URL-decode in a loop until stable to catch double/triple-encoded traversals
-	// (%252e%252e%2f → %2e%2e/ → ../).
+// ErrPathTraversal is returned for a path with a ".." component.
+var ErrPathTraversal = errors.New("path traversal detected")
+
+// CheckPath rejects a user-provided path that contains a ".." component and
+// returns the path with percent-encoding fully decoded. Callers use it to
+// answer with an error instead of quietly rewriting "../x" to "/x".
+//
+// The path is URL-decoded in a loop until stable to catch double/triple-encoded
+// traversals (%252e%252e%2f), and the check is per component, not
+// strings.Contains, so "foo..txt" stays valid.
+func CheckPath(userPath string) (string, error) {
 	decoded := userPath
 	for {
 		next, err := url.PathUnescape(decoded)
@@ -86,16 +90,22 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 		}
 		decoded = next
 	}
-
-	// Reject any path component that is exactly "..".
-	// This is checked AFTER full decoding so encoded variants are caught too.
-	// We use a component-level check (not strings.Contains) so "foo..txt" is
-	// still allowed while "../" traversals are rejected as errors — important
-	// for clients that distinguish traversal attempts from valid paths.
 	for _, part := range strings.Split(filepath.ToSlash(decoded), "/") {
 		if part == ".." {
-			return "", fmt.Errorf("path traversal detected")
+			return "", ErrPathTraversal
 		}
+	}
+	return decoded, nil
+}
+
+// SafePath resolves a user-provided path within the workspace, enforcing:
+//  1. URL-decoded (loop until stable) to catch double/triple-encoded traversals
+//  2. No ".." path components (checked after full decoding, before Clean)
+//  3. Resolved path stays inside the workspace root (filepath.Clean + HasPrefix)
+func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error) {
+	decoded, err := CheckPath(userPath)
+	if err != nil {
+		return "", err
 	}
 
 	root := m.sessionPath(sessionID)
@@ -107,7 +117,7 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 	// Belt-and-suspenders: trailing-separator HasPrefix prevents
 	// /data/workspaces/AAAA matching /data/workspaces/AAAA-other/...
 	if !strings.HasPrefix(resolved, root+string(os.PathSeparator)) && resolved != root {
-		return "", fmt.Errorf("path traversal detected")
+		return "", ErrPathTraversal
 	}
 
 	return resolved, nil

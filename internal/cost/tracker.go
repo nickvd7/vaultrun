@@ -215,15 +215,30 @@ func (s Scope) sessionPredicate(alias string, argIndex int) (string, []interface
 	return frag, []interface{}{s.Actor}
 }
 
+// Limits for the session list of a cost breakdown.
+const (
+	DefaultTopSessions = 10
+	MaxTopSessions     = 500
+)
+
 // GetCostBreakdown returns cost breakdown for a period, restricted to the
-// sessions and alerts the scope may see.
-func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Scope) (*CostBreakdown, error) {
+// sessions and alerts the scope may see. topSessions caps the session list
+// (DefaultTopSessions when zero or negative, MaxTopSessions at most);
+// TotalSessions tells how many sessions there are beyond the cap.
+func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Scope, topSessions int) (*CostBreakdown, error) {
+	if topSessions <= 0 {
+		topSessions = DefaultTopSessions
+	}
+	if topSessions > MaxTopSessions {
+		topSessions = MaxTopSessions
+	}
 	breakdown := &CostBreakdown{Period: period}
 
 	periodStart := period + "-01"
 	sessionFilter, scopeArgs := scope.sessionPredicate("s", 2)
 
 	totalsArgs := append([]interface{}{periodStart}, scopeArgs...)
+	topArgs := append(append([]interface{}{}, totalsArgs...), topSessions)
 	err := t.db.GetContext(ctx, breakdown, fmt.Sprintf(`
 		SELECT 
 			COALESCE(SUM(cm.compute_cost), 0) as compute_cost,
@@ -262,9 +277,25 @@ func (t *Tracker) GetCostBreakdown(ctx context.Context, period string, scope Sco
 		GROUP BY s.id, s.name, s.stopped_at
 		HAVING COALESCE(SUM(cm.total_cost), 0) > 0
 		ORDER BY total_cost DESC
-		LIMIT 10
-	`, sessionFilter), totalsArgs...)
+		LIMIT $%d
+	`, sessionFilter, len(topArgs)), topArgs...)
 	
+	if err != nil {
+		return nil, err
+	}
+
+	err = t.db.GetContext(ctx, &breakdown.TotalSessions, fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT s.id
+			FROM sessions s
+			INNER JOIN cost_metrics cm ON cm.session_id = s.id
+			WHERE cm.period_start >= $1::timestamptz
+			AND cm.period_start < ($1::timestamptz + INTERVAL '1 month')
+			%s
+			GROUP BY s.id
+			HAVING COALESCE(SUM(cm.total_cost), 0) > 0
+		) x
+	`, sessionFilter), totalsArgs...)
 	if err != nil {
 		return nil, err
 	}

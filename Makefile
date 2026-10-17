@@ -38,6 +38,7 @@ up:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
 	@./scripts/detect-docker-gid.sh --write .env
 	@./scripts/ensure-audit-key.sh .env
+	@./scripts/ensure-secrets.sh .env
 	@./scripts/check-env.sh .env
 	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
 	  ./scripts/wait-healthy.sh .env $$([ $$rc -eq 0 ] && echo 90 || echo 15) || exit 1; exit $$rc

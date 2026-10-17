@@ -21,13 +21,14 @@ jobs:
         run: |
           cp .env.example .env
           sed -i "s/^MASTER_API_KEY=.*/MASTER_API_KEY=$(openssl rand -hex 32)/" .env
-          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 32)/" .env
           echo "VAULTRUN_SECRET_E2E_TOKEN=e2e-secret-value" >> .env
 
       - name: make up
         run: |
           make up
           grep -Eq '^AUDIT_HMAC_KEY=.{64}$' .env || { echo "make up did not generate AUDIT_HMAC_KEY" >&2; exit 1; }
+          grep -Eq '^POSTGRES_PASSWORD=.{64}$' .env || { echo "make up did not replace the example POSTGRES_PASSWORD" >&2; exit 1; }
+          grep -Eq '^REDIS_PASSWORD=.{64}$' .env || { echo "make up did not generate REDIS_PASSWORD" >&2; exit 1; }
 
       - name: Wait for API to become healthy
         run: |

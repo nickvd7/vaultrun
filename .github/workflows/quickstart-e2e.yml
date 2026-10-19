@@ -127,6 +127,7 @@ jobs:
           expect400 '{"network_enabled":true,"allowed_hosts":["169.254.169.254"]}'
           expect400 '{"network_enabled":true,"allowed_hosts":["10.0.0.0/8"]}'
           expect400 '{"network_enabled":true,"allowed_hosts":["not a host"]}'
+          expect400 '{"network_enabled":true,"allowed_hosts":["no-such-host.invalid"]}'
 
       - name: Workspace files cannot be used to read or remove files outside the workspace
         run: |

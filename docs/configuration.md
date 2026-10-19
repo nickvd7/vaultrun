@@ -172,14 +172,15 @@ If the rules cannot be installed, the sandbox is not started.
 - Hostnames are resolved **once**, when the session is created, and only those IP addresses are allowed. Content delivery networks, load balancers and cloud services (GitHub, PyPI, npm, S3, Cloudflare-fronted sites, ...) return different addresses over time and per location, so a long-running session can lose access to a listed host or reach a different address than the one it resolved. For such hosts, list the CIDR ranges the provider publishes instead of the name, or recreate the session when connections start failing.
 - A name that resolves to many addresses (CDNs often answer with a rotating subset) may be only partly covered: the sandbox and the host can resolve different subsets, so a connection can be dropped although the name is listed. Prefer CIDR ranges for these hosts.
 - DNS (UDP/TCP 53) is open to any resolver, so the allowlist limits where traffic can go, not which names the sandbox can look up. Do not treat DNS as a confidential channel.
-- Private, loopback, link-local and metadata addresses in the list are rejected.
+- Entries are hostnames, IP addresses or CIDR blocks (`203.0.113.0/24`; IPv4 only). Private, loopback, link-local (including cloud metadata) and carrier-grade NAT addresses, CIDR blocks that include them, names such as `localhost` or `*.internal`, malformed entries, names that do not resolve, and more than 64 entries are rejected with `400`.
 
 ---
 
 ## Session Resource Limits
 
-Hard caps applied at session creation time. Requests that exceed them are rejected
-with HTTP 422.
+Hard caps applied at session creation time. Requests that exceed them, or ask for
+less than the minimum (`cpu_limit` 0.01, `memory_limit_mb` 6), are rejected with HTTP 400.
+At the per-actor session limit the API answers 429.
 
 | Variable | Default | Description |
 |---|---|---|

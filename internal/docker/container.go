@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -469,6 +470,10 @@ func resolveToIPs(hosts []string) ([]string, error) {
 		}
 		addrs, err := net.LookupHost(h)
 		if err != nil {
+			var dnsErr *net.DNSError
+			if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+				return nil, fmt.Errorf("%w: %q does not resolve to any address", ErrInvalidAllowedHosts, h)
+			}
 			slog.Warn("sandbox: resolveToIPs: failed to resolve host, skipping iptables rule",
 				"host", h, "err", err)
 			continue

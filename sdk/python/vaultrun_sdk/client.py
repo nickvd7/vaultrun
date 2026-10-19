@@ -74,6 +74,7 @@ class File:
     size_bytes: int
     content_type: str
     created_at: str
+    symlink: bool = False
 
 
 @dataclass
@@ -903,6 +904,7 @@ class Client:
             size_bytes=d["size_bytes"],
             content_type=d["content_type"],
             created_at=d["created_at"],
+            symlink=bool(d.get("symlink", False)),
         )
 
     @staticmethod

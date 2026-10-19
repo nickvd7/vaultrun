@@ -239,6 +239,7 @@ export default function SessionsPage() {
                 <input
                   id={id}
                   value={form.name}
+                  autoFocus
                   aria-invalid={!!errors.name}
                   aria-describedby={describedBy}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -398,7 +399,9 @@ export default function SessionsPage() {
             <p className="text-slate-300 text-sm">No sessions yet. Create one to get started.</p>
           </div>
         ) : visible.length === 0 ? (
-          <div className="p-10 text-center text-slate-300 text-sm">No sessions match your search.</div>
+          <div className="p-10 text-center text-slate-300 text-sm">
+            {query.trim() ? "No sessions match your search." : `No ${statusFilter} sessions.`}
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>

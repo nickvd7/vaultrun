@@ -22,7 +22,7 @@ func TestAuditFilterWhere(t *testing.T) {
 	}{
 		{"empty", AuditFilter{}, "", 0, nil},
 		{"actor scope", AuditFilter{Actor: "k1"}, " WHERE actor = $1", 1, map[int]interface{}{0: "k1"}},
-		{"session wins over actor", AuditFilter{SessionID: &sid, Actor: "k1"}, " WHERE session_id = $1", 1, nil},
+		{"session and actor", AuditFilter{SessionID: &sid, Actor: "k1"}, " WHERE session_id = $1 AND actor = $2", 2, map[int]interface{}{0: sid, 1: "k1"}},
 		{"prefix is escaped", AuditFilter{ActionPrefix: `a_b%`}, ` WHERE action LIKE $1 ESCAPE '\'`, 1, map[int]interface{}{0: `a\_b\%%`}},
 		{"everything", AuditFilter{Actor: "k1", ActionPrefix: "apikey.", From: &from, To: &to},
 			` WHERE actor = $1 AND action LIKE $2 ESCAPE '\' AND timestamp >= $3 AND timestamp < $4`, 4, nil},

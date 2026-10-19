@@ -123,6 +123,21 @@ func (m *Manager) safeReadPath(sessionID uuid.UUID, userPath string) (string, er
 	return real, nil
 }
 
+// IsSymlink reports whether userPath is a symlink inside the workspace.
+// It uses Lstat, so the link itself is what is checked, not its target.
+// A path that escapes the workspace, or does not exist, is not a symlink.
+func (m *Manager) IsSymlink(sessionID uuid.UUID, userPath string) bool {
+	resolved, err := m.SafePath(sessionID, userPath)
+	if err != nil {
+		return false
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeSymlink != 0
+}
+
 // Exists reports whether userPath refers to a real file/dir inside the
 // session workspace. Symlinks that escape the workspace root are treated as
 // absent (not an oracle for host paths).

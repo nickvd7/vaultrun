@@ -163,6 +163,7 @@ components:
         path:         { type: string, example: "/workspace/script.py" }
         size_bytes:   { type: integer }
         content_type: { type: string, example: "text/x-python" }
+        symlink:      { type: boolean, description: "True when the workspace entry is a symlink. It is listed so it is visible, and it is not a regular file. Omitted for regular files." }
         created_at:   { type: string, format: date-time }
 
     # ── API Keys ───────────────────────────────────────────────────────────────

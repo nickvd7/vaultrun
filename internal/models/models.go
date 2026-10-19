@@ -13,10 +13,10 @@ import (
 // Status constants
 
 const (
-	SessionStatusCreated  = "created"
-	SessionStatusRunning  = "running"
-	SessionStatusStopped  = "stopped"
-	SessionStatusError    = "error"
+	SessionStatusCreated = "created"
+	SessionStatusRunning = "running"
+	SessionStatusStopped = "stopped"
+	SessionStatusError   = "error"
 
 	RunStatusPending   = "pending"
 	RunStatusRunning   = "running"
@@ -44,10 +44,10 @@ const (
 	ActionSessionExpired  = "session.expired" // emitted by background cleanup goroutine
 
 	// Org actions
-	ActionOrgCreated        = "org.created"
-	ActionOrgDeleted        = "org.deleted"
-	ActionOrgMemberAdded    = "org.member.added"
-	ActionOrgMemberRemoved  = "org.member.removed"
+	ActionOrgCreated       = "org.created"
+	ActionOrgDeleted       = "org.deleted"
+	ActionOrgMemberAdded   = "org.member.added"
+	ActionOrgMemberRemoved = "org.member.removed"
 
 	// Snapshot actions
 	ActionSnapshotCreated = "snapshot.created"
@@ -64,14 +64,14 @@ const (
 	ActionCheckpointDeleted  = "checkpoint.deleted"
 
 	// Session template actions
-	ActionTemplateCreated       = "template.created"
-	ActionTemplateUpdated       = "template.updated"
-	ActionTemplateDeleted       = "template.deleted"
-	ActionSessionFromTemplate   = "session.created_from_template"
+	ActionTemplateCreated     = "template.created"
+	ActionTemplateUpdated     = "template.updated"
+	ActionTemplateDeleted     = "template.deleted"
+	ActionSessionFromTemplate = "session.created_from_template"
 
 	// Multi-agent collaboration actions
-	ActionAgentJoined            = "agent.joined"
-	ActionCollaborationEnabled   = "collaboration.enabled"
+	ActionAgentJoined          = "agent.joined"
+	ActionCollaborationEnabled = "collaboration.enabled"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.
@@ -146,29 +146,29 @@ type APIKey struct {
 }
 
 type Session struct {
-	ID              uuid.UUID  `db:"id"               json:"id"`
-	Name            *string    `db:"name"             json:"name,omitempty"`
-	Image           string     `db:"image"            json:"image"`
-	Status          string     `db:"status"           json:"status"`
-	ContainerID     *string    `db:"container_id"     json:"container_id,omitempty"`
-	NetworkEnabled  bool       `db:"network_enabled"  json:"network_enabled"`
-	CPULimit        float64    `db:"cpu_limit"        json:"cpu_limit"`
-	MemoryLimitMB   int        `db:"memory_limit_mb"  json:"memory_limit_mb"`
-	TimeoutSeconds  int        `db:"timeout_seconds"  json:"timeout_seconds"`
-	WorkspacePath   string     `db:"workspace_path"   json:"-"` // internal host path — never expose to callers
-	Labels          JSONB       `db:"labels"           json:"labels"`
+	ID             uuid.UUID `db:"id"               json:"id"`
+	Name           *string   `db:"name"             json:"name,omitempty"`
+	Image          string    `db:"image"            json:"image"`
+	Status         string    `db:"status"           json:"status"`
+	ContainerID    *string   `db:"container_id"     json:"container_id,omitempty"`
+	NetworkEnabled bool      `db:"network_enabled"  json:"network_enabled"`
+	CPULimit       float64   `db:"cpu_limit"        json:"cpu_limit"`
+	MemoryLimitMB  int       `db:"memory_limit_mb"  json:"memory_limit_mb"`
+	TimeoutSeconds int       `db:"timeout_seconds"  json:"timeout_seconds"`
+	WorkspacePath  string    `db:"workspace_path"   json:"-"` // internal host path — never expose to callers
+	Labels         JSONB     `db:"labels"           json:"labels"`
 	// AllowedHosts is an optional list of hostnames or CIDRs the container may
 	// reach when NetworkEnabled is true. An empty list means unrestricted bridge
 	// access. Entries are resolved to /etc/hosts at container creation time.
 	// For full egress enforcement, operators should pair this with host iptables.
-	AllowedHosts    StringArray `db:"allowed_hosts"    json:"allowed_hosts,omitempty"`
-	CreatedBy       string      `db:"created_by"       json:"created_by"`
+	AllowedHosts StringArray `db:"allowed_hosts"    json:"allowed_hosts,omitempty"`
+	CreatedBy    string      `db:"created_by"       json:"created_by"`
 	// CreatedByName is the API key name for CreatedBy, filled in on read.
-	CreatedByName   string      `db:"-"                json:"created_by_name,omitempty"`
-	CreatedAt       time.Time  `db:"created_at"       json:"created_at"`
-	UpdatedAt       time.Time  `db:"updated_at"       json:"updated_at"`
-	StoppedAt       *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`
-	OrgID           *uuid.UUID  `db:"org_id"           json:"org_id,omitempty"`
+	CreatedByName string     `db:"-"                json:"created_by_name,omitempty"`
+	CreatedAt     time.Time  `db:"created_at"       json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at"       json:"updated_at"`
+	StoppedAt     *time.Time `db:"stopped_at"       json:"stopped_at,omitempty"`
+	OrgID         *uuid.UUID `db:"org_id"           json:"org_id,omitempty"`
 
 	// Session Replay (migration 011). Checkpoints are only recorded when
 	// ReplayEnabled is true.
@@ -204,16 +204,16 @@ type Run struct {
 	TimeoutSeconds int         `db:"timeout_seconds" json:"timeout_seconds"`
 	CreatedAt      time.Time   `db:"created_at"      json:"created_at"`
 	UpdatedAt      time.Time   `db:"updated_at"      json:"updated_at"`
-	StartedAt       *time.Time  `db:"started_at"       json:"started_at,omitempty"`
-	FinishedAt      *time.Time  `db:"finished_at"      json:"finished_at,omitempty"`
+	StartedAt      *time.Time  `db:"started_at"       json:"started_at,omitempty"`
+	FinishedAt     *time.Time  `db:"finished_at"      json:"finished_at,omitempty"`
 	// CallbackURL is stored but never returned in API responses (may contain secrets).
-	CallbackURL     *string     `db:"callback_url"     json:"-"`
+	CallbackURL *string `db:"callback_url"     json:"-"`
 	// Session Replay (migration 011). Linked when a checkpoint was recorded for
 	// this run, or when the run was started after restoring a checkpoint.
 	CheckpointID             *uuid.UUID `db:"checkpoint_id"               json:"checkpoint_id,omitempty"`
 	RestoredFromCheckpointID *uuid.UUID `db:"restored_from_checkpoint_id" json:"restored_from_checkpoint_id,omitempty"`
 	// OutputTruncated is not persisted; set in-memory when docker capped output.
-	OutputTruncated bool        `db:"-"                json:"output_truncated,omitempty"`
+	OutputTruncated bool `db:"-"                json:"output_truncated,omitempty"`
 }
 
 type File struct {
@@ -222,14 +222,17 @@ type File struct {
 	Path        string    `db:"path"         json:"path"`
 	SizeBytes   int64     `db:"size_bytes"   json:"size_bytes"`
 	ContentType string    `db:"content_type" json:"content_type"`
-	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"   json:"updated_at"`
+	// Symlink is computed on read from the workspace, never stored. A symlink
+	// is listed so it is not invisible, but it is not a regular file.
+	Symlink   bool      `db:"-"            json:"symlink,omitempty"`
+	CreatedAt time.Time `db:"created_at"   json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"   json:"updated_at"`
 }
 
 type AuditLog struct {
-	ID        uuid.UUID  `db:"id"         json:"id"`
-	Timestamp time.Time  `db:"timestamp"  json:"timestamp"`
-	Actor     string     `db:"actor"      json:"actor"`
+	ID        uuid.UUID `db:"id"         json:"id"`
+	Timestamp time.Time `db:"timestamp"  json:"timestamp"`
+	Actor     string    `db:"actor"      json:"actor"`
 	// ActorName is the API key name for Actor, filled in on read. It is not
 	// stored or signed; Actor stays the immutable identifier.
 	ActorName string     `db:"-"          json:"actor_name,omitempty"`
@@ -319,28 +322,28 @@ type OrgMember struct {
 }
 
 type Snapshot struct {
-	ID          uuid.UUID `db:"id"           json:"id"`
-	SessionID   uuid.UUID `db:"session_id"   json:"session_id"`
-	Name        string    `db:"name"         json:"name"`
-	CreatedBy   string    `db:"created_by"   json:"created_by"`
+	ID        uuid.UUID `db:"id"           json:"id"`
+	SessionID uuid.UUID `db:"session_id"   json:"session_id"`
+	Name      string    `db:"name"         json:"name"`
+	CreatedBy string    `db:"created_by"   json:"created_by"`
 	// CreatedByName is the API key name for CreatedBy, filled in on read.
-	CreatedByName string  `db:"-"            json:"created_by_name,omitempty"`
-	SizeBytes   int64     `db:"size_bytes"   json:"size_bytes"`
-	ArchivePath string    `db:"archive_path" json:"-"` // host path — never expose
-	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+	CreatedByName string    `db:"-"            json:"created_by_name,omitempty"`
+	SizeBytes     int64     `db:"size_bytes"   json:"size_bytes"`
+	ArchivePath   string    `db:"archive_path" json:"-"` // host path — never expose
+	CreatedAt     time.Time `db:"created_at"   json:"created_at"`
 }
 
 type SharedArtifact struct {
-	ID           uuid.UUID  `db:"id"            json:"id"`
-	Name         string     `db:"name"          json:"name"`
-	ArtifactPath string     `db:"artifact_path" json:"-"` // host path — never expose
-	SizeBytes    int64      `db:"size_bytes"    json:"size_bytes"`
-	ContentType  string     `db:"content_type"  json:"content_type"`
-	CreatedBy    string     `db:"created_by"    json:"created_by"`
+	ID           uuid.UUID `db:"id"            json:"id"`
+	Name         string    `db:"name"          json:"name"`
+	ArtifactPath string    `db:"artifact_path" json:"-"` // host path — never expose
+	SizeBytes    int64     `db:"size_bytes"    json:"size_bytes"`
+	ContentType  string    `db:"content_type"  json:"content_type"`
+	CreatedBy    string    `db:"created_by"    json:"created_by"`
 	// CreatedByName is the API key name for CreatedBy, filled in on read.
-	CreatedByName string    `db:"-"             json:"created_by_name,omitempty"`
-	SessionID    *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
-	CreatedAt    time.Time  `db:"created_at"    json:"created_at"`
+	CreatedByName string     `db:"-"             json:"created_by_name,omitempty"`
+	SessionID     *uuid.UUID `db:"session_id"    json:"session_id,omitempty"`
+	CreatedAt     time.Time  `db:"created_at"    json:"created_at"`
 }
 
 // SSOUser maps an external identity (OIDC sub / SAML NameID) to a VaultRun API key.

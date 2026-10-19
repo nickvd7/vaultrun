@@ -55,11 +55,11 @@ func (ah *AuditHandler) List(c *gin.Context) {
 		sessionIDPtr = &id
 	}
 
-	// C-2: Non-master callers only see their own audit logs.
-	// When a session_id filter is provided, use the full org-aware access check
-	// (same logic as other session endpoints) to determine whether the caller
-	// has at least viewer access. This correctly handles org members who are not
-	// the session creator but do have read access via org membership.
+	// C-2: Non-master callers only see their own audit logs, including when the
+	// query is limited to a session. When a session_id filter is provided, use
+	// the full org-aware access check (same logic as other session endpoints) to
+	// decide whether the caller has at least viewer access. Org members who did
+	// not create the session can open it, but still only see their own entries.
 	actor := middleware.Actor(c)
 	auditActor := actor
 	if actor == "master" {
@@ -90,11 +90,6 @@ func (ah *AuditHandler) List(c *gin.Context) {
 			// Return empty list rather than 404 to avoid leaking session existence.
 			c.JSON(http.StatusOK, gin.H{"audit_logs": []any{}, "pagination": pg})
 			return
-		}
-		// For sessions the actor has access to (but did not create), show all
-		// audit events for that session rather than filtering by actor.
-		if session.CreatedBy != actor {
-			auditActor = ""
 		}
 	}
 

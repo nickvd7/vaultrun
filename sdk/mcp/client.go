@@ -118,6 +118,7 @@ type FileEntry struct {
 	Path        string    `json:"path"`
 	SizeBytes   int64     `json:"size_bytes"`
 	ContentType string    `json:"content_type"`
+	Symlink     bool      `json:"symlink,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

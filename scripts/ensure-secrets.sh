@@ -66,7 +66,13 @@ case "$pg" in
       if [ -n "$pg" ]; then
         # DATABASE_URL (used when the API runs outside Compose) carries the same example password.
         tmp=$(mktemp)
-        awk -v old="$pg" -v new="$new" '/^[[:space:]]*DATABASE_URL=/ { gsub(old, new) } { print }' "$ENV_FILE" > "$tmp"
+        awk -v old="$pg" -v new="$new" '
+          /^[[:space:]]*DATABASE_URL=/ {
+            out = ""
+            while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) }
+            $0 = out $0
+          }
+          { print }' "$ENV_FILE" > "$tmp"
         cat "$tmp" > "$ENV_FILE"
         rm -f "$tmp"
       fi

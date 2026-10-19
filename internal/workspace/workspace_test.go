@@ -284,3 +284,42 @@ func TestRemoveDoesNotFollowSymlinkedDirectory(t *testing.T) {
 		t.Fatal("removing the workspace root must fail")
 	}
 }
+
+func TestWriteFileKeepsLegacyWorldWritableSessionMode(t *testing.T) {
+	m, _ := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+	root := m.SessionPath(id)
+	if err := os.Chmod(root, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.WriteFile(id, "a/b/c.txt", strings.NewReader("x"), 1024); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	for _, p := range []string{root, filepath.Join(root, "a"), filepath.Join(root, "a", "b")} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o777 {
+			t.Errorf("%s mode = %o, want 777", p, got)
+		}
+	}
+}
+
+func TestWriteFileKeepsPrivateSessionMode(t *testing.T) {
+	m, _ := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+	root := m.SessionPath(id)
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.WriteFile(id, "a/c.txt", strings.NewReader("x"), 1024); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	info, _ := os.Stat(filepath.Join(root, "a"))
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Errorf("subdir mode = %o, want 700", got)
+	}
+}

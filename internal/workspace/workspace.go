@@ -158,12 +158,19 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 	root := m.sessionPath(sessionID)
 	parentDir := filepath.Dir(dest)
 
-	if err := os.MkdirAll(parentDir, sandboxuser.DirMode()); err != nil {
+	// Follow the mode of the session directory: sessions created before v0.4.7
+	// are 0777 because their sandbox runs as "nobody", and tightening them to
+	// 0700 here would lock that sandbox out of its own workspace.
+	dirMode := sandboxuser.DirMode()
+	if info, err := os.Stat(root); err == nil {
+		dirMode = info.Mode().Perm()
+	}
+	if err := os.MkdirAll(parentDir, dirMode); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
-	// Chmod every directory from root down to parentDir to guarantee
-	// world-execute regardless of the process umask.
-	if err := chmodDirs(root, parentDir, sandboxuser.DirMode()); err != nil {
+	// Chmod every directory from root down to parentDir so the mode does not
+	// depend on the process umask.
+	if err := chmodDirs(root, parentDir, dirMode); err != nil {
 		return 0, fmt.Errorf("chmod parent dirs: %w", err)
 	}
 
@@ -224,7 +231,10 @@ func chmodDirs(root, target string, mode os.FileMode) error {
 	rel, err := filepath.Rel(root, target)
 	if err != nil || rel == "." {
 		// target == root — chmod root only
-		return os.Chmod(root, mode)
+		if err := os.Chmod(root, mode); err != nil && !errors.Is(err, os.ErrPermission) {
+			return err
+		}
+		return nil
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
 	cur := root
@@ -233,7 +243,9 @@ func chmodDirs(root, target string, mode os.FileMode) error {
 		dirs = append(dirs, cur)
 	}
 	for _, d := range dirs {
-		if err := os.Chmod(d, mode); err != nil {
+		// A directory created by a sandbox running as another user (older
+		// sessions) cannot be chmodded by the API; it is already usable by it.
+		if err := os.Chmod(d, mode); err != nil && !errors.Is(err, os.ErrPermission) {
 			return err
 		}
 	}

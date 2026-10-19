@@ -361,13 +361,16 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 		})
 	})
 
-	// Prometheus metrics (same scrape pattern as the main API). Prefer
-	// MCP_METRICS_TOKEN, else fall back to METRICS_TOKEN. When unset the
-	// endpoint is open — restrict via network policy in production.
+	// Prometheus metrics (same scrape pattern as the main API). The token is
+	// MCP_METRICS_TOKEN, else METRICS_TOKEN, else the server's own bearer token,
+	// so /metrics is never open when the MCP endpoint itself requires a token.
 	metricsHandler := gin.WrapH(promhttp.Handler())
 	metricsToken := os.Getenv("MCP_METRICS_TOKEN")
 	if metricsToken == "" {
 		metricsToken = os.Getenv("METRICS_TOKEN")
+	}
+	if metricsToken == "" {
+		metricsToken = cfg.authToken
 	}
 	if metricsToken != "" {
 		expected := "Bearer " + metricsToken
@@ -380,7 +383,7 @@ func buildHTTPEngine(srv *server, cfg httpConfig) *gin.Engine {
 			metricsHandler(c)
 		})
 	} else {
-		slog.Warn("vaultrun-mcp: METRICS_TOKEN/MCP_METRICS_TOKEN unset — /metrics is unauthenticated; " +
+		slog.Warn("vaultrun-mcp: no MCP auth token and no METRICS_TOKEN/MCP_METRICS_TOKEN — /metrics is unauthenticated; " +
 			"set a token or restrict the endpoint via firewall/reverse-proxy")
 		r.GET("/metrics", metricsHandler)
 	}

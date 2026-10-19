@@ -158,12 +158,19 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 	root := m.sessionPath(sessionID)
 	parentDir := filepath.Dir(dest)
 
-	if err := os.MkdirAll(parentDir, sandboxuser.DirMode()); err != nil {
+	// Follow the mode of the session directory: sessions created before v0.4.7
+	// are 0777 because their sandbox runs as "nobody", and tightening them to
+	// 0700 here would lock that sandbox out of its own workspace.
+	dirMode := sandboxuser.DirMode()
+	if info, err := os.Stat(root); err == nil {
+		dirMode = info.Mode().Perm()
+	}
+	if err := os.MkdirAll(parentDir, dirMode); err != nil {
 		return 0, fmt.Errorf("create parent dirs: %w", err)
 	}
-	// Chmod every directory from root down to parentDir to guarantee
-	// world-execute regardless of the process umask.
-	if err := chmodDirs(root, parentDir, sandboxuser.DirMode()); err != nil {
+	// Chmod every directory from root down to parentDir so the mode does not
+	// depend on the process umask.
+	if err := chmodDirs(root, parentDir, dirMode); err != nil {
 		return 0, fmt.Errorf("chmod parent dirs: %w", err)
 	}
 
@@ -224,7 +231,10 @@ func chmodDirs(root, target string, mode os.FileMode) error {
 	rel, err := filepath.Rel(root, target)
 	if err != nil || rel == "." {
 		// target == root — chmod root only
-		return os.Chmod(root, mode)
+		if err := os.Chmod(root, mode); err != nil && !errors.Is(err, os.ErrPermission) {
+			return err
+		}
+		return nil
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
 	cur := root
@@ -233,15 +243,21 @@ func chmodDirs(root, target string, mode os.FileMode) error {
 		dirs = append(dirs, cur)
 	}
 	for _, d := range dirs {
-		if err := os.Chmod(d, mode); err != nil {
+		// A directory created by a sandbox running as another user (older
+		// sessions) cannot be chmodded by the API; it is already usable by it.
+		if err := os.Chmod(d, mode); err != nil && !errors.Is(err, os.ErrPermission) {
 			return err
 		}
 	}
 	return nil
 }
 
-// OpenFile opens a file inside the workspace for reading.
-// Symlink targets are validated to remain inside the workspace.
+// ErrIsDirectory is returned by OpenFile when the path is a directory.
+var ErrIsDirectory = errors.New("path is a directory")
+
+// OpenFile opens a regular file inside the workspace for reading.
+// Symlink targets are validated to remain inside the workspace and
+// directories are rejected with ErrIsDirectory.
 func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, error) {
 	dest, err := m.safeReadPath(sessionID, userPath)
 	if err != nil {
@@ -252,7 +268,39 @@ func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, erro
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("stat file: %w", err)
+	}
+	if info.IsDir() {
+		f.Close()
+		return nil, ErrIsDirectory
+	}
 	return f, nil
+}
+
+// Remove deletes a file (or empty directory) inside the workspace. The parent
+// directory chain is symlink-resolved and must stay inside the workspace root,
+// so a symlinked directory cannot be used to delete files elsewhere. A symlink
+// in the final component is removed itself, never followed.
+func (m *Manager) Remove(sessionID uuid.UUID, userPath string) error {
+	dest, err := m.SafePath(sessionID, userPath)
+	if err != nil {
+		return err
+	}
+	root := m.sessionPath(sessionID)
+	if dest == root {
+		return fmt.Errorf("cannot remove workspace root")
+	}
+	realParent, err := filepath.EvalSymlinks(filepath.Dir(dest))
+	if err != nil {
+		return fmt.Errorf("file not found or inaccessible")
+	}
+	if !strings.HasPrefix(realParent, root+string(os.PathSeparator)) && realParent != root {
+		return fmt.Errorf("symlink escape detected")
+	}
+	return os.Remove(filepath.Join(realParent, filepath.Base(dest)))
 }
 
 func (m *Manager) sessionPath(sessionID uuid.UUID) string {

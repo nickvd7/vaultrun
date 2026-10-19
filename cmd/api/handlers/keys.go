@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,6 +51,12 @@ func (kh *KeyHandler) Create(c *gin.Context) {
 	var req createKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" || len(req.Name) > 64 || strings.ContainsFunc(req.Name, unicode.IsControl) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must be 1-64 characters without control characters"})
 		return
 	}
 

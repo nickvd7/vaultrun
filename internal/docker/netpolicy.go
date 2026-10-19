@@ -172,7 +172,11 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) erro
 	for _, ip := range allowedIPs {
 		// Hosts often resolve to AAAA records too. IPv6 egress is dropped
 		// wholesale below, and iptables rejects IPv6 literals.
-		if p := net.ParseIP(ip); p == nil || p.To4() == nil {
+		if _, n, err := net.ParseCIDR(ip); err == nil {
+			if n.IP.To4() == nil {
+				continue
+			}
+		} else if p := net.ParseIP(ip); p == nil || p.To4() == nil {
 			continue
 		}
 		if err := ipt("-A", chain, "-d", ip, "-j", "ACCEPT"); err != nil {

@@ -2,9 +2,11 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -401,6 +403,9 @@ func resolveExtraHosts(hosts []string) []string {
 	}
 	var extra []string
 	for _, h := range hosts {
+		if strings.Contains(h, "/") {
+			continue
+		}
 		if ip := net.ParseIP(h); ip != nil {
 			if isPrivateIP(ip) {
 				slog.Warn("sandbox: allowed host is a private IP, skipping extra-hosts entry",
@@ -442,9 +447,20 @@ func resolveToIPs(hosts []string) ([]string, error) {
 	var ips []string
 	seen := make(map[string]bool)
 	for _, h := range hosts {
+		if strings.Contains(h, "/") {
+			_, n, err := net.ParseCIDR(h)
+			if err != nil || overlapsBlocked(n) {
+				return nil, fmt.Errorf("%w: %q is not a valid public CIDR block", ErrInvalidAllowedHosts, h)
+			}
+			if !seen[n.String()] {
+				ips = append(ips, n.String())
+				seen[n.String()] = true
+			}
+			continue
+		}
 		if ip := net.ParseIP(h); ip != nil {
 			if isPrivateIP(ip) {
-				return nil, fmt.Errorf("allowed host %q is a private/internal address (%s) — DNS rebinding protection", h, ip.String())
+				return nil, fmt.Errorf("%w: %q is a private/internal address (%s) — DNS rebinding protection", ErrInvalidAllowedHosts, h, ip.String())
 			}
 			if !seen[ip.String()] {
 				ips = append(ips, ip.String())
@@ -454,13 +470,17 @@ func resolveToIPs(hosts []string) ([]string, error) {
 		}
 		addrs, err := net.LookupHost(h)
 		if err != nil {
+			var dnsErr *net.DNSError
+			if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+				return nil, fmt.Errorf("%w: %q does not resolve to any address", ErrInvalidAllowedHosts, h)
+			}
 			slog.Warn("sandbox: resolveToIPs: failed to resolve host, skipping iptables rule",
 				"host", h, "err", err)
 			continue
 		}
 		for _, addr := range addrs {
 			if ip := net.ParseIP(addr); ip != nil && isPrivateIP(ip) {
-				return nil, fmt.Errorf("allowed host %q resolves to private/internal address (%s) — DNS rebinding protection", h, addr)
+				return nil, fmt.Errorf("%w: %q resolves to private/internal address (%s) — DNS rebinding protection", ErrInvalidAllowedHosts, h, addr)
 			}
 			if !seen[addr] {
 				ips = append(ips, addr)

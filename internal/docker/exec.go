@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -95,12 +96,17 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 	if workingDir == "" {
 		workingDir = "/workspace"
 	}
-	// Restrict working_dir to the workspace or /tmp to prevent access to
-	// arbitrary container filesystem paths (e.g. /proc, /etc).
-	if workingDir != "/workspace" && workingDir != "/tmp" &&
-		!strings.HasPrefix(workingDir, "/workspace/") &&
-		!strings.HasPrefix(workingDir, "/tmp/") {
-		return nil, fmt.Errorf("working_dir must be within /workspace or /tmp, got: %q", workingDir)
+	var err error
+	workingDir, err = NormalizeWorkingDir(workingDir)
+	if err != nil {
+		return nil, err
+	}
+
+	execUser := sandboxuser.User()
+	if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.Config != nil && info.Config.User != "" {
+		// Sandboxes created before v0.4.7 run as "nobody"; exec as the user the
+		// container was started with so their files stay writable.
+		execUser = info.Config.User
 	}
 
 	execID, err := c.inner.ContainerExecCreate(ctx, cfg.ContainerID, types.ExecConfig{
@@ -109,7 +115,7 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 		WorkingDir:   workingDir,
 		AttachStdout: true,
 		AttachStderr: true,
-		User:         sandboxuser.User(),
+		User:         execUser,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("exec create: %w", err)
@@ -258,4 +264,22 @@ func (lw *limitedWriter) Write(p []byte) (int, error) {
 	n, err := lw.w.Write(p)
 	lw.n += int64(n)
 	return n, err
+}
+
+// NormalizeWorkingDir cleans a requested working directory and restricts it to
+// /workspace or /tmp, which prevents access to arbitrary container paths such
+// as /proc or /etc (including via ".." segments).
+func NormalizeWorkingDir(wd string) (string, error) {
+	if wd == "" {
+		return "/workspace", nil
+	}
+	if !strings.HasPrefix(wd, "/") {
+		return "", fmt.Errorf("working_dir must be an absolute path within /workspace or /tmp, got: %q", wd)
+	}
+	wd = path.Clean(wd)
+	if wd != "/workspace" && wd != "/tmp" &&
+		!strings.HasPrefix(wd, "/workspace/") && !strings.HasPrefix(wd, "/tmp/") {
+		return "", fmt.Errorf("working_dir must be within /workspace or /tmp, got: %q", wd)
+	}
+	return wd, nil
 }

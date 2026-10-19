@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- The MCP HTTP server's `/metrics` is no longer open when only the server bearer token is set: it takes `MCP_METRICS_TOKEN`, else `METRICS_TOKEN`, else the server's own bearer token. It stays open only when none of them exist.
+- `exec` runs as the user the container was started with, so sandboxes created before v0.4.7 (user `nobody`) keep working next to new ones (API uid).
+- Dashboard: typing a command line in Command no longer duplicates the suggested arguments (the suggestion is dropped as soon as you type your own command).
+
+### Fixed
+- Security: promoting a workspace file to an artifact followed symlinks, so a sandbox could create `ln -s /etc/passwd leak` and read host/API-container files (or other sessions' workspaces) through the artifact download. It now goes through the same symlink-checked open as file download. Deleting a file through a symlinked directory could remove files outside the workspace; it now resolves the parent directory first.
+- Downloading a directory returned `200` with an empty body; it is now `400`. `workspace.zip` no longer aborts on a symlink to a directory, and backslashes in file names are replaced so Windows extractors cannot be tricked into a path traversal.
+- `allowed_hosts` is validated up front (hostname, IP or CIDR; no private, loopback, link-local or metadata targets; no unresolvable names; at most 64 entries) and answers `400` with the reason instead of `500 container creation failed`. CIDR blocks, documented before, now actually work. Too small `cpu_limit`/`memory_limit_mb` (below 0.01 / 6) are `400` as well.
+- `working_dir` is cleaned and checked before the run is created: `..` segments and relative paths return `400` instead of a failed run.
+- Uploads into sessions created before v0.4.7 no longer change the session directory to `0700` (which locked their `nobody` sandbox out of `/workspace`); upload errors no longer contain host paths.
+- Label limits (32 labels, 63/256 characters), API key names (1-64 characters, no control characters) and `.`/`/` as upload path are validated.
+- `scripts/ensure-secrets.sh` replaced the old password in `DATABASE_URL` as a regular expression; a password containing `.`, `*` or `&` could corrupt the URL.
+- Docs: resource limit violations are HTTP 400, not 422.
+
 ---
 
 ## [0.4.8] — 2026-10-17

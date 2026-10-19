@@ -2,6 +2,7 @@ package workspace_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -231,5 +232,55 @@ func TestCreateUsesPrivateDirsForOwnUser(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o700 {
 		t.Errorf("session dir mode = %o, want 700", info.Mode().Perm())
+	}
+}
+
+func TestOpenFileRejectsDirectory(t *testing.T) {
+	m, _ := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+	if err := os.MkdirAll(filepath.Join(m.SessionPath(id), "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.OpenFile(id, "sub"); !errors.Is(err, workspace.ErrIsDirectory) {
+		t.Fatalf("OpenFile(dir) err = %v, want ErrIsDirectory", err)
+	}
+}
+
+func TestRemoveDoesNotFollowSymlinkedDirectory(t *testing.T) {
+	m, base := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+
+	outside := filepath.Join(base, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, "victim.txt")
+	if err := os.WriteFile(victim, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sp := m.SessionPath(id)
+	if err := os.Symlink(outside, filepath.Join(sp, "linkdir")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.Remove(id, "linkdir/victim.txt"); err == nil {
+		t.Fatal("Remove through a symlinked directory must fail")
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("file outside the workspace was removed: %v", err)
+	}
+
+	inside := filepath.Join(sp, "a.txt")
+	os.WriteFile(inside, []byte("x"), 0o644)
+	if err := m.Remove(id, "a.txt"); err != nil {
+		t.Fatalf("Remove inside: %v", err)
+	}
+	if _, err := os.Stat(inside); !os.IsNotExist(err) {
+		t.Fatalf("file still present: %v", err)
+	}
+	if err := m.Remove(id, "/"); err == nil {
+		t.Fatal("removing the workspace root must fail")
 	}
 }

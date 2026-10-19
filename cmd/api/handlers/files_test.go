@@ -71,7 +71,7 @@ func TestDetectContentType(t *testing.T) {
 }
 
 func TestCleanUserPathRejectsParentSegments(t *testing.T) {
-	for _, in := range []string{"../x", "a/../../x", "/a/../b", ".."} {
+	for _, in := range []string{"../x", "a/../../x", "/a/../b", "..", ".", "/", "./"} {
 		if _, err := cleanUserPath(in); err == nil {
 			t.Errorf("cleanUserPath(%q) = nil error, want rejection", in)
 		}

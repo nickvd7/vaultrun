@@ -15,6 +15,7 @@ import (
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
+	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/httputil"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
@@ -134,6 +135,9 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 	if !validateCommand(c, req.Command) {
 		return
 	}
+	if !validateWorkingDir(c, &req.WorkingDir) {
+		return
+	}
 
 	// Resolve requested secrets into a separate map that is passed to the container
 	// at runtime but never written to the database.
@@ -215,6 +219,9 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		return
 	}
 	if !validateCommand(c, req.Command) {
+		return
+	}
+	if !validateWorkingDir(c, &req.WorkingDir) {
 		return
 	}
 
@@ -375,6 +382,9 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	if !validateCommand(c, req.Command) {
 		return
 	}
+	if !validateWorkingDir(c, &req.WorkingDir) {
+		return
+	}
 
 	// Validate callback URL to prevent SSRF.
 	if req.CallbackURL != "" {
@@ -461,4 +471,17 @@ func writeSSEEvent(w io.Writer, flusher http.Flusher, event map[string]any) {
 	b, _ := json.Marshal(event)
 	fmt.Fprintf(w, "data: %s\n\n", b)
 	flusher.Flush()
+}
+
+func validateWorkingDir(c *gin.Context, wd *string) bool {
+	if *wd == "" {
+		return true
+	}
+	clean, err := dockerpkg.NormalizeWorkingDir(*wd)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return false
+	}
+	*wd = clean
+	return true
 }

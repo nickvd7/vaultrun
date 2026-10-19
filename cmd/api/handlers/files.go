@@ -107,7 +107,7 @@ func (fh *FileHandler) Upload(c *gin.Context) {
 	// Reconstruct the full stream: sniffed bytes prepended to the remainder.
 	written, err := fh.h.ws.WriteFile(sessionID, userPath, io.MultiReader(bytes.NewReader(sniff[:n]), f), maxBytes)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": uploadErrorMessage(sessionID, err)})
 		return
 	}
 
@@ -196,6 +196,10 @@ func (fh *FileHandler) Download(c *gin.Context) {
 
 	f, err := fh.h.ws.OpenFile(sessionID, userPath)
 	if err != nil {
+		if errors.Is(err, workspace.ErrIsDirectory) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is a directory, not a file"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
@@ -248,9 +252,7 @@ func (fh *FileHandler) Delete(c *gin.Context) {
 	}
 
 	// Remove from filesystem (best-effort — may not exist if metadata got out of sync)
-	if resolved, err := fh.h.ws.SafePath(sessionID, userPath); err == nil {
-		_ = os.Remove(resolved)
-	}
+	_ = fh.h.ws.Remove(sessionID, userPath)
 
 	if err := dbpkg.DeleteFile(c.Request.Context(), fh.h.db, sessionID, userPath); err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
@@ -326,16 +328,22 @@ func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
 			return nil
 		}
 
-		fw, err := zw.Create(rel)
-		if err != nil {
-			return err
-		}
-
 		f, err := os.Open(real)
 		if err != nil {
 			return nil // skip unreadable files
 		}
 		defer f.Close()
+		// A symlink to a directory (or a device/FIFO) is not archived.
+		if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+			return nil
+		}
+
+		// Backslashes are legal in Linux file names but extractors on Windows
+		// treat them as separators, which would turn "a\..\x" into a traversal.
+		fw, err := zw.Create(strings.ReplaceAll(rel, `\`, "_"))
+		if err != nil {
+			return err
+		}
 
 		_, err = io.Copy(fw, f)
 		return err
@@ -391,6 +399,22 @@ func detectContentType(path string) string {
 	return "application/octet-stream"
 }
 
+// uploadErrorMessage turns a workspace write error into a message that is safe
+// to return: errors that wrap OS failures carry host paths, so those are logged
+// and replaced by a generic text.
+func uploadErrorMessage(sessionID uuid.UUID, err error) string {
+	msg := err.Error()
+	switch {
+	case errors.Is(err, workspace.ErrPathTraversal),
+		strings.HasPrefix(msg, "file exceeds maximum size"),
+		strings.HasPrefix(msg, "symlink escape"),
+		strings.HasPrefix(msg, "write target is a symlink"):
+		return msg
+	}
+	slog.Warn("upload: workspace write failed", "session_id", sessionID, "err", err)
+	return "cannot write a file at this path (a parent is a file, or the path is a directory)"
+}
+
 // cleanUserPath normalizes a path from the request ("./a//b" becomes "/a/b") so
 // policy rules see the form the filesystem will use, but refuses ".." instead
 // of silently resolving it.
@@ -398,5 +422,9 @@ func cleanUserPath(raw string) (string, error) {
 	if _, err := workspace.CheckPath(raw); err != nil {
 		return "", errors.New("path must not contain '..'")
 	}
-	return filepath.Clean("/" + raw), nil
+	cleaned := filepath.Clean("/" + raw)
+	if cleaned == "/" {
+		return "", errors.New("path must name a file or directory below the workspace root")
+	}
+	return cleaned, nil
 }

@@ -240,8 +240,12 @@ func chmodDirs(root, target string, mode os.FileMode) error {
 	return nil
 }
 
-// OpenFile opens a file inside the workspace for reading.
-// Symlink targets are validated to remain inside the workspace.
+// ErrIsDirectory is returned by OpenFile when the path is a directory.
+var ErrIsDirectory = errors.New("path is a directory")
+
+// OpenFile opens a regular file inside the workspace for reading.
+// Symlink targets are validated to remain inside the workspace and
+// directories are rejected with ErrIsDirectory.
 func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, error) {
 	dest, err := m.safeReadPath(sessionID, userPath)
 	if err != nil {
@@ -252,7 +256,39 @@ func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, erro
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
 	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("stat file: %w", err)
+	}
+	if info.IsDir() {
+		f.Close()
+		return nil, ErrIsDirectory
+	}
 	return f, nil
+}
+
+// Remove deletes a file (or empty directory) inside the workspace. The parent
+// directory chain is symlink-resolved and must stay inside the workspace root,
+// so a symlinked directory cannot be used to delete files elsewhere. A symlink
+// in the final component is removed itself, never followed.
+func (m *Manager) Remove(sessionID uuid.UUID, userPath string) error {
+	dest, err := m.SafePath(sessionID, userPath)
+	if err != nil {
+		return err
+	}
+	root := m.sessionPath(sessionID)
+	if dest == root {
+		return fmt.Errorf("cannot remove workspace root")
+	}
+	realParent, err := filepath.EvalSymlinks(filepath.Dir(dest))
+	if err != nil {
+		return fmt.Errorf("file not found or inaccessible")
+	}
+	if !strings.HasPrefix(realParent, root+string(os.PathSeparator)) && realParent != root {
+		return fmt.Errorf("symlink escape detected")
+	}
+	return os.Remove(filepath.Join(realParent, filepath.Base(dest)))
 }
 
 func (m *Manager) sessionPath(sessionID uuid.UUID) string {

@@ -30,29 +30,57 @@ type SessionHandler struct {
 func NewSessionHandler(h *Hub) *SessionHandler { return &SessionHandler{h: h} }
 
 type createSessionRequest struct {
-	Name           *string            `json:"name"`
-	Image          string             `json:"image"`
-	NetworkEnabled bool               `json:"network_enabled"`
-	CPULimit       float64            `json:"cpu_limit"`
-	MemoryLimitMB  int                `json:"memory_limit_mb"`
-	TimeoutSeconds int                `json:"timeout_seconds"`
-	Labels         map[string]string  `json:"labels"`
+	Name           *string           `json:"name"`
+	Image          string            `json:"image"`
+	NetworkEnabled bool              `json:"network_enabled"`
+	CPULimit       float64           `json:"cpu_limit"`
+	MemoryLimitMB  int               `json:"memory_limit_mb"`
+	TimeoutSeconds int               `json:"timeout_seconds"`
+	Labels         map[string]string `json:"labels"`
 	// AllowedHosts is an optional list of hostnames or CIDRs the container
 	// may reach when network_enabled is true. Entries are resolved to
 	// /etc/hosts entries at container creation time for DNS-level control.
-	AllowedHosts   []string           `json:"allowed_hosts"`
+	AllowedHosts []string `json:"allowed_hosts"`
 	// OrgID optionally assigns this session to an org for shared access.
 	// The caller must be an executor or admin of that org.
-	OrgID          *string            `json:"org_id"`
+	OrgID *string `json:"org_id"`
 	// SnapshotID optionally names a snapshot to restore into the new session workspace.
 	SnapshotID *string `json:"snapshot_id"`
 	// GPUEnabled requests GPU device passthrough when the server has GPUs configured.
-	GPUEnabled bool    `json:"gpu_enabled"`
+	GPUEnabled bool `json:"gpu_enabled"`
 	// ReplayEnabled opts the session into checkpoint recording (session replay).
 	ReplayEnabled bool `json:"replay_enabled"`
 }
 
 var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`)
+
+const (
+	maxLabels        = 32
+	maxLabelKeyLen   = 63
+	maxLabelValueLen = 256
+)
+
+func validateLabels(labels map[string]string) error {
+	if len(labels) > maxLabels {
+		return fmt.Errorf("at most %d labels are allowed", maxLabels)
+	}
+	for k, v := range labels {
+		if k == "" || len(k) > maxLabelKeyLen {
+			return fmt.Errorf("label keys must be 1-%d characters", maxLabelKeyLen)
+		}
+		if len(v) > maxLabelValueLen {
+			return fmt.Errorf("label values must be at most %d characters", maxLabelValueLen)
+		}
+	}
+	return nil
+}
+
+// Smaller values are rejected by the kernel (cpu.max needs a quota of at least
+// 1ms per 100ms period) or by Docker, and surface as an opaque daemon error.
+const (
+	minCPULimit      = 0.01
+	minMemoryLimitMB = 6
+)
 
 // POST /api/v1/sessions
 func (sh *SessionHandler) Create(c *gin.Context) {
@@ -84,6 +112,14 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "memory_limit_mb must not be negative"})
 		return
 	}
+	if req.CPULimit > 0 && req.CPULimit < minCPULimit {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cpu_limit must be at least %g", minCPULimit)})
+		return
+	}
+	if req.MemoryLimitMB > 0 && req.MemoryLimitMB < minMemoryLimitMB {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("memory_limit_mb must be at least %d (Docker minimum)", minMemoryLimitMB)})
+		return
+	}
 	if req.TimeoutSeconds < 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "timeout_seconds must not be negative"})
 		return
@@ -94,6 +130,11 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	if len(req.AllowedHosts) > 0 && !req.NetworkEnabled {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed_hosts requires network_enabled: true " +
 			"(without a network there is nothing to restrict)"})
+		return
+	}
+
+	if err := dockerpkg.ValidateAllowedHosts(req.AllowedHosts); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -217,7 +258,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 
 	now := time.Now().UTC()
 
-	// Convert caller-supplied labels (string map) to JSONB.
+	if err := validateLabels(req.Labels); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	labels := models.JSONB{}
 	for k, v := range req.Labels {
 		labels[k] = v
@@ -306,6 +350,10 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		_ = sh.h.ws.Delete(sessionID)
 		if errors.Is(err, dockerpkg.ErrImageUnavailable) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("image %q not found or not accessible", req.Image)})
+			return
+		}
+		if errors.Is(err, dockerpkg.ErrInvalidAllowedHosts) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, dockerpkg.ErrEgressUnavailable) {
@@ -486,6 +534,10 @@ func (sh *SessionHandler) UpdateLabels(c *gin.Context) {
 		return
 	}
 
+	if err := validateLabels(body.Labels); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	labels := models.JSONB{}
 	for k, v := range body.Labels {
 		labels[k] = v

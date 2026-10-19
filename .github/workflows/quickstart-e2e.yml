@@ -121,6 +121,26 @@ jobs:
           expect400 '{"cpu_limit":-1}'
           expect400 '{"memory_limit_mb":-1}'
           expect400 '{"image":"vaultrun-e2e/does-not-exist:nope"}'
+          expect400 '{"memory_limit_mb":1}'
+          expect400 '{"cpu_limit":0.001}'
+          expect400 '{"network_enabled":true,"allowed_hosts":["localhost"]}'
+          expect400 '{"network_enabled":true,"allowed_hosts":["169.254.169.254"]}'
+          expect400 '{"network_enabled":true,"allowed_hosts":["10.0.0.0/8"]}'
+          expect400 '{"network_enabled":true,"allowed_hosts":["not a host"]}'
+
+      - name: Workspace files cannot be used to read or remove files outside the workspace
+        run: |
+          RESP=$(curl -sS -X POST "http://localhost:8080/api/v1/sessions/$SESSION_ID/run" \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"command":"sh","args":["-c","ln -sf /etc/passwd leak && mkdir -p adir && echo hi > adir/f.txt"]}')
+          [ "$(echo "$RESP" | jq -r '.exit_code')" = "0" ] || { echo "$RESP" >&2; exit 1; }
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:8080/api/v1/sessions/$SESSION_ID/artifacts" \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' -d '{"path":"leak"}')
+          [ "$CODE" = "404" ] || { echo "artifact of an escaping symlink got $CODE, want 404" >&2; exit 1; }
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080/api/v1/sessions/$SESSION_ID/files/leak" -H "X-API-Key: $API_KEY")
+          [ "$CODE" = "404" ] || { echo "download of an escaping symlink got $CODE, want 404" >&2; exit 1; }
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080/api/v1/sessions/$SESSION_ID/files/adir" -H "X-API-Key: $API_KEY")
+          [ "$CODE" = "400" ] || { echo "download of a directory got $CODE, want 400" >&2; exit 1; }
 
       - name: Per-key secret allowlist
         run: |

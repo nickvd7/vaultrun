@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -18,6 +18,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
+	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 // ArtifactHandler serves cross-session shared artifact endpoints.
@@ -50,18 +51,23 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		return
 	}
 
-	// Resolve and validate the source path inside the workspace.
-	src, err := ah.h.ws.SafePath(sessionID, req.Path)
+	// Open through the workspace manager so symlinks that point outside the
+	// session workspace are rejected.
+	ff, err := ah.h.ws.OpenFile(sessionID, req.Path)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path: " + err.Error()})
+		switch {
+		case errors.Is(err, workspace.ErrPathTraversal):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path: " + err.Error()})
+		case errors.Is(err, workspace.ErrIsDirectory):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path must point to a regular file"})
+		default:
+			c.JSON(http.StatusNotFound, gin.H{"error": "source file not found"})
+		}
 		return
 	}
+	defer ff.Close()
 
-	info, err := os.Stat(src)
-	if os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "source file not found"})
-		return
-	}
+	info, err := ff.Stat()
 	if err != nil || !info.Mode().IsRegular() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path must point to a regular file"})
 		return
@@ -92,13 +98,6 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 	name = sanitizeFilename(name)
 
 	// Detect content type from the first 512 bytes.
-	ff, err := os.Open(src)
-	if err != nil {
-		slog.Error("open source file failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "open source file failed"})
-		return
-	}
-	defer ff.Close()
 	sniff := make([]byte, 512)
 	n, _ := ff.Read(sniff)
 	ct := http.DetectContentType(sniff[:n])

@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.10] — 2026-10-19
+
 ### Changed
 - Audit: for a regular key, `chained_entries`/`legacy_entries` now count only that key's entries, and the warning says "marked Altered"/"marked Affected" (as in the table) instead of "Invalid".
 - `session.created` and `session.deleted` audit entries carry the session name (when set) and image.

@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.9] — 2026-10-19
+
+**Security release:** the artifact endpoint followed symlinks (see Fixed). Upgrade if sandboxes run code you do not fully trust. No migrations or new settings.
+
 ### Changed
 - The MCP HTTP server's `/metrics` is no longer open when only the server bearer token is set: it takes `MCP_METRICS_TOKEN`, else `METRICS_TOKEN`, else the server's own bearer token. It stays open only when none of them exist.
 - `exec` runs as the user the container was started with, so sandboxes created before v0.4.7 (user `nobody`) keep working next to new ones (API uid).

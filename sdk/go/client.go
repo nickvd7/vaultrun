@@ -75,6 +75,7 @@ type File struct {
 	Path        string    `json:"path"`
 	SizeBytes   int64     `json:"size_bytes"`
 	ContentType string    `json:"content_type"`
+	Symlink     bool      `json:"symlink,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -406,13 +407,13 @@ type Snapshot struct {
 
 // SharedArtifact represents a file promoted to the shared artifact registry.
 type SharedArtifact struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	SizeBytes   int64      `json:"size_bytes"`
-	ContentType string     `json:"content_type"`
-	CreatedBy   string     `json:"created_by"`
-	SessionID   *string    `json:"session_id,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	SizeBytes   int64     `json:"size_bytes"`
+	ContentType string    `json:"content_type"`
+	CreatedBy   string    `json:"created_by"`
+	SessionID   *string   `json:"session_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // CreateSnapshot creates a snapshot archive of a session's workspace.
@@ -535,13 +536,13 @@ func (c *Client) RevokeKey(ctx context.Context, keyID string) error {
 
 // AuditLog is a single entry in the audit trail.
 type AuditLog struct {
-	ID        string     `json:"id"`
-	Actor     string     `json:"actor"`
-	SessionID *string    `json:"session_id,omitempty"`
-	RunID     *string    `json:"run_id,omitempty"`
-	Action    string     `json:"action"`
-	Metadata  any        `json:"metadata,omitempty"`
-	Timestamp time.Time  `json:"timestamp"`
+	ID        string    `json:"id"`
+	Actor     string    `json:"actor"`
+	SessionID *string   `json:"session_id,omitempty"`
+	RunID     *string   `json:"run_id,omitempty"`
+	Action    string    `json:"action"`
+	Metadata  any       `json:"metadata,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // ListAuditLogsOptions filters the audit log query.
@@ -690,11 +691,11 @@ type Image struct {
 
 // SessionStats holds live resource usage for a running session.
 type SessionStats struct {
-	SessionID      string  `json:"session_id"`
-	CPUPercent     float64 `json:"cpu_percent"`
-	MemoryUsageMB  float64 `json:"memory_usage_mb"`
-	MemoryLimitMB  int     `json:"memory_limit_mb"`
-	PIDs           int     `json:"pids"`
+	SessionID     string  `json:"session_id"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryUsageMB float64 `json:"memory_usage_mb"`
+	MemoryLimitMB int     `json:"memory_limit_mb"`
+	PIDs          int     `json:"pids"`
 }
 
 // PullStatus is returned after requesting an image pull.

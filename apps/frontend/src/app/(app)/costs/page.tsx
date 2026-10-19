@@ -41,10 +41,11 @@ export default function CostsPage() {
     }
   };
 
-  // Sessions cost fractions of a cent, and the total is their sum: use the same
-  // four decimals everywhere below $1 so the total never looks coarser than its rows.
+  // Sessions cost fractions of a cent, and a $0 line is the same scale: use four
+  // decimals for every amount under $1, including zero, so Storage and Network
+  // do not read as $0.00 next to a $0.0075 compute line.
   const formatCost = (cost: number) => {
-    const digits = cost > 0 && cost < 1 ? 4 : 2;
+    const digits = Math.abs(cost) < 1 ? 4 : 2;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",

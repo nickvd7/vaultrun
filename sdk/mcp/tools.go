@@ -156,7 +156,7 @@ func toolDefinitions() []mcpTool {
 		},
 		{
 			Name:        "list_files",
-			Description: "List all files in the session workspace, including files created by running commands.",
+			Description: "List files in the session workspace, including files created by running commands. Symlinks are marked and are not reported as regular files.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
@@ -1109,6 +1109,10 @@ func (s *server) toolListFiles(ctx context.Context, args map[string]string) (mcp
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d file(s):\n", len(files))
 	for _, f := range files {
+		if f.Symlink {
+			fmt.Fprintf(&sb, "  %s  (symlink)\n", f.Path)
+			continue
+		}
 		fmt.Fprintf(&sb, "  %s  (%d bytes)  %s\n", f.Path, f.SizeBytes, f.ContentType)
 	}
 	return textResult(sb.String()), nil

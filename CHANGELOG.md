@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- A regular key's session Audit tab lists only that key's entries, the same scope as the audit page, so it no longer shows a row the integrity banner calls "not visible to you". The tab has a chain-number column, and audit details shorten UUIDs (the full value is on hover).
+- The file list marks symlinks (dashboard badge, `symlink: true`, content type `inode/symlink`) instead of presenting them as regular files. Downloads stay on real files.
+- Dashboard: filtering sessions by status with an empty search says "No stopped sessions" (and the same for other statuses). New Session focuses the name field. Opening a session that does not exist no longer requests its runs, files and checkpoints. Costs shows four decimals for every amount under $1, including $0 Storage and Network.
+
 ---
 
 ## [0.4.10] — 2026-10-19

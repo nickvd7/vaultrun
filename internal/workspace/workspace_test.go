@@ -104,7 +104,7 @@ func TestSafePathNormalization(t *testing.T) {
 	m.Create(id)
 
 	cases := []struct {
-		input    string
+		input      string
 		wantSuffix string
 	}{
 		{"foo.txt", "/foo.txt"},
@@ -199,6 +199,22 @@ func TestSymlinkEscapePrevention(t *testing.T) {
 	}
 	if exists {
 		t.Error("Exists must not report host path via escaping symlink")
+	}
+	if !m.IsSymlink(id, "escape-link") {
+		t.Error("IsSymlink must report an escaping symlink so the file list can mark it")
+	}
+	real := filepath.Join(sp, "real.txt")
+	if err := os.WriteFile(real, []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.txt", filepath.Join(sp, "inner-link")); err != nil {
+		t.Fatal(err)
+	}
+	if !m.IsSymlink(id, "/inner-link") {
+		t.Error("IsSymlink must report a symlink whose target stays in the workspace")
+	}
+	if m.IsSymlink(id, "real.txt") {
+		t.Error("IsSymlink must not report a regular file")
 	}
 	exists, err = m.Exists(id, "missing.txt")
 	if err != nil || exists {

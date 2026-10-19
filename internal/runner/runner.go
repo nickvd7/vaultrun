@@ -184,7 +184,7 @@ func (r *Runner) executeImpl(ctx context.Context, req RunRequest, run *models.Ru
 		if result.Stderr != "" {
 			stderr = result.Stderr
 		}
-		
+
 		// Best effort: log but don't fail the run if checkpoint creation fails
 		if err := r.checkpointHook(ctx, req.SessionID, run.ID, result.ExitCode, durationMS, stdout, stderr); err != nil {
 			slog.Warn("checkpoint creation failed", "session_id", req.SessionID, "run_id", run.ID, "err", err)
@@ -474,6 +474,11 @@ func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir s
 		contentType := mime.TypeByExtension(filepath.Ext(p))
 		if contentType == "" {
 			contentType = "application/octet-stream"
+		}
+		// A symlink is recorded so it shows up in the file list, but not as a
+		// regular file: the list marks it, and reads still refuse escapes.
+		if info.Mode()&os.ModeSymlink != 0 {
+			contentType = "inode/symlink"
 		}
 		now := time.Now().UTC()
 		f := &models.File{

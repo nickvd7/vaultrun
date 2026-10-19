@@ -13,6 +13,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Time } from "@/components/ui/Time";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
 import { MetadataInline, SigCell, actorLabel } from "@/components/audit/shared";
+import { useApiKey } from "@/components/ApiKeyGate";
 import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -95,10 +96,16 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     loadSession();
+  }, [id, loadSession]);
+
+  // Child resources are only useful once the session itself loaded. A missing
+  // or forbidden id would otherwise produce a run of 404s.
+  useEffect(() => {
+    if (loadState !== "ready" || session?.id !== id) return;
     loadRuns();
     loadCheckpoints();
     api.files.list(id).then(setFiles).catch(console.error);
-  }, [id, loadSession, loadRuns, loadCheckpoints]);
+  }, [id, loadState, session?.id, loadRuns, loadCheckpoints]);
 
   // Preselect a command that exists in the session's image (python is not in alpine).
   useEffect(() => {
@@ -818,17 +825,28 @@ function FilesTab({
             <tbody className="divide-y divide-slate-800/50">
               {files.map((f) => (
                 <tr key={f.id} className="hover:bg-slate-800/20">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">{f.path}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-200">{formatBytes(f.size_bytes)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono">{f.content_type}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">
+                    {f.path}
+                    {f.symlink && (
+                      <span className="ml-2 rounded border border-amber-800/60 bg-amber-950/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+                        symlink
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200">{f.symlink ? "—" : formatBytes(f.size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono">{f.symlink ? "symlink" : f.content_type}</td>
                   <td className="px-4 py-2.5 text-xs text-slate-200">{formatDate(f.updated_at)}</td>
                   <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={() => handleDownload(f.path)}
-                      className="text-xs text-indigo-300 hover:text-indigo-200"
-                    >
-                      Download
-                    </button>
+                    {f.symlink ? (
+                      <span className="text-xs text-slate-400">Not a file</span>
+                    ) : (
+                      <button
+                        onClick={() => handleDownload(f.path)}
+                        className="text-xs text-indigo-300 hover:text-indigo-200"
+                      >
+                        Download
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1047,6 +1065,7 @@ function CheckpointsTab({
 
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 function AuditTab({ sessionId }: { sessionId: string }) {
+  const { isMaster } = useApiKey();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -1075,6 +1094,9 @@ function AuditTab({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="space-y-2">
+      {isMaster === false && (
+        <p className="text-xs text-slate-300">Entries recorded under other keys are not listed here.</p>
+      )}
       <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
         {logs.length === 0 ? (
           <div className="p-6 text-center text-slate-300 text-sm">No audit events for this session.</div>
@@ -1082,6 +1104,7 @@ function AuditTab({ sessionId }: { sessionId: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 text-xs text-slate-200 uppercase tracking-wide">
+                <th scope="col" className="px-4 py-3 text-left font-medium">#</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Time</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
@@ -1092,6 +1115,9 @@ function AuditTab({ sessionId }: { sessionId: string }) {
             <tbody className="divide-y divide-slate-800/50">
               {logs.map((l) => (
                 <tr key={l.id} className="align-top hover:bg-slate-800/20">
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono whitespace-nowrap">
+                    {l.seq ?? <span className="text-slate-300" title="Written before chaining began">—</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-xs text-slate-200 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
                   <td className="px-4 py-2.5 text-xs text-slate-200 font-mono" title={l.actor_name ? `${l.actor_name} (${l.actor})` : l.actor}>
                     {actorLabel(l)}

@@ -37,7 +37,9 @@ export function MetadataPanel({ meta }: { meta: Record<string, unknown> }) {
       {entries.map(([k, v]) => (
         <Fragment key={k}>
           <dt className="text-slate-300 whitespace-nowrap">{k}</dt>
-          <dd className="text-slate-200 font-mono break-all">{typeof v === "string" ? v : JSON.stringify(v)}</dd>
+          <dd className="text-slate-200 font-mono break-all" title={displayValue(v).title}>
+            {displayValue(v).text}
+          </dd>
         </Fragment>
       ))}
     </dl>
@@ -119,10 +121,18 @@ export function OutOfOrderChip({ prevSeq }: { prevSeq?: number }) {
 }
 
 
-function metaValue(v: unknown): string {
-  if (typeof v === "string") return v;
-  if (Array.isArray(v) && v.every((x) => typeof x === "string" || typeof x === "number")) return v.join(" ");
-  return JSON.stringify(v);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Shorten a UUID for a table cell. The full value stays available as a tooltip. */
+function displayValue(v: unknown): { text: string; title?: string } {
+  if (typeof v === "string") {
+    if (UUID_RE.test(v)) return { text: `${v.slice(0, 8)}…`, title: v };
+    return { text: v };
+  }
+  if (Array.isArray(v) && v.every((x) => typeof x === "string" || typeof x === "number")) {
+    return { text: v.join(" ") };
+  }
+  return { text: JSON.stringify(v) };
 }
 
 /** Compact, wrapping key/value list for table cells (the full panel is for expanded rows). */
@@ -131,11 +141,15 @@ export function MetadataInline({ meta }: { meta: Record<string, unknown> }) {
   if (entries.length === 0) return <span className="text-slate-300">—</span>;
   return (
     <span className="flex flex-wrap gap-x-3 gap-y-0.5">
-      {entries.map(([k, v]) => (
-        <span key={k} className="whitespace-nowrap">
-          <span className="text-slate-300">{k}</span> <span className="text-slate-100 font-mono">{metaValue(v)}</span>
-        </span>
-      ))}
+      {entries.map(([k, v]) => {
+        const shown = displayValue(v);
+        return (
+          <span key={k} className="whitespace-nowrap">
+            <span className="text-slate-300">{k}</span>{" "}
+            <span className="text-slate-100 font-mono" title={shown.title}>{shown.text}</span>
+          </span>
+        );
+      })}
     </span>
   );
 }

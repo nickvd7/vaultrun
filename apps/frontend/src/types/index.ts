@@ -57,6 +57,8 @@ export interface File {
   path: string;
   size_bytes: number;
   content_type: string;
+  /** True when the workspace entry is a symlink, not a regular file. */
+  symlink?: boolean;
   created_at: string;
   updated_at: string;
 }

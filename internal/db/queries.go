@@ -336,9 +336,9 @@ func DeleteUnchainedAuditBefore(ctx context.Context, q ExecQuerier, before time.
 	return res.RowsAffected()
 }
 
-// AuditFilter narrows an audit log query. SessionID and Actor are the access
-// scope (SessionID wins, matching the long-standing behaviour); ActionPrefix,
-// From and To are optional user filters.
+// AuditFilter narrows an audit log query. SessionID and Actor are both applied
+// when set, so a regular key looking at one session still only sees its own
+// entries. ActionPrefix, From and To are optional user filters.
 type AuditFilter struct {
 	SessionID    *uuid.UUID
 	Actor        string
@@ -360,7 +360,8 @@ func (f AuditFilter) where() (string, []interface{}) {
 	}
 	if f.SessionID != nil {
 		add("session_id = $%d", *f.SessionID)
-	} else if f.Actor != "" {
+	}
+	if f.Actor != "" {
 		add("actor = $%d", f.Actor)
 	}
 	if f.ActionPrefix != "" {
@@ -406,8 +407,8 @@ func CountAuditLogsFiltered(ctx context.Context, db *sqlx.DB, f AuditFilter) (in
 }
 
 // ListAuditLogs returns audit log entries. When actor is non-empty only
-// that actor's log entries are returned (tenant isolation). When sessionID
-// is set it takes precedence. Master key passes actor="".
+// that actor's log entries are returned (tenant isolation), including when
+// sessionID is also set. Master key passes actor="".
 // Initialises the slice to non-nil so JSON always encodes [] instead of null.
 func ListAuditLogs(ctx context.Context, db *sqlx.DB, sessionID *uuid.UUID, actor string, limit, offset int) ([]*models.AuditLog, error) {
 	return ListAuditLogsFiltered(ctx, db, AuditFilter{SessionID: sessionID, Actor: actor}, limit, offset)

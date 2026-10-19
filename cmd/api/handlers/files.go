@@ -162,6 +162,11 @@ func (fh *FileHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list files"})
 		return
 	}
+	for _, f := range files {
+		if fh.h.ws.IsSymlink(sessionID, f.Path) {
+			f.Symlink = true
+		}
+	}
 	total, _ := dbpkg.CountFiles(c.Request.Context(), fh.h.db, sessionID)
 	c.JSON(http.StatusOK, gin.H{"files": files, "total": total})
 }

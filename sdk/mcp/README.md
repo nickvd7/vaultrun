@@ -130,7 +130,7 @@ Core: **53 tools**. With `MCP_FLOWD_ENABLED=true`: **59 tools**.
 | `run_command` | `session_id`, `command` | Execute a command inside the sandbox. |
 | `upload_file` | `session_id`, `path`, `content` | Write a file into the sandbox workspace. |
 | `read_file` | `session_id`, `path` | Read a file from the sandbox workspace. |
-| `list_files` | `session_id` | List files in the sandbox workspace. |
+| `list_files` | `session_id` | List files in the sandbox workspace. Symlinks are marked. |
 | `delete_file` | `session_id`, `path` | Delete a file from the sandbox workspace. |
 | `get_run` | `run_id` | Get run details (stdout, stderr, exit code, duration). |
 | `list_runs` | `session_id` | List all command runs for a session. |

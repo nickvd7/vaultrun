@@ -41,14 +41,15 @@ export default function CostsPage() {
     }
   };
 
-  // Short sessions cost fractions of a cent; two decimals would show them all as $0.00.
+  // Sessions cost fractions of a cent, and the total is their sum: use the same
+  // four decimals everywhere below $1 so the total never looks coarser than its rows.
   const formatCost = (cost: number) => {
-    const small = cost > 0 && cost < 0.01;
+    const digits = cost > 0 && cost < 1 ? 4 : 2;
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: small ? 4 : 2,
-      maximumFractionDigits: small ? 4 : 2,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(cost);
   };
 

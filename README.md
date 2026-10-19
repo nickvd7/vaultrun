@@ -59,6 +59,8 @@ curl http://localhost:8080/health
 
 Open `http://localhost:3000` for the dashboard.
 
+On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermod -aG docker $USER`, then **log out and in again** (or run `newgrp docker`) before `make up`; the new group is not picked up by shells that are already open. Running `make up` through `sudo` works too, but then `.env` and the workspace files belong to root.
+
 ## What's included
 
 | Component | Description |

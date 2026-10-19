@@ -242,6 +242,8 @@ type Integrity struct {
 
 	all          []IntegrityEntry
 	headProblems []string
+	chainedBy    map[string]int64
+	legacyBy     map[string]int64
 }
 
 // ScopedTo returns the verdict as seen by one key: the same status, but only
@@ -250,10 +252,15 @@ func (i *Integrity) ScopedTo(actor string) *Integrity {
 	out := *i
 	out.Scope = ScopeOwn
 	out.Entries, out.InvalidIDs, out.MissingSeqs = nil, nil, nil
-	var own, other int64
+	var own, other, ownAltered, ownAffected int64
 	for _, e := range i.all {
 		if e.actor == actor {
 			own++
+			if e.Kind == models.AuditKindChain {
+				ownAffected++
+			} else {
+				ownAltered++
+			}
 			if len(out.Entries) < maxReportedIDs {
 				out.Entries = append(out.Entries, e)
 				out.InvalidIDs = append(out.InvalidIDs, e.ID)
@@ -265,10 +272,14 @@ func (i *Integrity) ScopedTo(actor string) *Integrity {
 	// Entries past the cap on the stored list are all attributed to others.
 	other += i.InvalidEntries - int64(len(i.all))
 	out.OwnInvalidEntries, out.OtherInvalidEntries = &own, &other
+	out.ChainedEntries, out.LegacyEntries = i.chainedBy[actor], i.legacyBy[actor]
 
 	out.Problems = append([]string{}, i.headProblems...)
-	if own > 0 {
-		out.Problems = append(out.Problems, entryCount(own, "recorded under your key failed verification (marked Invalid in the table)", "recorded under your key failed verification (marked Invalid in the table)"))
+	if ownAltered > 0 {
+		out.Problems = append(out.Problems, entryCount(ownAltered, "recorded under your key was altered (marked Altered in the table)", "recorded under your key were altered (marked Altered in the table)"))
+	}
+	if ownAffected > 0 {
+		out.Problems = append(out.Problems, entryCount(ownAffected, "recorded under your key is intact but follows a changed entry (marked Affected in the table)", "recorded under your key are intact but follow a changed entry (marked Affected in the table)"))
 	}
 	if other > 0 {
 		out.Problems = append(out.Problems, entryCount(other, "recorded under another key failed verification (not visible to you)", "recorded under other keys failed verification (not visible to you)"))
@@ -310,7 +321,8 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Integrity{Scope: ScopeAll, CheckedAt: time.Now().UTC(), Problems: []string{}}
+	res := &Integrity{Scope: ScopeAll, CheckedAt: time.Now().UTC(), Problems: []string{},
+		chainedBy: map[string]int64{}, legacyBy: map[string]int64{}}
 	addInvalid := func(e *models.AuditLog, reason string, outOfOrder bool) {
 		res.InvalidEntries++
 		kind := reasonKind(reason)
@@ -361,6 +373,7 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 		}
 		haveChain = true
 		res.ChainedEntries++
+		res.chainedBy[e.Actor]++
 		seq := *e.Seq
 		contiguous := !first && seq == prevSeq+1
 		gap := (first && expectNext > 0 && seq > expectNext) || (!first && !contiguous)
@@ -446,11 +459,25 @@ func (l *Logger) scan(ctx context.Context) (*Integrity, error) {
 		}
 		_ = urows.Close()
 	}
-	var n int64
-	if err := l.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM audit_logs WHERE seq IS NULL`); err != nil {
+	lrows, err := l.db.QueryxContext(ctx, `SELECT actor, COUNT(*) FROM audit_logs WHERE seq IS NULL GROUP BY actor`)
+	if err != nil {
 		return nil, err
 	}
-	res.LegacyEntries = n
+	for lrows.Next() {
+		var actor string
+		var n int64
+		if err := lrows.Scan(&actor, &n); err != nil {
+			_ = lrows.Close()
+			return nil, err
+		}
+		res.legacyBy[actor] = n
+		res.LegacyEntries += n
+	}
+	if err := lrows.Err(); err != nil {
+		_ = lrows.Close()
+		return nil, err
+	}
+	_ = lrows.Close()
 
 	res.headProblems = append([]string{}, res.Problems...)
 	if res.AlteredEntries > 0 {
@@ -617,6 +644,7 @@ func (l *Logger) oldPrefix(ctx context.Context, tx *sqlx.Tx, head *dbpkg.AuditCh
 		first         = true
 		expect        = head.PrunedThrough + 1
 		problem       string
+		stoppedAt     int64
 	)
 	for rows.Next() {
 		var e models.AuditLog
@@ -625,6 +653,7 @@ func (l *Logger) oldPrefix(ctx context.Context, tx *sqlx.Tx, head *dbpkg.AuditCh
 			return 0, err
 		}
 		if !e.Timestamp.Before(before) {
+			stoppedAt = *e.Seq
 			break
 		}
 		seq := *e.Seq
@@ -650,6 +679,20 @@ func (l *Logger) oldPrefix(ctx context.Context, tx *sqlx.Tx, head *dbpkg.AuditCh
 	_ = rows.Close()
 	if err != nil {
 		return 0, err
+	}
+	if problem == "" && stoppedAt > 0 {
+		// The prefix ended at an entry that is still inside the retention
+		// window. An older entry further on can only be there because its
+		// timestamp was moved back; it is never deleted, but say so instead of
+		// quietly keeping everything.
+		var moved int64
+		err := tx.GetContext(ctx, &moved, `SELECT seq FROM audit_logs WHERE seq > $1 AND timestamp < $2 ORDER BY seq LIMIT 1`, stoppedAt, before)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+		if err == nil {
+			problem = fmt.Sprintf("entry #%d is dated before the retention cutoff but follows newer entries (its timestamp was moved back)", moved)
+		}
 	}
 	if problem != "" {
 		return 0, l.blocked(problem)

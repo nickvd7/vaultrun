@@ -52,7 +52,7 @@ export function ConfirmDialog({ open, title, message, confirmLabel = "Delete", b
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4">
       <div
-        role="alertdialog"
+        role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
         aria-describedby="confirm-message"

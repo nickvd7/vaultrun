@@ -45,7 +45,7 @@ const emptyForm = (orgId: string): FormState => ({
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const ALL_STATUSES = ["created", "running", "stopped", "error"];
 
-type FormErrors = Partial<Record<"name" | "cpu_limit" | "memory_limit_mb" | "timeout_seconds", string>>;
+type FormErrors = Partial<Record<"name" | "image" | "cpu_limit" | "memory_limit_mb" | "timeout_seconds", string>>;
 
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {};
@@ -53,13 +53,19 @@ function validate(form: FormState): FormErrors {
   if (name !== "" && !NAME_PATTERN.test(name)) {
     errors.name = "Use up to 64 letters, digits, spaces, '.', '_' or '-', starting with a letter or digit.";
   }
+  const image = form.image.trim();
+  if (image === "") {
+    errors.image = `Enter a Docker image (for example ${DEFAULT_IMAGE}).`;
+  } else if (/\s/.test(image) || image.length > 255) {
+    errors.image = "An image name has no spaces (for example python:3.12-slim).";
+  }
   const cpu = Number(form.cpu_limit);
-  if (form.cpu_limit.trim() === "" || !Number.isFinite(cpu) || cpu <= 0) {
-    errors.cpu_limit = "Enter a CPU limit greater than 0 (for example 0.5 or 2).";
+  if (form.cpu_limit.trim() === "" || !Number.isFinite(cpu) || cpu < 0.01) {
+    errors.cpu_limit = "Enter a CPU limit of at least 0.01 (for example 0.5 or 2).";
   }
   const mem = Number(form.memory_limit_mb);
-  if (form.memory_limit_mb.trim() === "" || !Number.isInteger(mem) || mem <= 0) {
-    errors.memory_limit_mb = "Enter a whole number of megabytes greater than 0.";
+  if (form.memory_limit_mb.trim() === "" || !Number.isInteger(mem) || mem < 6) {
+    errors.memory_limit_mb = "Enter a whole number of megabytes, at least 6.";
   }
   const timeout = Number(form.timeout_seconds);
   if (form.timeout_seconds.trim() === "" || !Number.isInteger(timeout) || timeout <= 0) {
@@ -122,7 +128,7 @@ export default function SessionsPage() {
     try {
       const created = await api.sessions.create({
         name: form.name.trim() || undefined,
-        image: form.image.trim() || DEFAULT_IMAGE,
+        image: form.image.trim(),
         network_enabled: form.network_enabled,
         cpu_limit: Number(form.cpu_limit),
         memory_limit_mb: Number(form.memory_limit_mb),
@@ -241,9 +247,17 @@ export default function SessionsPage() {
                 />
               )}
             </Field>
-            <Field label="Docker Image">
-              {(id) => (
-                <input id={id} value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder={DEFAULT_IMAGE} className={input} />
+            <Field label="Docker Image" error={touched ? errors.image : undefined}>
+              {(id, describedBy) => (
+                <input
+                  id={id}
+                  aria-invalid={touched && !!errors.image}
+                  aria-describedby={describedBy}
+                  value={form.image}
+                  onChange={(e) => setForm({ ...form, image: e.target.value })}
+                  placeholder={DEFAULT_IMAGE}
+                  className={input}
+                />
               )}
             </Field>
             <Field label="CPU Limit" error={touched ? errors.cpu_limit : undefined}>

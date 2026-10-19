@@ -43,6 +43,7 @@ export default function SessionDetailPage() {
   const [argsError, setArgsError] = useState("");
   const [runError, setRunError] = useState("");
   const [cmdTouched, setCmdTouched] = useState(false);
+  const [argsTouched, setArgsTouched] = useState(false);
   const [runTimeout, setRunTimeout] = useState("30");
   const [executing, setExecuting] = useState(false);
   const [streaming, setStreaming] = useState(false);
@@ -521,6 +522,9 @@ export default function SessionDetailPage() {
             onChange={(e) => {
               setCmd(e.target.value);
               setCmdTouched(true);
+              // The suggested arguments belong to the suggested command; drop them
+              // as soon as the user types their own command or whole command line.
+              if (!argsTouched) setArgs("");
             }}
             aria-label="Command"
             placeholder="command"
@@ -531,6 +535,7 @@ export default function SessionDetailPage() {
             onChange={(e) => {
               setArgs(e.target.value);
               setCmdTouched(true);
+              setArgsTouched(true);
               setArgsError("");
             }}
             aria-label="Arguments"

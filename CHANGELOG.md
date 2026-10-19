@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- The MCP HTTP server's `/metrics` is no longer open when only the server bearer token is set: it takes `MCP_METRICS_TOKEN`, else `METRICS_TOKEN`, else the server's own bearer token. It stays open only when none of them exist.
+- `exec` runs as the user the container was started with, so sandboxes created before v0.4.7 (user `nobody`) keep working next to new ones (API uid).
+- Dashboard: typing a command line in Command no longer duplicates the suggested arguments (the suggestion is dropped as soon as you type your own command).
+
 ---
 
 ## [0.4.8] — 2026-10-17

@@ -41,7 +41,7 @@ Redis keys: `mcp:task:<taskId>`, `mcp:tasks:inflight` (SET), pub/sub `mcp:tasks:
 
 When the MCP HTTP server is running, scrape Prometheus metrics at `GET /metrics`
 (same bind as the MCP port). Protect with `MCP_METRICS_TOKEN` or `METRICS_TOKEN`
-(`Authorization: Bearer …`); if unset the endpoint is open — restrict via network policy.
+(`Authorization: Bearer …`); if neither is set, `/metrics` takes the MCP server's own bearer token, and it is only open when the server has no token at all.
 
 | Metric | Type | Labels | Meaning |
 |--------|------|--------|---------|
@@ -203,7 +203,7 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 | `GET` | `/sse` | Legacy HTTP+SSE stub (deprecated in MCP 2026-07-28; prefer `POST /mcp`) |
 | `GET` | `/` | Server info JSON (includes `supported_versions`) |
 | `GET` | `/healthz` | Health check — returns `{"ok":true}` |
-| `GET` | `/metrics` | Prometheus metrics (optional `MCP_METRICS_TOKEN` / `METRICS_TOKEN`) |
+| `GET` | `/metrics` | Prometheus metrics (`MCP_METRICS_TOKEN` / `METRICS_TOKEN`, else the server bearer token) |
 
 ### Authentication
 

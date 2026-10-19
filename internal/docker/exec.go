@@ -103,13 +103,20 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 		return nil, fmt.Errorf("working_dir must be within /workspace or /tmp, got: %q", workingDir)
 	}
 
+	execUser := sandboxuser.User()
+	if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.Config != nil && info.Config.User != "" {
+		// Sandboxes created before v0.4.7 run as "nobody"; exec as the user the
+		// container was started with so their files stay writable.
+		execUser = info.Config.User
+	}
+
 	execID, err := c.inner.ContainerExecCreate(ctx, cfg.ContainerID, types.ExecConfig{
 		Cmd:          cmd,
 		Env:          env,
 		WorkingDir:   workingDir,
 		AttachStdout: true,
 		AttachStderr: true,
-		User:         sandboxuser.User(),
+		User:         execUser,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("exec create: %w", err)

@@ -116,6 +116,8 @@ func TestTaskMetrics_InputRequired(t *testing.T) {
 }
 
 func TestHTTPMetricsEndpoint(t *testing.T) {
+	t.Setenv("MCP_METRICS_TOKEN", "")
+	t.Setenv("METRICS_TOKEN", "")
 	eng := buildHTTPEngine(newTestServer(), httpConfig{
 		authToken:      "tok",
 		allowedOrigins: []string{"*"},
@@ -125,13 +127,24 @@ func TestHTTPMetricsEndpoint(t *testing.T) {
 	ts := httptest.NewServer(eng)
 	defer ts.Close()
 
+	// Without a dedicated metrics token, /metrics takes the server's bearer token.
 	resp, err := http.Get(ts.URL + "/metrics")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status %d, want 401", resp.StatusCode)
+	}
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/metrics", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, want 200", resp2.StatusCode)
 	}
 }
 

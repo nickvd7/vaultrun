@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Time } from "@/components/ui/Time";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
+import { MetadataInline, SigCell, actorLabel } from "@/components/audit/shared";
 import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -517,7 +518,7 @@ export default function SessionDetailPage() {
         </h2>
         <div className="flex gap-2">
           <input
-            className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 w-44 focus:outline-none focus:border-indigo-500"
+            className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm font-mono text-slate-200 w-40 sm:w-56 lg:w-72 focus:outline-none focus:border-indigo-500"
             value={cmd}
             onChange={(e) => {
               setCmd(e.target.value);
@@ -855,9 +856,10 @@ function CheckpointsTab({
   const [restoring, setRestoring] = useState(false);
   const [forking, setForking] = useState(false);
   const [forkName, setForkName] = useState("");
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const handleRestore = async (checkpointId: string) => {
-    if (!confirm("Restore session to this checkpoint? This will overwrite the current workspace.")) return;
     setRestoring(true);
     try {
       await api.checkpoints.restore(sessionId, checkpointId, false);
@@ -867,6 +869,7 @@ function CheckpointsTab({
       toast.error(e instanceof Error ? e.message : "Restore failed");
     } finally {
       setRestoring(false);
+      setConfirmRestore(null);
     }
   };
 
@@ -885,7 +888,7 @@ function CheckpointsTab({
   };
 
   const handleDelete = async (checkpointId: string) => {
-    if (!confirm("Delete this checkpoint?")) return;
+    setConfirmDeleteId(null);
     try {
       await api.checkpoints.delete(sessionId, checkpointId);
       onReload();
@@ -896,6 +899,23 @@ function CheckpointsTab({
 
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={confirmRestore !== null}
+        title="Restore this checkpoint?"
+        message="This overwrites the current workspace with the state of the checkpoint."
+        confirmLabel="Restore"
+        busyLabel="Restoring…"
+        busy={restoring}
+        onConfirm={() => confirmRestore && handleRestore(confirmRestore)}
+        onCancel={() => !restoring && setConfirmRestore(null)}
+      />
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete this checkpoint?"
+        message="The checkpoint is removed and cannot be restored afterwards."
+        onConfirm={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
       {checkpoints.length === 0 && (
         <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg p-8 text-center">
           <History className="w-12 h-12 mx-auto mb-3 text-slate-300" />
@@ -946,7 +966,7 @@ function CheckpointsTab({
                   <td className="px-4 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleRestore(cp.id); }}
+                        onClick={(e) => { e.stopPropagation(); setConfirmRestore(cp.id); }}
                         disabled={restoring}
                         className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-300 border border-emerald-900/50 rounded hover:bg-emerald-900/20 disabled:opacity-60"
                         title="Restore to this checkpoint"
@@ -962,7 +982,7 @@ function CheckpointsTab({
                         <GitFork className="w-3 h-3" /> Fork
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(cp.id); }}
+                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(cp.id); }}
                         className="flex items-center gap-1 px-2 py-1 text-xs text-red-300 border border-red-900/50 rounded hover:bg-red-900/20"
                         title="Delete checkpoint"
                         aria-label="Delete checkpoint"
@@ -1065,19 +1085,23 @@ function AuditTab({ sessionId }: { sessionId: string }) {
                 <th scope="col" className="px-4 py-3 text-left font-medium">Time</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Actor</th>
                 <th scope="col" className="px-4 py-3 text-left font-medium">Action</th>
-                <th scope="col" className="px-4 py-3 text-left font-medium">Metadata</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Details</th>
+                <th scope="col" className="px-4 py-3 text-left font-medium">Signature</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {logs.map((l) => (
-                <tr key={l.id} className="hover:bg-slate-800/20">
+                <tr key={l.id} className="align-top hover:bg-slate-800/20">
                   <td className="px-4 py-2.5 text-xs text-slate-200 font-mono whitespace-nowrap">{formatDate(l.timestamp)}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono" title={l.actor}>
-                    {l.actor.length > 16 ? l.actor.slice(0, 16) + "…" : l.actor}
+                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono" title={l.actor_name ? `${l.actor_name} (${l.actor})` : l.actor}>
+                    {actorLabel(l)}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-indigo-200">{l.action}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-200 font-mono truncate max-w-xs" title={JSON.stringify(l.metadata)}>
-                    {JSON.stringify(l.metadata)}
+                  <td className="px-4 py-2.5 text-xs">
+                    <MetadataInline meta={l.metadata} />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <SigCell log={l} />
                   </td>
                 </tr>
               ))}

@@ -1,37 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldAlert, ShieldQuestion, ArrowUpDown } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Download, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { Notice } from "@/components/ui/Notice";
 import { useToast } from "@/components/ui/Toast";
 import { badgeBase } from "@/lib/utils";
 import { Time } from "@/components/ui/Time";
+import { OutOfOrderChip, SigCell, MetadataPanel, NS_CHIP, actorLabel, namespace, sigState } from "@/components/audit/shared";
+import type { Namespace } from "@/components/audit/shared";
 import type { AuditIntegrity, AuditIntegrityEntry, AuditLog } from "@/types";
 
 // ── action colouring ─────────────────────────────────────────────────────────
-
-type Namespace = "session" | "file" | "command" | "apikey" | "secret" | "other";
-
-function namespace(action: string): Namespace {
-  if (action.startsWith("session.")) return "session";
-  if (action.startsWith("file.")) return "file";
-  if (action.startsWith("command.")) return "command";
-  if (action.startsWith("apikey.")) return "apikey";
-  if (action.startsWith("secret.")) return "secret";
-  return "other";
-}
-
-const NS_CHIP: Record<Namespace, string> = {
-  session: "bg-blue-900/30 text-blue-200 border border-blue-800/50",
-  file: "bg-emerald-900/30 text-emerald-200 border border-emerald-800/50",
-  command: "bg-indigo-900/30 text-indigo-200 border border-indigo-800/50",
-  apikey: "bg-amber-900/30 text-amber-200 border border-amber-800/50",
-  secret: "bg-rose-900/30 text-rose-200 border border-rose-800/50",
-  other: "bg-slate-800 text-slate-300 border border-slate-700",
-};
 
 type NSFilter = Exclude<Namespace, "other"> | "all";
 
@@ -50,26 +32,6 @@ const PAGE_SIZE = 50;
 const EXPORT_CAP = 5000;
 
 // ── metadata display ─────────────────────────────────────────────────────────
-
-function actorLabel(l: AuditLog): string {
-  const name = l.actor_name || l.actor;
-  return name.length > 20 ? name.slice(0, 20) + "…" : name;
-}
-
-function MetadataPanel({ meta }: { meta: Record<string, unknown> }) {
-  const entries = Object.entries(meta);
-  if (entries.length === 0) return <span className="text-slate-300">—</span>;
-  return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-      {entries.map(([k, v]) => (
-        <Fragment key={k}>
-          <dt className="text-slate-300 whitespace-nowrap">{k}</dt>
-          <dd className="text-slate-200 font-mono break-all">{typeof v === "string" ? v : JSON.stringify(v)}</dd>
-        </Fragment>
-      ))}
-    </dl>
-  );
-}
 
 function download(filename: string, mime: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type: mime }));
@@ -91,80 +53,6 @@ function toCSV(rows: AuditLog[]): string {
     [l.seq, l.timestamp, l.actor, l.actor_name, l.action, l.session_id, l.run_id, sigState(l)?.kind, l.sig_kind, l.sig_reason, l.out_of_order, l.metadata].map(csvCell).join(",")
   );
   return [header.join(","), ...lines].join("\n") + "\n";
-}
-
-type SigKind = "valid" | "invalid" | "unsigned" | "unverifiable" | "unverified";
-
-interface SigState {
-  kind: SigKind;
-  label: string;
-  title: string;
-  className: string;
-}
-
-const SIG_STATES: Record<SigKind, Omit<SigState, "kind">> = {
-  valid: { label: "Verified", title: "Signature verified", className: "text-emerald-300" },
-  invalid: {
-    label: "Invalid",
-    title: "Signature does not match, or was removed: this entry may have been altered",
-    className: "text-red-300",
-  },
-  unsigned: {
-    label: "Unsigned",
-    title: "Written before audit signing was enabled",
-    className: "text-slate-300",
-  },
-  unverifiable: {
-    label: "Legacy",
-    title: "Signed by an older version whose signatures cannot be verified",
-    className: "text-slate-300",
-  },
-  unverified: {
-    label: "Unverified",
-    title: "Signature does not verify (this API does not say whether the entry predates signing)",
-    className: "text-amber-300",
-  },
-};
-
-/** What to show for an entry's signature; null when the server does not sign entries. */
-function sigState(l: AuditLog): SigState | null {
-  const kind: SigKind | null = l.sig_status ?? (l.sig_valid === true ? "valid" : l.sig_valid === false ? "unverified" : null);
-  return kind ? { kind, ...SIG_STATES[kind] } : null;
-}
-
-function SigCell({ log }: { log: AuditLog }) {
-  const st = sigState(log);
-  if (!st) return null;
-  const affected = st.kind === "invalid" && log.sig_kind === "chain";
-  const label = affected ? "Affected" : st.kind === "invalid" && log.sig_kind === "altered" ? "Altered" : st.label;
-  const color = affected ? "text-amber-300" : st.className;
-  const title = affected
-    ? "This entry is intact, but the entry before it was changed or deleted"
-    : log.sig_reason
-      ? `${st.title} (${log.sig_reason})`
-      : st.title;
-  const Icon = st.kind === "valid" ? ShieldCheck : st.kind === "invalid" || st.kind === "unverified" ? ShieldAlert : ShieldQuestion;
-  return (
-    <span title={log.sig_detail || title} className={`inline-flex flex-col text-xs ${color}`}>
-      <span className="inline-flex items-center gap-1">
-        <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-        {label}
-      </span>
-      {st.kind === "invalid" && log.sig_reason && <span className="font-normal">{log.sig_reason}</span>}
-    </span>
-  );
-}
-
-function OutOfOrderChip({ prevSeq }: { prevSeq?: number }) {
-  return (
-    <span
-      className="mt-1 inline-flex items-center gap-1 text-xs text-amber-300"
-      title={`Dated earlier than the entry before it${prevSeq ? ` (#${prevSeq})` : ""}: an untouched log never shows this`}
-    >
-      <ArrowUpDown className="w-3 h-3" aria-hidden="true" />
-      Out of order
-    </span>
-  );
 }
 
 /** Verdict over the whole log, so a problem on page 2 is visible from page 1. */
@@ -313,6 +201,7 @@ export default function AuditPage() {
   const [integrity, setIntegrity] = useState<AuditIntegrity | null>(null);
   const [sort, setSort] = useState<SortOrder>("time");
   const [focus, setFocus] = useState<Focus | null>(null);
+  const pendingFocusId = useRef<string | null>(null);
 
   const loadIntegrity = useCallback((refresh: boolean) => {
     api.audit
@@ -413,8 +302,21 @@ export default function AuditPage() {
     setSearch("");
     setFocus(e.seq ? { seq: e.seq, label: `entry #${e.seq}` } : { id: e.id, label: "one entry" });
     setExpanded(new Set([e.id]));
-    document.getElementById("audit-table")?.scrollIntoView?.({ block: "start" });
+    pendingFocusId.current = e.id;
   };
+
+  // Once the filtered list has loaded, move keyboard focus (and the screen
+  // reader cursor) to the entry that "Show in table" asked for.
+  useEffect(() => {
+    const id = pendingFocusId.current;
+    if (!id || loading) return;
+    const row = document.getElementById(`audit-row-${id}`);
+    if (row) {
+      pendingFocusId.current = null;
+      row.focus();
+      row.scrollIntoView?.({ block: "center" });
+    }
+  }, [logs, loading, filtered]);
 
   const hasFilters = nsFilter !== "all" || from !== "" || to !== "" || focus !== null;
   const firstShown = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -602,7 +504,7 @@ export default function AuditPage() {
                 const hasDetail = true;
                 return (
                   <Fragment key={l.id}>
-                    <tr className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 ${l.sig_status === "invalid" ? (l.sig_kind === "chain" ? "bg-amber-950/20" : "bg-red-950/20") : ""}`}>
+                    <tr id={`audit-row-${l.id}`} tabIndex={-1} className={`border-t border-slate-800/50 transition-colors hover:bg-slate-800/20 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-400 ${l.sig_status === "invalid" ? (l.sig_kind === "chain" ? "bg-amber-950/20" : "bg-red-950/20") : ""}`}>
                       <td className="px-3 py-2.5 text-slate-300">
                         {hasDetail && (
                           <button

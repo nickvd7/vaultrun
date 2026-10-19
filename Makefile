@@ -41,7 +41,7 @@ up:
 	@./scripts/ensure-secrets.sh .env
 	@./scripts/check-env.sh .env
 	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
-	  ./scripts/wait-healthy.sh .env $$([ $$rc -eq 0 ] && echo 90 || echo 15) || exit 1; exit $$rc
+	  if [ $$rc -eq 0 ]; then ./scripts/wait-healthy.sh .env 90 || exit 1; else ./scripts/wait-healthy.sh .env 15 compose-failed || true; fi; exit $$rc
 
 # Local development only: opt out of the secure-by-default startup checks.
 dev-env:

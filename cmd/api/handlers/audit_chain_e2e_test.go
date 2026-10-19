@@ -227,7 +227,7 @@ func TestAuditRetentionIgnoresBackdatedEntry(t *testing.T) {
 		al := chainLogger(t, 6)
 		testDB.MustExec(`UPDATE audit_logs SET timestamp = '2026-01-01' WHERE action = 'test.event6'`)
 		n, err := al.Prune(context.Background(), cutoff)
-		if err != nil || n != 0 || auditCount(t) != 6 {
+		if !errors.Is(err, audit.ErrPruneBlocked) || n != 0 || auditCount(t) != 6 {
 			t.Fatalf("prune: n=%d err=%v left=%d", n, err, auditCount(t))
 		}
 		if res := integrity(t, al); res.Status != audit.IntegrityCompromised || res.MissingEntries != 0 {
@@ -235,11 +235,11 @@ func TestAuditRetentionIgnoresBackdatedEntry(t *testing.T) {
 		}
 	})
 
-	t.Run("old entries are still pruned, the backdated one stays", func(t *testing.T) {
+	t.Run("backdated entry behind recent ones pauses retention, nothing is deleted", func(t *testing.T) {
 		al := chainLoggerAged(t, 2, 4)
 		testDB.MustExec(`UPDATE audit_logs SET timestamp = '2026-01-01' WHERE action = 'test.event6'`)
 		n, err := al.Prune(context.Background(), cutoff)
-		if err != nil || n != 2 || auditCount(t) != 4 {
+		if !errors.Is(err, audit.ErrPruneBlocked) || !strings.Contains(err.Error(), "#6") || n != 0 || auditCount(t) != 6 {
 			t.Fatalf("prune: n=%d err=%v left=%d", n, err, auditCount(t))
 		}
 		res := integrity(t, al)
@@ -391,7 +391,18 @@ func TestAuditIntegrityScopedToOneKey(t *testing.T) {
 	if alice.Status != audit.IntegrityCompromised || len(alice.Problems) == 0 {
 		t.Fatalf("scoped verdict lost the status: %+v", alice)
 	}
+	if alice.ChainedEntries != 4 || res.ChainedEntries != 5 {
+		t.Fatalf("chained_entries must count the key's own entries: alice=%d total=%d", alice.ChainedEntries, res.ChainedEntries)
+	}
+	for _, p := range alice.Problems {
+		if strings.Contains(p, "Invalid") {
+			t.Fatalf("scoped problems must use Altered/Affected wording: %q", p)
+		}
+	}
 	bob := res.ScopedTo("bob")
+	if bob.ChainedEntries != 1 {
+		t.Fatalf("bob chained_entries = %d", bob.ChainedEntries)
+	}
 	if *bob.OwnInvalidEntries != 1 || *bob.OtherInvalidEntries != 2 {
 		t.Fatalf("bob: own=%d other=%d", *bob.OwnInvalidEntries, *bob.OtherInvalidEntries)
 	}

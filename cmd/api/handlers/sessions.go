@@ -60,6 +60,15 @@ const (
 	maxLabelValueLen = 256
 )
 
+// sessionAuditMeta adds the session name to audit metadata, so an entry stays
+// readable after the session itself is gone.
+func sessionAuditMeta(s *models.Session, meta models.JSONB) models.JSONB {
+	if s != nil && s.Name != nil && *s.Name != "" {
+		meta["name"] = *s.Name
+	}
+	return meta
+}
+
 func validateLabels(labels map[string]string) error {
 	if len(labels) > maxLabels {
 		return fmt.Errorf("at most %d labels are allowed", maxLabels)
@@ -381,13 +390,13 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		Actor:     actor,
 		SessionID: &sessionID,
 		Action:    models.ActionSessionCreated,
-		Metadata: models.JSONB{
+		Metadata: sessionAuditMeta(session, models.JSONB{
 			"image":           req.Image,
 			"network_enabled": req.NetworkEnabled,
 			"cpu_limit":       req.CPULimit,
 			"memory_limit_mb": req.MemoryLimitMB,
 			"timeout_seconds": req.TimeoutSeconds,
-		},
+		}),
 	})
 
 	metrics.ActiveSessions.Inc()
@@ -507,7 +516,7 @@ func (sh *SessionHandler) Delete(c *gin.Context) {
 		Actor:     actor,
 		SessionID: &id,
 		Action:    models.ActionSessionDeleted,
-		Metadata:  models.JSONB{},
+		Metadata:  sessionAuditMeta(session, models.JSONB{"image": session.Image}),
 	})
 
 	metrics.ActiveSessions.Dec()

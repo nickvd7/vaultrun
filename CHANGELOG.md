@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- Audit: for a regular key, `chained_entries`/`legacy_entries` now count only that key's entries, and the warning says "marked Altered"/"marked Affected" (as in the table) instead of "Invalid".
+- `session.created` and `session.deleted` audit entries carry the session name (when set) and image.
+- `make up` says "docker compose reported an error" when compose fails and no longer claims a wait it did not do.
+- Dashboard: the session Audit tab shows key names, a signature column and readable details; "Show in table" moves focus to the entry; confirmation dialogs have `role="dialog"` and checkpoint restore/delete use them; an empty Docker Image (or too small CPU/memory) gives a field error; the Costs total shows 4 decimals for amounts under $1; the Command field is wider.
+- README: Linux users must log in again (or `newgrp docker`) after being added to the docker group.
+
+### Fixed
+- Audit retention now pauses (and logs why) when an entry in the middle of the log is dated before the cutoff but follows newer entries (backdated timestamp); nothing is deleted.
+
 ---
 
 ## [0.4.9] — 2026-10-19

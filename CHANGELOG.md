@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.4.12] — 2026-10-19
+
+The `v0.4.11` tag points at this same work, but it was created before these version strings were bumped. Repository rules do not allow moving or deleting that tag, so the versioned release is 0.4.12.
+
 ### Changed
 - A regular key's session Audit tab lists only that key's entries, the same scope as the audit page, so it no longer shows a row the integrity banner calls "not visible to you". The tab has a chain-number column, and audit details shorten UUIDs (the full value is on hover).
 - The file list marks symlinks (dashboard badge, `symlink: true`, content type `inode/symlink`) instead of presenting them as regular files. Downloads stay on real files.

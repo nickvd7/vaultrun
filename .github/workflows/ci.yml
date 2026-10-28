@@ -138,7 +138,8 @@ jobs:
           sha512sum -c gvisor.tar.bz2.sha512
           sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin
           sudo /usr/local/bin/runsc install
-          sudo systemctl restart docker
+          # reload, not restart: runtimes are reloadable and the Postgres service container keeps running
+          sudo systemctl reload docker
           docker info --format '{{json .Runtimes}}' | grep -q runsc
 
       - name: Sandbox runtime tests (gVisor)

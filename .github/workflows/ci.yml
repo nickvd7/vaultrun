@@ -132,10 +132,11 @@ jobs:
       # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
       - name: Install gVisor (runsc)
         run: |
-          URL=https://storage.googleapis.com/gvisor/releases/release/latest/$(uname -m)
-          curl -fsSLO "$URL/runsc" && curl -fsSLO "$URL/runsc.sha512"
-          sha512sum -c runsc.sha512
-          chmod +x runsc && sudo mv runsc /usr/local/bin/
+          # Pinned release; releases ship one tarball (runsc + gvisor-bin/).
+          URL=https://storage.googleapis.com/gvisor/releases/release/20261019.0/$(uname -m)
+          curl -fsSLO "$URL/gvisor.tar.bz2" && curl -fsSLO "$URL/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin
           sudo /usr/local/bin/runsc install
           sudo systemctl restart docker
           docker info --format '{{json .Runtimes}}' | grep -q runsc

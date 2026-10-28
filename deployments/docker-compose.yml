@@ -73,6 +73,7 @@ services:
       - DOCKER_IMAGE_ALLOWLIST=${DOCKER_IMAGE_ALLOWLIST:-}
       # Seccomp + cosign (optional but recommended in production)
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
+      - DOCKER_RUNTIME=${DOCKER_RUNTIME:-}
       - COSIGN_PUBLIC_KEY=${COSIGN_PUBLIC_KEY:-}
       - NETPOLICY_CONTAINER=vaultrun-netpolicy
       # Database TLS (set to require or verify-full in production)

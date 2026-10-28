@@ -127,6 +127,22 @@ The embedded profile (sourced from `deployments/seccomp/vaultrun-seccomp.json`)
 is compiled into the binary via `//go:embed` so the binary is fully self-contained
 and does not depend on external files or the daemon's default filter.
 
+### Sandbox runtime (gVisor)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DOCKER_RUNTIME` | | OCI runtime every sandbox (and warm pool container) is created with. Empty = the daemon's default (`runc`). Set `runsc` to run sandboxes under [gVisor](https://gvisor.dev), whose user-space kernel sits between untrusted code and the host kernel. |
+
+The runtime must be registered with the Docker daemon (`runsc install` adds it to
+`/etc/docker/daemon.json`; restart Docker afterwards). The API checks this at
+startup and refuses to start if the daemon does not know the runtime, rather
+than silently running sandboxes under `runc`. Each `session.created` audit entry
+records the runtime in its signed metadata (`"runtime": "runsc"`).
+
+Under gVisor, GPU sessions (`DOCKER_GPU_DEVICES`) only start when `runsc` is
+configured with `--nvproxy`. Syscall-heavy workloads run slower, and a few
+rarely used syscalls are not implemented; test your images before switching.
+
 ### Cosign Image Signature Verification
 
 | Variable | Default | Description |

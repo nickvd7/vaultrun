@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `DOCKER_RUNTIME` runs every sandbox under another OCI runtime; `runsc` gives each sandbox gVisor's user-space kernel, so code in a sandbox no longer talks to the host kernel directly. Warm pool containers use it too. The API refuses to start when the Docker daemon has not registered the runtime (no silent fallback to `runc`), and `session.created` audit entries record it. CI runs the end-to-end tests under gVisor as well. See [configuration.md](docs/configuration.md#sandbox-runtime-gvisor).
+
 ---
 
 ## [0.4.12] — 2026-10-19

@@ -149,7 +149,7 @@ func (p *Pool) fill(ctx context.Context) {
 
 // createOne starts a single warm container with a fresh temporary workspace.
 // It performs cosign signature verification before creating the container and
-// applies the same seccomp profile as CreateSandbox.
+// applies the same seccomp profile and OCI runtime as CreateSandbox.
 func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 	// Verify image signature before creating a container — same policy as CreateSandbox.
 	// VerifyImage returns the digest-pinned reference; use it for ContainerCreate
@@ -204,6 +204,7 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 		SecurityOpt:    secOpt,
 		CapDrop:        []string{"ALL"},
 		CapAdd:         []string{},
+		Runtime:        p.dockerCli.Runtime(),
 	}
 
 	name := fmt.Sprintf("vaultrun-warm-%s", wsID.String()[:8])

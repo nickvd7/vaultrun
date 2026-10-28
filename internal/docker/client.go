@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ type Client struct {
 	seccompJSON     string // raw JSON profile; "default" = daemon explicit default
 	cosignPublicKey string // path to cosign public key file; empty = verification disabled
 	requireTlog     bool   // COSIGN_REQUIRE_TLOG=true: pass --tlog-verify to cosign (requires Rekor)
+	runtime         string // DOCKER_RUNTIME: OCI runtime for sandboxes (e.g. "runsc"); empty = daemon default
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
@@ -44,6 +46,11 @@ type Client struct {
 // Cosign: when COSIGN_PUBLIC_KEY points to a PEM public key, every image is
 // verified with `cosign verify --key <file> <image>` before use. If the key
 // is set but the cosign binary is missing, CreateSandbox fails closed.
+//
+// Runtime: DOCKER_RUNTIME names the OCI runtime every sandbox runs under, for
+// example "runsc" (gVisor). Empty uses the daemon's default runtime (runc).
+// Call CheckRuntime at startup so a runtime the daemon does not know is
+// reported before the first session instead of failing every session.
 func New() (*Client, error) {
 	c, err := client.NewClientWithOpts(
 		client.FromEnv,
@@ -85,7 +92,55 @@ func New() (*Client, error) {
 		slog.Warn("docker: cosign image verification disabled (set COSIGN_PUBLIC_KEY to enable)")
 	}
 
+	dc.runtime = strings.TrimSpace(os.Getenv("DOCKER_RUNTIME"))
+	if dc.runtime != "" {
+		slog.Info("docker: sandboxes use OCI runtime", "runtime", dc.runtime)
+	}
+
 	return dc, nil
+}
+
+// ErrRuntimeUnavailable means DOCKER_RUNTIME names a runtime the Docker daemon
+// has not registered.
+var ErrRuntimeUnavailable = errors.New("docker runtime not registered with the daemon")
+
+// Runtime returns the OCI runtime sandboxes are created with ("" = daemon
+// default). Used by the warm pool so it isolates containers the same way as
+// CreateSandbox.
+func (c *Client) Runtime() string {
+	if c == nil {
+		return ""
+	}
+	return c.runtime
+}
+
+// CheckRuntime verifies that the configured runtime is registered with the
+// Docker daemon. It is a no-op when DOCKER_RUNTIME is empty.
+func (c *Client) CheckRuntime(ctx context.Context) error {
+	if c.runtime == "" {
+		return nil
+	}
+	info, err := c.inner.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("docker info: %w", err)
+	}
+	names := make([]string, 0, len(info.Runtimes))
+	for name := range info.Runtimes {
+		names = append(names, name)
+	}
+	return checkRuntimeRegistered(c.runtime, names)
+}
+
+// checkRuntimeRegistered reports ErrRuntimeUnavailable, listing the runtimes
+// the daemon does know, when want is not among registered.
+func checkRuntimeRegistered(want string, registered []string) error {
+	for _, name := range registered {
+		if name == want {
+			return nil
+		}
+	}
+	sort.Strings(registered)
+	return fmt.Errorf("%w: %q (daemon has: %s)", ErrRuntimeUnavailable, want, strings.Join(registered, ", "))
 }
 
 func (c *Client) Inner() *client.Client {

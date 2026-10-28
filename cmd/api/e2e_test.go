@@ -270,6 +270,14 @@ sys.exit(0)
 		for _, l := range logs {
 			entry := l.(map[string]any)
 			seen[entry["action"].(string)] = true
+			// With DOCKER_RUNTIME set (CI runs this test under gVisor), the
+			// signed session.created entry names the runtime.
+			if entry["action"] == "session.created" {
+				meta, _ := entry["metadata"].(map[string]any)
+				if want := dockerClient.Runtime(); want != "" && meta["runtime"] != want {
+					t.Errorf("audit_trail: session.created runtime = %v, want %q", meta["runtime"], want)
+				}
+			}
 		}
 
 		required := []string{

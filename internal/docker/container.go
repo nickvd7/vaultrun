@@ -62,6 +62,7 @@ const labelNetID = "vaultrun.netid" // Docker container label that records the s
 //  3. Per-session Docker bridge network creation + iptables egress rules
 //     (only when NetworkEnabled && len(AllowedHosts) > 0)
 //  4. Container create + start with seccomp, CapDrop ALL, no-new-privileges
+//     and the configured OCI runtime (DOCKER_RUNTIME, e.g. gVisor's runsc)
 func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, error) {
 	// ── Step 1: image signature verification ────────────────────────────────
 	//
@@ -242,6 +243,9 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		CapDrop:        []string{"ALL"},
 		CapAdd:         []string{},
 		ExtraHosts:     extraHosts,
+		// Runtime selects the OCI runtime (DOCKER_RUNTIME). With "runsc" the
+		// sandbox gets gVisor's user-space kernel instead of the host kernel.
+		Runtime: c.runtime,
 	}
 
 	// GPU device requests — only applied when GPUDevices is set and the host

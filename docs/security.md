@@ -33,6 +33,7 @@ VaultRun is designed to safely execute untrusted AI agent code. The primary thre
 | Home directory isolation | `HOME=/tmp` — tools that write to `$HOME` (pip cache, Python bytecode, etc.) land in the ephemeral `/tmp` tmpfs, not the rootfs |
 | No docker.sock exposure | The container never gets access to the Docker socket |
 | Seccomp syscall filter | Embedded vaultrun profile applied at compile time via `//go:embed`; no external file dependency |
+| User-space kernel (optional) | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor, so a kernel exploit in sandboxed code hits gVisor's Sentry instead of the host kernel. The API refuses to start if the runtime is not registered, and `session.created` audit entries record it. See [configuration.md](configuration.md#sandbox-runtime-gvisor) |
 
 ### Network Egress Filtering
 
@@ -201,7 +202,7 @@ With `AUDIT_HMAC_KEY` set, entries are also signed and **chained**: each carries
 | No secret injection at the container level | Env vars in runs are stored as plaintext JSONB in Postgres. Use a secrets broker sidecar for sensitive values. |
 | Single-node only | No distributed runner pool; horizontal scale requires sharding by session ID |
 | Docker socket on host | The API process requires access to `/var/run/docker.sock` |
-| No gVisor / microVM isolation | Container escape attacks are mitigated by seccomp + CapDrop but not eliminated; consider Firecracker for higher-risk workloads |
+| Shared host kernel by default | With the default `runc` runtime, container escape attacks are mitigated by seccomp + CapDrop but not eliminated. Set `DOCKER_RUNTIME=runsc` (gVisor) for untrusted code; there is no microVM (Firecracker) runner yet |
 | OPA policy file only | The policy hook supports OPA/Rego; no UI for rule management |
 
 ## Recommendations for Production
@@ -215,6 +216,7 @@ The API refuses to start with open defaults unless `VAULTRUN_INSECURE_DEV=true` 
 4. Set `MASTER_API_KEY` to a cryptographically random value and clear it after bootstrapping
 5. Set `DOCKER_IMAGE_ALLOWLIST` to restrict container images to your approved set
 6. Set `COSIGN_PUBLIC_KEY` and sign all approved images — fail closed on unsigned images
+7. Set `DOCKER_RUNTIME=runsc` (gVisor) when sandboxes run code you do not trust, so it does not run directly on the host kernel
 7. Set `WEBHOOK_SECRET` for all async callback endpoints
 8. Place the API behind a firewall; only expose port 8080/443 to trusted callers
 9. Monitor audit logs for anomalous patterns (unusual commands, high file download rates)

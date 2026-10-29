@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -84,12 +85,91 @@ func RequestTimestamp(ctx context.Context, client *http.Client, url string, env 
 	if ts.Nonce == nil || ts.Nonce.Cmp(nonce) != 0 {
 		return errors.New("timestamp authority response: nonce does not match the request")
 	}
-	env.Timestamp = ts.RawToken
-	if _, err := checkToken(env); err != nil {
+	env.Timestamp, env.TimestampChain = ts.RawToken, nil
+	p7, err := checkToken(env)
+	if err != nil {
 		env.Timestamp = nil
 		return err
 	}
+	env.TimestampChain = fetchIntermediates(ctx, client, p7)
 	return nil
+}
+
+// fetchIntermediates follows the Authority Information Access URLs from the
+// TSA's certificate up to (not including) a self-signed root, for the CA
+// certificates the token does not carry. Public TSAs ship only their own
+// certificate. It is best effort: what cannot be fetched is left out, and
+// VerifyTimestamp then reports the chain as untrusted.
+func fetchIntermediates(ctx context.Context, client *http.Client, p7 *pkcs7.PKCS7) [][]byte {
+	cur := p7.GetOnlySigner()
+	if cur == nil {
+		return nil
+	}
+	var chain [][]byte
+	for hop := 0; hop < 4 && !selfSigned(cur); hop++ {
+		if issuer := issuerIn(cur, p7.Certificates); issuer != nil {
+			cur = issuer
+			continue
+		}
+		if len(cur.IssuingCertificateURL) == 0 {
+			return chain
+		}
+		issuer, err := fetchCert(ctx, client, cur.IssuingCertificateURL[0])
+		if err != nil || !bytes.Equal(issuer.RawSubject, cur.RawIssuer) || cur.CheckSignatureFrom(issuer) != nil {
+			return chain
+		}
+		if selfSigned(issuer) {
+			return chain // roots come from the verifier's trust store, never from here
+		}
+		chain = append(chain, issuer.Raw)
+		cur = issuer
+	}
+	return chain
+}
+
+func selfSigned(c *x509.Certificate) bool {
+	return bytes.Equal(c.RawSubject, c.RawIssuer) && c.CheckSignatureFrom(c) == nil
+}
+
+func issuerIn(c *x509.Certificate, certs []*x509.Certificate) *x509.Certificate {
+	for _, cand := range certs {
+		if cand != c && bytes.Equal(cand.RawSubject, c.RawIssuer) && c.CheckSignatureFrom(cand) == nil {
+			return cand
+		}
+	}
+	return nil
+}
+
+// fetchCert downloads a CA certificate as DER, PEM or a PKCS#7 bundle.
+func fetchCert(ctx context.Context, client *http.Client, url string) (*x509.Certificate, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return nil, err
+	}
+	if c, err := x509.ParseCertificate(data); err == nil {
+		return c, nil
+	}
+	if block, _ := pem.Decode(data); block != nil {
+		return x509.ParseCertificate(block.Bytes)
+	}
+	if p7, err := pkcs7.Parse(data); err == nil && len(p7.Certificates) > 0 {
+		return p7.Certificates[0], nil
+	}
+	return nil, fmt.Errorf("%s: not a certificate", url)
 }
 
 // VerifyTimestamp checks env.Timestamp: that it covers env's signature and is
@@ -118,12 +198,22 @@ func VerifyTimestamp(env *Envelope, roots *x509.CertPool) (*TimestampInfo, error
 			return info, fmt.Errorf("%w: no system roots: %v", ErrTimestampUntrusted, err)
 		}
 	}
+	intermediates := x509.NewCertPool()
+	for _, c := range p7.Certificates {
+		intermediates.AddCert(c)
+	}
+	for _, der := range env.TimestampChain {
+		if c, err := x509.ParseCertificate(der); err == nil {
+			intermediates.AddCert(c)
+		}
+	}
 	// The signer is found by issuer and serial in the token, so a trusted
 	// certificate merely included next to another signer does not count.
 	err = p7.VerifyWithOpts(x509.VerifyOptions{
-		Roots:       roots,
-		CurrentTime: ts.Time,
-		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping},
+		Roots:         roots,
+		Intermediates: intermediates,
+		CurrentTime:   ts.Time,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageTimeStamping},
 	})
 	if err != nil {
 		return info, fmt.Errorf("%w: %v", ErrTimestampUntrusted, err)

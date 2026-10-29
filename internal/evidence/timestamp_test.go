@@ -178,6 +178,14 @@ func TestRealTSA(t *testing.T) {
 	if err := evidence.RequestTimestamp(ctx, http.DefaultClient, url, env); err != nil {
 		t.Fatalf("RequestTimestamp(%s): %v", url, err)
 	}
+	p7, err := pkcs7.Parse(env.Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range p7.Certificates {
+		t.Logf("token certificate: %s (issuer %s, AIA %v)", c.Subject, c.Issuer, c.IssuingCertificateURL)
+	}
+	t.Logf("intermediates fetched via AIA: %d", len(env.TimestampChain))
 	info, err := evidence.VerifyTimestamp(env, nil)
 	if err != nil {
 		t.Fatalf("VerifyTimestamp with system roots: %v", err)
@@ -197,5 +205,35 @@ func TestLoadCertPool(t *testing.T) {
 	_ = os.WriteFile(bad, []byte("not a cert"), 0o644)
 	if _, err := evidence.LoadCertPool(bad); err == nil {
 		t.Error("garbage accepted")
+	}
+}
+
+// Public TSAs (DigiCert, Sectigo) put only their own certificate in the
+// token; the intermediate comes from the certificate's AIA URL. It is fetched
+// once when stamping and stored in the pack, so verification stays offline.
+func TestTimestampFetchesMissingIntermediate(t *testing.T) {
+	tsa := evidencetest.NewTSA(t, evidencetest.Options{Intermediate: true})
+	_, env := signedEnvelope(t)
+	if err := evidence.RequestTimestamp(context.Background(), http.DefaultClient, tsa.URL, env); err != nil {
+		t.Fatalf("RequestTimestamp: %v", err)
+	}
+	if tsa.AIAFetches != 1 || len(env.TimestampChain) != 1 {
+		t.Fatalf("intermediate not fetched/stored: fetches=%d chain=%d", tsa.AIAFetches, len(env.TimestampChain))
+	}
+	tsa.Fail = true // offline from here on
+	raw, _ := json.Marshal(env)
+	reopened, _ := evidence.Open(raw)
+	if _, err := evidence.VerifyTimestamp(reopened, tsa.Roots); err != nil {
+		t.Fatalf("VerifyTimestamp with stored intermediate: %v", err)
+	}
+	// Without the stored intermediate the chain cannot be built.
+	reopened.TimestampChain = nil
+	if _, err := evidence.VerifyTimestamp(reopened, tsa.Roots); !errors.Is(err, evidence.ErrTimestampUntrusted) {
+		t.Errorf("without intermediate: want ErrTimestampUntrusted, got %v", err)
+	}
+	// A stored "intermediate" cannot make an untrusted TSA trusted.
+	other := evidencetest.NewTSA(t, evidencetest.Options{})
+	if _, err := evidence.VerifyTimestamp(env, other.Roots); !errors.Is(err, evidence.ErrTimestampUntrusted) {
+		t.Errorf("other roots: want ErrTimestampUntrusted, got %v", err)
 	}
 }

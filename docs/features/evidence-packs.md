@@ -116,6 +116,11 @@ Timestamp 2026-10-29 07:24:19 UTC by CN=DigiCert SHA256 RSA4096 Timestamp Respon
 - The server checks the same before handing out a pack and answers `502` when
   the TSA fails, so a deployment that asks for timestamps never exports a pack
   without one.
+- Public TSAs put only their own certificate in the token. The intermediate
+  CA certificates are fetched once from the certificate's Authority
+  Information Access URL when stamping and stored in the pack
+  (`timestamp_chain`), so verification stays offline. They only help build a
+  chain to a root the verifier already trusts.
 - Servers that cannot reach a TSA: stamp the file afterwards from another
   machine with `vaultrun evidence timestamp pack.json --tsa <url>`.
 

@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -43,6 +44,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/evidence"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
@@ -104,6 +106,10 @@ func TestE2ESmoke(t *testing.T) {
 
 	// ── 2. Build the full router ──────────────────────────────────────────────
 	wsDir := t.TempDir()
+	evidenceKey, _, err := evidence.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg := &config.Config{
 		Auth: config.AuthConfig{MasterKey: e2eMasterKey},
 		Docker: config.DockerConfig{
@@ -115,8 +121,9 @@ func TestE2ESmoke(t *testing.T) {
 			// container is created.
 			GPUDevices: "all",
 		},
-		Server:    config.ServerConfig{RateLimit: 0},
-		Workspace: config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
+		Server:        config.ServerConfig{RateLimit: 0},
+		Workspace:     config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
+		Observability: config.ObservabilityConfig{EvidenceSigningKey: evidenceKey},
 	}
 
 	al := audit.New(db, "")
@@ -385,6 +392,76 @@ sys.exit(0)
 			t.Errorf("artifact_detection: /artifact.txt not found in file list after run; files: %v", files)
 		}
 	})
+
+	// ── 14. Evidence pack — export, verify offline, check contents ────────────
+	t.Run("evidence_pack", func(t *testing.T) {
+		keyResp := c.getMap("/api/v1/evidence/public-key")
+		pemStr, _ := keyResp["public_key_pem"].(string)
+		pub, err := evidence.ParsePublicKeyPEM([]byte(pemStr))
+		if err != nil {
+			t.Fatalf("public key: %v", err)
+		}
+		raw := c.getRaw("/api/v1/sessions/" + sessionID + "/evidence")
+		pack, err := evidence.Verify(raw, pub)
+		if err != nil {
+			t.Fatalf("verify exported pack: %v", err)
+		}
+
+		if pack.Session.ID != sessionID || pack.Session.Image != e2eImage || pack.Session.Runtime != dockerClient.Runtime() {
+			t.Errorf("session = %+v", pack.Session)
+		}
+		if pack.Audit.Scope != evidence.AuditScopeAll || pack.ExportedBy != "master" {
+			t.Errorf("master export: scope=%q exported_by=%q", pack.Audit.Scope, pack.ExportedBy)
+		}
+		var helloRun *evidence.Run
+		for i, r := range pack.Runs {
+			if len(r.Args) > 0 && r.Args[0] == "/workspace/hello.py" {
+				helloRun = &pack.Runs[i]
+			}
+		}
+		if helloRun == nil || helloRun.ExitCode == nil || *helloRun.ExitCode != 0 ||
+			!strings.Contains(helloRun.Stdout, "hello from vaultrun e2e") || helloRun.StdoutSHA256 != evidence.SHA256Hex(helloRun.Stdout) {
+			t.Errorf("hello.py run missing or wrong: %+v", helloRun)
+		}
+		for i := 1; i < len(pack.Runs); i++ {
+			if pack.Runs[i].CreatedAt.Before(pack.Runs[i-1].CreatedAt) {
+				t.Errorf("runs not oldest first")
+			}
+		}
+		files := map[string]string{}
+		for _, f := range pack.Files {
+			files[f.Path] = f.SHA256
+		}
+		if files["/artifact.txt"] != evidence.SHA256Hex("detected") || files["/hello.py"] == "" {
+			t.Errorf("files = %v", files)
+		}
+		actions := map[string]bool{}
+		for _, e := range pack.Audit.Entries {
+			actions[e.Action] = true
+		}
+		for _, a := range []string{"session.created", "file.uploaded", "command.started", "command.finished"} {
+			if !actions[a] {
+				t.Errorf("audit entries lack %s: %v", a, actions)
+			}
+		}
+
+		// One changed byte anywhere in the pack breaks the signature.
+		var env evidence.Envelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatal(err)
+		}
+		env.Pack = bytes.Replace(env.Pack, []byte("hello from vaultrun e2e"), []byte("hello from vaultrun E2E"), 1)
+		tampered, _ := json.Marshal(env)
+		if _, err := evidence.Verify(tampered, pub); !errors.Is(err, evidence.ErrBadSignature) {
+			t.Errorf("tampered pack: want ErrBadSignature, got %v", err)
+		}
+
+		// The export itself is audited.
+		audit := c.getMap("/api/v1/audit?session_id=" + sessionID + "&action=evidence.exported")
+		if logs, _ := audit["audit_logs"].([]any); len(logs) != 1 {
+			t.Errorf("want one evidence.exported entry, got %d", len(logs))
+		}
+	})
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -502,6 +579,23 @@ func (c *smokeClient) postStatus(path string, body map[string]any) (int, string)
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(raw)
+}
+
+// getRaw returns the body of a successful GET.
+func (c *smokeClient) getRaw(path string) []byte {
+	c.t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, c.base+path, nil)
+	req.Header.Set("X-API-Key", c.key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatalf("GET %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		c.t.Fatalf("GET %s: status %d: %s", path, resp.StatusCode, body)
+	}
+	return body
 }
 
 func (c *smokeClient) deleteRaw(path string) {

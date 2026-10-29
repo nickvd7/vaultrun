@@ -380,6 +380,30 @@ func TestDownloadFile(t *testing.T) {
 	}
 }
 
+func TestExportEvidence(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/sessions/sess-8/evidence", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") == "" {
+			t.Error("missing API key")
+		}
+		fmt.Fprint(w, `{"pack":"e30=","signature":{"alg":"ed25519"}}`)
+	})
+	mux.HandleFunc("/api/v1/sessions/sess-9/evidence", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotImplemented)
+		fmt.Fprint(w, `{"error":"evidence export is not configured"}`)
+	})
+
+	_, client := newServer(t, mux)
+
+	body, err := client.ExportEvidence(context.Background(), "sess-8")
+	if err != nil || !strings.HasPrefix(string(body), `{"pack"`) {
+		t.Fatalf("ExportEvidence: %q, %v", body, err)
+	}
+	if _, err := client.ExportEvidence(context.Background(), "sess-9"); err == nil || !strings.Contains(err.Error(), "501") {
+		t.Errorf("unconfigured server: want 501 error, got %v", err)
+	}
+}
+
 func TestDownloadWorkspace(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/sessions/sess-7/workspace.zip", func(w http.ResponseWriter, r *http.Request) {

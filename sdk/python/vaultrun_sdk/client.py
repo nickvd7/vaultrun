@@ -459,6 +459,20 @@ class Client:
         self._raise_for_status(resp)
         return resp.content
 
+    def export_evidence(self, session_id: str) -> bytes:
+        """Download the session's signed evidence pack.
+
+        Write the bytes to a file and verify it offline with
+        ``vaultrun evidence verify pack.json --key vaultrun-evidence.pub``.
+        The server needs ``EVIDENCE_SIGNING_KEY``.
+        """
+        resp = self._session.get(
+            self.base_url + f"/api/v1/sessions/{session_id}/evidence",
+            timeout=self._timeout,
+        )
+        self._raise_for_status(resp)
+        return resp.content
+
     def download_workspace(self, session_id: str) -> bytes:
         """Download the entire session workspace as a ZIP archive."""
         resp = self._session.get(

@@ -57,6 +57,7 @@ type Logger struct {
 	scanMu      sync.Mutex
 	integrity   *Integrity
 	integrityAt time.Time
+	integrityFP string
 
 	now func() time.Time
 }

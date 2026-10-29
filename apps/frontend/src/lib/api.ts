@@ -11,11 +11,28 @@ function getApiKey(): string {
 // Keep a named export for components that need the raw key (e.g. streaming fetch)
 export function getStoredApiKey(): string { return getApiKey(); }
 
+/**
+ * Stored in place of an API key when the user signed in with single sign-on
+ * (VaultRun Enterprise). Requests then carry the HttpOnly session cookie the
+ * API set, instead of a key header.
+ */
+export const SSO_SESSION = "sso-session";
+
+/**
+ * Credentials for a request: the API key header, or nothing for an SSO
+ * session (the browser sends the cookie). Every request also says it comes
+ * from the dashboard: the API requires that header before it accepts a
+ * session cookie on a request that changes something, which a page on
+ * another site cannot add without the API's consent (CSRF protection).
+ */
+export function authHeaders(key: string = getApiKey()): Record<string, string> {
+  const h: Record<string, string> = { "X-VaultRun-Client": "dashboard" };
+  if (key && key !== SSO_SESSION) h["X-API-Key"] = key;
+  return h;
+}
+
 function getHeaders(): HeadersInit {
-  return {
-    "Content-Type": "application/json",
-    "X-API-Key": getApiKey(),
-  };
+  return { "Content-Type": "application/json", ...authHeaders() };
 }
 
 /** Error from the API carrying the HTTP status so callers can tell 404 from 403 from 5xx. */
@@ -71,8 +88,72 @@ export interface AuditQuery {
   limit?: number;
 }
 
+/** GET /api/v1/info (API 0.4.13 and later). */
+export interface ServerInfo {
+  version: string;
+  edition: string;
+  /** E.g. the license the Enterprise edition runs under; empty for Community. */
+  edition_detail?: string;
+  sandbox: { runtime: string; gvisor: boolean };
+  evidence: { enabled: boolean; timestamped: boolean };
+}
+
+/** Single sign-on endpoints (VaultRun Enterprise). They live under /auth, next to /api. */
+export const sso = {
+  /** Which SSO providers the server offers; null when it offers none (or is not Enterprise). */
+  providers: async (): Promise<{ oidc: boolean; saml: boolean } | null> => {
+    try {
+      const resp = await fetch(`${API_BASE}/auth/providers`, { credentials: "same-origin" });
+      if (!resp.ok) return null;
+      const body = (await resp.json()) as { oidc?: boolean; saml?: boolean };
+      return body.oidc || body.saml ? { oidc: Boolean(body.oidc), saml: Boolean(body.saml) } : null;
+    } catch {
+      return null;
+    }
+  },
+  /** True when the browser holds a valid SSO session cookie. */
+  hasSession: async (): Promise<boolean> => {
+    try {
+      const resp = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders(SSO_SESSION), credentials: "same-origin" });
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  },
+  loginURL: (provider: "oidc" | "saml") => `${API_BASE}/auth/${provider}/login`,
+  /** Ends the session on the server; throws when the server could not revoke it. */
+  logout: async (): Promise<void> => {
+    const resp = await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      headers: authHeaders(SSO_SESSION),
+      credentials: "same-origin",
+    });
+    if (!resp.ok && resp.status !== 401) {
+      const body = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new ApiError(body.error || `HTTP ${resp.status}`, resp.status);
+    }
+  },
+  /** Issues a new personal API key for the signed-in user (shown once) and retires the previous one. */
+  createApiKey: async (): Promise<{ api_key: string; prefix: string }> => {
+    const resp = await fetch(`${API_BASE}/auth/api-key`, {
+      method: "POST",
+      headers: authHeaders(SSO_SESSION),
+      credentials: "same-origin",
+    });
+    const body = await resp.json().catch(() => ({ error: resp.statusText }));
+    if (!resp.ok) throw new ApiError(body.error || `HTTP ${resp.status}`, resp.status);
+    return body;
+  },
+};
+
 // Sessions
 export const api = {
+  /** null when the API predates /info. */
+  info: () => request<ServerInfo>("/info").catch((e: unknown) => {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }),
+
   sessions: {
     list: (page = 1, limit = 20) =>
       request<{ sessions: Session[]; pagination: Pagination }>(
@@ -94,6 +175,10 @@ export const api = {
 
     delete: (id: string) =>
       request<void>(`/sessions/${id}`, { method: "DELETE" }),
+
+    /** The signed evidence pack (JSON), for `vaultrun evidence verify`. */
+    evidence: (id: string) =>
+      fetch(`${API_BASE}/api/v1/sessions/${id}/evidence`, { headers: authHeaders() }),
 
     updateLabels: (id: string, labels: Record<string, string>) =>
       request<{ labels: Record<string, string> }>(`/sessions/${id}/labels`, {
@@ -170,7 +255,7 @@ export const api = {
 
       const resp = await fetch(`${API_BASE}/api/v1/sessions/${sessionId}/files`, {
         method: "POST",
-        headers: { "X-API-Key": getApiKey() },
+        headers: authHeaders(),
         body: form,
       });
 
@@ -183,7 +268,7 @@ export const api = {
 
     download: (sessionId: string, path: string) =>
       fetch(`${API_BASE}/api/v1/sessions/${sessionId}/files/${path}`, {
-        headers: { "X-API-Key": getApiKey() },
+        headers: authHeaders(),
       }),
   },
 
@@ -270,7 +355,7 @@ export const api = {
 
     download: (snapshotId: string) =>
       fetch(`${API_BASE}/api/v1/snapshots/${snapshotId}/download`, {
-        headers: { "X-API-Key": getApiKey() },
+        headers: authHeaders(),
       }),
   },
 
@@ -292,7 +377,7 @@ export const api = {
     /** The endpoint needs the API key header, so a plain <a href> would get a 401. */
     download: (id: string) =>
       fetch(`${API_BASE}/api/v1/artifacts/${id}/download`, {
-        headers: { "X-API-Key": getApiKey() },
+        headers: authHeaders(),
       }),
   },
 

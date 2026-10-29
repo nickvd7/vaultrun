@@ -11,6 +11,7 @@ import type { CostBreakdown, CostAlert } from "@/types";
 
 export default function CostsPage() {
   const toast = useToast();
+  const [hideEnded, setHideEnded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null);
   const [alerts, setAlerts] = useState<CostAlert[]>([]);
@@ -73,7 +74,9 @@ export default function CostsPage() {
     return <div className="text-slate-300 text-sm p-8" role="status">Loading costs…</div>;
   }
 
-  const topSessions = breakdown.top_sessions ?? [];
+  const allTopSessions = breakdown.top_sessions ?? [];
+  const endedCount = allTopSessions.filter((s) => s.stopped_at).length;
+  const topSessions = hideEnded ? allTopSessions.filter((s) => !s.stopped_at) : allTopSessions;
 
   const computePct = breakdown.total_cost > 0 ? (breakdown.compute_cost / breakdown.total_cost) * 100 : 0;
   const storagePct = breakdown.total_cost > 0 ? (breakdown.storage_cost / breakdown.total_cost) * 100 : 0;
@@ -171,15 +174,24 @@ export default function CostsPage() {
           <h2 className="text-sm font-medium text-slate-300 uppercase tracking-wide flex items-center gap-2">
             <TrendingUp className="w-4 h-4" /> Top Spending Sessions
           </h2>
-          {breakdown.total_sessions !== undefined && topSessions.length > 0 && (
+          {breakdown.total_sessions !== undefined && allTopSessions.length > 0 && (
             <p className="mt-1 text-xs text-slate-300" role="status">
-              {topSessions.length < breakdown.total_sessions
-                ? `Showing the ${topSessions.length} highest of ${breakdown.total_sessions} sessions.`
+              {allTopSessions.length < breakdown.total_sessions
+                ? `Showing the ${allTopSessions.length} highest of ${breakdown.total_sessions} sessions.`
                 : `${breakdown.total_sessions} session${breakdown.total_sessions === 1 ? "" : "s"}.`}
+              {endedCount > 0 && " Deleted and stopped sessions stay listed, marked ended: their cost was incurred this period."}
             </p>
           )}
+          {endedCount > 0 && (
+            <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" checked={hideEnded} onChange={(e) => setHideEnded(e.target.checked)} />
+              Hide {endedCount} ended session{endedCount === 1 ? "" : "s"}
+            </label>
+          )}
         </div>
-        {topSessions.length === 0 ? (
+        {topSessions.length === 0 && allTopSessions.length > 0 ? (
+          <div className="p-6 text-center text-slate-300 text-sm">All sessions with cost this period have ended.</div>
+        ) : topSessions.length === 0 ? (
           <div className="p-6 text-center text-slate-300 text-sm">
             No session has accrued cost in this period yet. Costs are billed every minute for CPU and memory
             allocated; sessions whose cost rounds to $0.0000 are not listed.

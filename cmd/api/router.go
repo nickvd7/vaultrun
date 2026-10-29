@@ -172,7 +172,7 @@ func newRouter(
 	}
 
 	api := r.Group("/api/v1")
-	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey, nil)
+	authMW := middleware.APIKeyAuth(db, cfg.Auth.MasterKey, ent.sessions)
 
 	// Per-actor rate limit (after auth, so we know the actor identity).
 	actorLimit := cfg.ActorRateLimitPerMin()
@@ -245,6 +245,7 @@ func newRouter(
 	evH := handlers.NewEvidenceHandler(hub)
 	authGroup.GET("/sessions/:id/evidence", evH.Export)
 	authGroup.GET("/evidence/public-key", evH.PublicKey)
+	authGroup.GET("/info", health.Info)
 
 	filesH := handlers.NewFileHandler(hub)
 	authGroup.POST("/sessions/:id/files", filesH.Upload)

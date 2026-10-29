@@ -29,7 +29,7 @@ export function MasterKeyNotice({ what }: { what: string }) {
   return (
     <Notice title="Master key required">
       {what} is only available with the master key (<code className="font-mono">MASTER_API_KEY</code> in your{" "}
-      <code className="font-mono">.env</code>). You are signed in with a regular API key. Disconnect and sign in with the master key to use this page.
+      <code className="font-mono">.env</code>). You are signed in without it; sign in with the master key to use this page.
     </Notice>
   );
 }

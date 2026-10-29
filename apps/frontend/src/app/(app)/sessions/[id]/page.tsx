@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Play, Zap, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check, History, RotateCcw, GitFork } from "lucide-react";
+import { ArrowLeft, Play, Zap, FileCheck, Upload, FileText, ScrollText, Trash2, Square, Tag, Plus, X, Check, History, RotateCcw, GitFork } from "lucide-react";
 import Link from "next/link";
-import { api, getStoredApiKey, ApiError } from "@/lib/api";
+import { api, authHeaders, ApiError } from "@/lib/api";
 import { splitCommandLine, formatArgs, defaultCommandFor, formatCommand } from "@/lib/shellwords";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Notice } from "@/components/ui/Notice";
@@ -14,6 +14,7 @@ import { Time } from "@/components/ui/Time";
 import { formatBytes, formatDuration, formatDate } from "@/lib/utils";
 import { MetadataInline, SigCell, actorLabel } from "@/components/audit/shared";
 import { useApiKey } from "@/components/ApiKeyGate";
+import { useServerInfo, isolationLabel } from "@/lib/serverInfo";
 import type { Session, Run, File, Checkpoint, AuditLog } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -32,6 +33,8 @@ export default function SessionDetailPage() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "notfound" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const serverInfo = useServerInfo();
   const [deleting, setDeleting] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -175,7 +178,7 @@ export default function SessionDetailPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-Key": getStoredApiKey(),
+          ...authHeaders(),
           "Accept": "text/event-stream",
         },
         body: JSON.stringify(body),
@@ -267,6 +270,34 @@ export default function SessionDetailPage() {
       toast.error(e instanceof Error ? e.message : "Upload failed");
     }
     if (fileRef.current) fileRef.current.value = "";
+  };
+
+  // Downloads the signed evidence pack, which anyone can check offline with
+  // `vaultrun evidence verify` and the server's public key.
+  const handleExportEvidence = async () => {
+    setExporting(true);
+    try {
+      const resp = await api.sessions.evidence(id);
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(body.error || `HTTP ${resp.status}`);
+      }
+      const url = URL.createObjectURL(await resp.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vaultrun-evidence-${id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        resp.headers.get("X-Evidence-Timestamp")
+          ? "Evidence pack downloaded (signed and timestamped)"
+          : "Evidence pack downloaded (signed)"
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to export evidence");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -387,21 +418,34 @@ export default function SessionDetailPage() {
             <p className="text-xs text-slate-200 mt-0.5 font-mono">{session.id}</p>
           </div>
         </div>
-        <button
-          onClick={() => setConfirmDelete(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-300 border border-red-900/50 rounded hover:bg-red-900/20"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Delete
-        </button>
+        <div className="flex items-center gap-2">
+          {serverInfo?.evidence.enabled && (
+            <button
+              onClick={handleExportEvidence}
+              disabled={exporting}
+              title="Download the signed evidence pack; verify it offline with `vaultrun evidence verify`"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs text-slate-200 border border-slate-700 rounded hover:bg-slate-800 disabled:opacity-60"
+            >
+              <FileCheck className="w-3.5 h-3.5" aria-hidden="true" /> {exporting ? "Exporting…" : "Export evidence"}
+            </button>
+          )}
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-300 border border-red-900/50 rounded hover:bg-red-900/20"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
       </div>
 
       {/* Session info */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${serverInfo ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
         {[
           { label: "Image", value: session.image },
           { label: "CPU", value: `${session.cpu_limit} core(s)` },
           { label: "Memory", value: `${session.memory_limit_mb} MB` },
           { label: "Network", value: session.network_enabled ? "Enabled" : "Disabled" },
+          ...(serverInfo ? [{ label: "Isolation", value: isolationLabel(serverInfo) }] : []),
         ].map(({ label, value }) => (
           <div key={label} className="bg-[#0f0f1a] border border-slate-800 rounded-md px-4 py-3">
             <div className="text-xs text-slate-200 mb-1">{label}</div>

@@ -407,3 +407,22 @@ func TestAuditIntegrityScopedToOneKey(t *testing.T) {
 		t.Fatalf("bob: own=%d other=%d", *bob.OwnInvalidEntries, *bob.OtherInvalidEntries)
 	}
 }
+
+func TestAuditIntegrityCacheSeesDirectEdits(t *testing.T) {
+	al := chainLogger(t, 3)
+	ctx := context.Background()
+	if res, err := al.Integrity(ctx, false); err != nil || res.Status != audit.IntegrityOK {
+		t.Fatalf("before: %+v %v", res, err)
+	}
+	if _, err := testDB.Exec(`UPDATE audit_logs SET actor = 'mallory' WHERE action = 'test.event2'`); err != nil {
+		t.Fatal(err)
+	}
+	// Not forced: the cached verdict must not hide the edit.
+	res, err := al.Integrity(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != audit.IntegrityCompromised || res.AlteredEntries != 1 {
+		t.Fatalf("after edit: %+v", res)
+	}
+}

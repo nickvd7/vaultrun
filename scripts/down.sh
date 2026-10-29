@@ -5,11 +5,18 @@
 # and the workspace files stay, so sessions survive `make up` again.
 # --all:   also remove every sandbox container, per-session network and egress
 #          rule the API created, and the files in the workspace directory
-#          (WORKSPACE_HOST_DIR). Sessions are gone afterwards.
-# Usage: scripts/down.sh [--all] [.env]
+#          (WORKSPACE_HOST_DIR). Sessions are gone afterwards. The database,
+#          Redis and certificate volumes are kept.
+# --purge: everything --all does, and also delete those volumes: API keys, the
+#          audit log, evidence and TLS certificates are gone afterwards.
+# Usage: scripts/down.sh [--all|--purge] [.env]
 set -u
 ALL=0
-if [ "${1:-}" = "--all" ]; then ALL=1; shift; fi
+PURGE=0
+case "${1:-}" in
+  --all) ALL=1; shift ;;
+  --purge) ALL=1; PURGE=1; shift ;;
+esac
 ENV_FILE="${1:-.env}"
 COMPOSE=(docker compose -f deployments/docker-compose.yml --env-file "$ENV_FILE")
 
@@ -48,7 +55,11 @@ if [ -n "$nets" ]; then
   docker network rm $nets >/dev/null 2>&1 || true
 fi
 
-"${COMPOSE[@]}" down
+if [ "$PURGE" -eq 1 ]; then
+  "${COMPOSE[@]}" down --volumes
+else
+  "${COMPOSE[@]}" down
+fi
 
 # Session directories belong to the API user (uid 65532) and are mode 0700, so
 # a throwaway root container removes them. The base directory itself is kept.
@@ -58,4 +69,9 @@ if docker run --rm -v "$WS:/ws" alpine:3.21 sh -c 'test -n "$(ls -A /ws)"' >/dev
   echo "Removing session files in $WS..."
   docker run --rm -v "$WS:/ws" alpine:3.21 sh -c 'find /ws -mindepth 1 -maxdepth 1 -exec rm -rf {} +' \
     || echo "Warning: could not remove the contents of $WS; remove them manually with sudo."
+fi
+
+if [ "$PURGE" -eq 0 ]; then
+  echo "Kept the database, Redis and certificate volumes (API keys, audit log, evidence)."
+  echo "'make purge' removes those too."
 fi

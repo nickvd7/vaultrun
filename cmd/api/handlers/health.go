@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -76,9 +77,33 @@ func (hh *HealthHandler) Health(c *gin.Context) {
 		code = http.StatusServiceUnavailable
 	}
 
-	resp := gin.H{"status": status, "version": version.Version(), "checks": checks}
+	resp := gin.H{"status": status, "version": version.Version(), "edition": version.Edition, "checks": checks}
 	if hh.h.cfg.MultiRegion.Region != "" {
 		resp["region"] = hh.h.cfg.MultiRegion.Region
 	}
 	c.JSON(code, resp)
+}
+
+// GET /api/v1/info
+// What this server offers, for the dashboard: release and edition, the OCI
+// runtime sandboxes run under, and whether evidence packs and external
+// timestamps are configured. Any authenticated key may read it.
+func (hh *HealthHandler) Info(c *gin.Context) {
+	runtime := ""
+	if hh.h.docker != nil {
+		runtime = hh.h.docker.Runtime()
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"version":        version.Version(),
+		"edition":        version.Edition,
+		"edition_detail": version.EditionDetail,
+		"sandbox": gin.H{
+			"runtime": runtime,
+			"gvisor":  runtime == "runsc" || strings.HasPrefix(runtime, "runsc-"),
+		},
+		"evidence": gin.H{
+			"enabled":     hh.h.evidenceSigner != nil,
+			"timestamped": hh.h.evidenceTSAURL != "",
+		},
+	})
 }

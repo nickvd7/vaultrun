@@ -306,11 +306,28 @@ SAML_KEY_FILE=/path/to/saml.key
 | `SSO_SESSION_MAX_AGE_HOURS` | `24` | Session lifetime in hours |
 | `SSO_SESSION_SECURE` | `true` when TLS is active | Set `Secure` flag on the session cookie. Set `false` only in local dev without TLS. |
 
-**Additional SSO routes (require active session):**
+| `SSO_POST_LOGIN_URL` | `/dashboard` | Where the browser lands after signing in |
+
+## SSO — Access policy
+
+See [SSO setup: who may sign in](sso-setup.md#who-may-sign-in-and-with-what-access).
+
+| Variable | Default | Description |
+|---|---|---|
+| `SSO_ALLOWED_DOMAINS` | *(any)* | Comma-separated e-mail domains that may sign in |
+| `SSO_ALLOWED_GROUPS` | *(any)* | Comma-separated IdP groups; the user must be in at least one |
+| `SSO_GROUPS_CLAIM` | `groups` | OIDC claim listing the user's groups |
+| `SSO_ROLE_MAPPING` | | `group=org-slug:role,…` (viewer, executor, admin); synced at every sign-in for the orgs it names |
+| `SSO_ALLOWED_SECRETS` | *(none)* | Secrets SSO users may inject into runs; `*` = all |
+| `SSO_ALLOW_UNVERIFIED_EMAIL` | `false` | Accept `email_verified=false` from an OIDC IdP |
+
+**Additional SSO routes:**
 | Route | Description |
 |---|---|
-| `GET /auth/me` | Returns the authenticated SSO user's profile |
-| `POST /auth/logout` | Clears the session cookie |
+| `GET /auth/providers` | Which SSO methods are configured (public; the dashboard uses it for its sign-in buttons) |
+| `GET /auth/me` | Returns the authenticated SSO user's profile (session required) |
+| `POST /auth/api-key` | Issues the signed-in user's personal API key, shown once (session + `X-VaultRun-Client` header required) |
+| `POST /auth/logout` | Revokes the session and clears the cookie (`X-VaultRun-Client` header required); `503` when the session could not be revoked server-side |
 
 ---
 

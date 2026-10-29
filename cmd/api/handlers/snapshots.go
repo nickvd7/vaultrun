@@ -84,6 +84,7 @@ func (sh *SnapshotHandler) Create(c *gin.Context) {
 		},
 	})
 
+	snap.CreatedByName = middleware.ActorName(c)
 	c.JSON(http.StatusCreated, snap)
 }
 

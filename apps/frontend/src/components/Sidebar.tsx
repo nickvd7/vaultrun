@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { useOrg } from "@/components/OrgContext";
 import { APP_VERSION } from "@/lib/version";
+import { useServerInfo, isolationLabel } from "@/lib/serverInfo";
 
 type NavItem = { href: string; label: string; icon: typeof Shield; masterOnly?: boolean };
 
@@ -28,8 +29,9 @@ type SidebarProps = {
 
 export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
-  const { apiKey, clearApiKey, isMaster, keyName } = useApiKey();
+  const { apiKey, clearApiKey, isMaster, keyName, isSSO } = useApiKey();
   const { orgs, orgId, setOrgId } = useOrg();
+  const info = useServerInfo();
 
   return (
     <aside
@@ -92,7 +94,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
               {keyName ?? "Signed in"}
             </div>
             {isMaster !== null && (
-              <div className="text-slate-300">{isMaster ? "Master key" : "Standard key"}</div>
+              <div className="text-slate-300">{isMaster ? "Master key" : isSSO ? "Single sign-on" : "Standard key"}</div>
             )}
           </div>
         )}
@@ -104,11 +106,20 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
           className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-slate-200 hover:bg-slate-800/50 hover:text-white transition-colors"
         >
           <LogOut className="w-3.5 h-3.5" />
-          Disconnect
+          {isSSO ? "Sign out" : "Disconnect"}
         </button>
         <div className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-200">
           <FileText className="w-3 h-3" />
-          <span>v{APP_VERSION}</span>
+          <span
+            title={
+              info
+                ? `API ${info.version}${info.edition_detail ? ` · ${info.edition_detail}` : ""} · sandboxes: ${isolationLabel(info)}`
+                : undefined
+            }
+          >
+            v{APP_VERSION}
+            {info && ` · ${info.edition === "enterprise" ? "Enterprise" : "Community"}`}
+          </span>
         </div>
       </div>
     </aside>

@@ -145,6 +145,7 @@ func (ah *ArtifactHandler) Promote(c *gin.Context) {
 		},
 	})
 
+	art.CreatedByName = middleware.ActorName(c)
 	c.JSON(http.StatusCreated, art)
 }
 

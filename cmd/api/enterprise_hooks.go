@@ -1,6 +1,10 @@
 package main
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/nickvd7/vaultrun/cmd/api/middleware"
+)
 
 // enterpriseHooks carries optional enterprise wiring into the core router.
 // The zero value — used by core-only builds, or by enterprise builds where
@@ -14,4 +18,9 @@ type enterpriseHooks struct {
 	// SAML metadata/login/ACS, session me/logout). Nil when SSO is not
 	// configured or not compiled in.
 	registerAuthRoutes func(r *gin.Engine)
+
+	// sessions lets /api/v1 accept an SSO session cookie in place of an API
+	// key, so a user who signed in through the IdP can use the dashboard.
+	// Nil when SSO is not configured.
+	sessions middleware.SessionVerifier
 }

@@ -81,3 +81,19 @@ func TestEmptyMasterKeyDisablesShortCircuit(t *testing.T) {
 		t.Fatal("empty master key must not grant access")
 	}
 }
+
+type fakeSessions struct{ keyID string }
+
+func (f fakeSessions) VerifyAPIKeyID(*gin.Context) (string, error) { return f.keyID, nil }
+
+// A session cookie rides along on cross-site form posts; without the client
+// header such a request must be refused before anything else happens.
+func TestSessionCookieWriteNeedsClientHeader(t *testing.T) {
+	r := gin.New()
+	r.POST("/", APIKeyAuth(nil, "", fakeSessions{keyID: "k"}), func(c *gin.Context) { c.String(http.StatusOK, "reached") })
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without %s, got %d", ClientHeader, w.Code)
+	}
+}

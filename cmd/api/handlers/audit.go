@@ -162,6 +162,7 @@ func (ah *AuditHandler) Integrity(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": audit.IntegrityDisabled, "problems": []string{}})
 		return
 	}
+	c.Header("Cache-Control", "no-store")
 	res, err := ah.h.audit.Integrity(c.Request.Context(), c.Query("refresh") == "true")
 	if err != nil {
 		slog.Error("audit integrity check failed", "err", err, "method", c.Request.Method, "path", c.FullPath())

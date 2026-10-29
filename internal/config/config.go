@@ -9,15 +9,15 @@ import (
 )
 
 type Config struct {
-	Server      ServerConfig
-	Database    DatabaseConfig
-	Redis       RedisConfig
-	Docker      DockerConfig
-	Workspace   WorkspaceConfig
-	Auth        AuthConfig
+	Server        ServerConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	Docker        DockerConfig
+	Workspace     WorkspaceConfig
+	Auth          AuthConfig
 	Observability ObservabilityConfig
-	SSO         SSOConfig
-	MultiRegion MultiRegionConfig
+	SSO           SSOConfig
+	MultiRegion   MultiRegionConfig
 	Production    ProductionConfig
 }
 
@@ -127,18 +127,29 @@ type SSOConfig struct {
 	OIDCScopes       []string
 
 	// SAML 2.0 Service Provider
-	SAMLEnabled          bool
-	SAMLRootURL          string // SAML_ROOT_URL — public base URL of this server
-	SAMLEntityID         string // SAML_ENTITY_ID (default: SAML_ROOT_URL/auth/saml/metadata)
-	SAMLIDPMetadataURL   string // SAML_IDP_METADATA_URL — URL of the IdP metadata XML
-	SAMLIDPMetadataFile  string // SAML_IDP_METADATA_FILE — local file path (preferred; avoids live-URL MITM)
-	SAMLCertFile         string // SAML_CERT_FILE — PEM certificate for this SP
-	SAMLKeyFile          string // SAML_KEY_FILE  — PEM private key for this SP
+	SAMLEnabled         bool
+	SAMLRootURL         string // SAML_ROOT_URL — public base URL of this server
+	SAMLEntityID        string // SAML_ENTITY_ID (default: SAML_ROOT_URL/auth/saml/metadata)
+	SAMLIDPMetadataURL  string // SAML_IDP_METADATA_URL — URL of the IdP metadata XML
+	SAMLIDPMetadataFile string // SAML_IDP_METADATA_FILE — local file path (preferred; avoids live-URL MITM)
+	SAMLCertFile        string // SAML_CERT_FILE — PEM certificate for this SP
+	SAMLKeyFile         string // SAML_KEY_FILE  — PEM private key for this SP
 
 	// Session cookie
-	SessionSecret  string // SSO_SESSION_SECRET — ≥32 bytes; used to sign session JWTs
-	SessionMaxAge  int    // SSO_SESSION_MAX_AGE_HOURS (default: 24)
-	SessionSecure  bool   // SSO_SESSION_SECURE (default: true when TLS is active)
+	SessionSecret string // SSO_SESSION_SECRET — ≥32 bytes; used to sign session JWTs
+	SessionMaxAge int    // SSO_SESSION_MAX_AGE_HOURS (default: 24)
+	SessionSecure bool   // SSO_SESSION_SECURE (default: true when TLS is active)
+
+	// After sign-in
+	PostLoginURL string // SSO_POST_LOGIN_URL — where the browser lands after sign-in (default: /dashboard)
+
+	// Who may sign in, and with what access
+	AllowedDomains       []string // SSO_ALLOWED_DOMAINS — e-mail domains that may sign in (empty: any)
+	AllowedGroups        []string // SSO_ALLOWED_GROUPS — IdP groups that may sign in (empty: any)
+	GroupsClaim          string   // SSO_GROUPS_CLAIM — OIDC claim holding the groups (default: groups)
+	RoleMapping          string   // SSO_ROLE_MAPPING — "group=org-slug:role,…", synced on every sign-in
+	AllowedSecrets       []string // SSO_ALLOWED_SECRETS — secrets SSO users may inject ("*" = all; empty: none)
+	AllowUnverifiedEmail bool     // SSO_ALLOW_UNVERIFIED_EMAIL — accept email_verified=false (default: refuse)
 }
 
 // MultiRegionConfig holds settings for multi-region deployments.
@@ -241,12 +252,12 @@ func Load() (*Config, error) {
 			GPUDevices:      getEnv("DOCKER_GPU_DEVICES", ""),
 		},
 		Workspace: WorkspaceConfig{
-			BaseDir:              getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
-			DockerHostBaseDir:    getEnv("DOCKER_HOST_WORKSPACE_BASE_DIR", ""),
-			MaxFileMB:            maxFileMB,
-			MaxOutputMB:          maxOutputMB,
-			MaxWorkspaceMB:       func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
-			MaxArtifactStorageMB: func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
+			BaseDir:                   getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
+			DockerHostBaseDir:         getEnv("DOCKER_HOST_WORKSPACE_BASE_DIR", ""),
+			MaxFileMB:                 maxFileMB,
+			MaxOutputMB:               maxOutputMB,
+			MaxWorkspaceMB:            func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
+			MaxArtifactStorageMB:      func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
 			ArtifactS3Bucket:          getEnv("ARTIFACT_S3_BUCKET", ""),
 			ArtifactS3Region:          getEnv("ARTIFACT_S3_REGION", "us-east-1"),
 			ArtifactS3Prefix:          getEnv("ARTIFACT_S3_PREFIX", ""),
@@ -286,9 +297,16 @@ func Load() (*Config, error) {
 				SAMLIDPMetadataFile:  samlMetaFile,
 				SAMLCertFile:         samlCert,
 				SAMLKeyFile:          samlKey,
-				SessionSecret:      getEnv("SSO_SESSION_SECRET", ""),
-				SessionMaxAge:      maxAge,
-				SessionSecure:      sessionSecure,
+				SessionSecret:        getEnv("SSO_SESSION_SECRET", ""),
+				SessionMaxAge:        maxAge,
+				SessionSecure:        sessionSecure,
+				PostLoginURL:         getEnv("SSO_POST_LOGIN_URL", "/dashboard"),
+				AllowedDomains:       splitAndTrim(getEnv("SSO_ALLOWED_DOMAINS", "")),
+				AllowedGroups:        splitAndTrim(getEnv("SSO_ALLOWED_GROUPS", "")),
+				GroupsClaim:          getEnv("SSO_GROUPS_CLAIM", "groups"),
+				RoleMapping:          getEnv("SSO_ROLE_MAPPING", ""),
+				AllowedSecrets:       splitAndTrim(getEnv("SSO_ALLOWED_SECRETS", "")),
+				AllowUnverifiedEmail: envBool("SSO_ALLOW_UNVERIFIED_EMAIL"),
 			}
 		}(),
 		Production: ProductionConfig{

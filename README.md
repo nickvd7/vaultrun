@@ -11,37 +11,36 @@
 ![Self-hosted](https://img.shields.io/badge/self--hosted-no%20SaaS%2C%20no%20telemetry-success)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/nickvd7/vaultrun/pulls)
 
-**Self-hosted secure runtime for AI agents.** — [vaultrun.dev](https://vaultrun.dev) · [llms.txt](https://vaultrun.dev/llms.txt) · [PyPI](https://pypi.org/project/vaultrun-sdk/)
+**Run your AI agents' code in isolated sandboxes on your own infrastructure, and prove to your auditor exactly what they did.** — [vaultrun.dev](https://vaultrun.dev) · [llms.txt](https://vaultrun.dev/llms.txt) · [PyPI](https://pypi.org/project/vaultrun-sdk/)
 
-VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker sandboxes running on your own infrastructure. No external SaaS. No data leaving your network. Local-first: treat successful agent plans as **workflow assets** you own (missions, verify checkpoints, sandbox memory, swarm graph, cost-aware replay).
+- **Isolated.** Every agent session gets its own container: no Linux capabilities, read-only root filesystem, seccomp, no network unless you allowlist hosts, and optionally [gVisor](docs/configuration.md#sandbox-runtime-gvisor), a user-space kernel between agent code and your host.
+- **Yours.** Self-hosted. No SaaS, no telemetry. Code, data and prompts stay in your network.
+- **Provable.** Every session exports as a [signed evidence pack](docs/features/evidence-packs.md) (commands, outputs, files, audit log) with an independent RFC 3161 timestamp. Anyone with the public key verifies it offline; change one byte and it fails.
 
-> **Latest v0.4.12:** a regular key's session audit list matches the audit page, symlinks are marked in the file list, and the dashboard polishes the session filter, name focus, missing sessions and cost decimals. The `v0.4.11` tag is that same commit before these version strings were bumped, so use v0.4.12. v0.4.10: audit retention pauses when a mid-log entry is backdated, a regular key's chain counts and warning cover only that key (Altered/Affected), and session create/delete audit entries include the name and image. The dashboard session Audit tab shows key names, signatures and readable details, confirmation dialogs are announced to screen readers, and an empty Docker Image is rejected in the form. v0.4.9: security fix: promoting a workspace file to an artifact followed symlinks, so a sandbox could read files outside its workspace through the artifact download (upgrade if you let untrusted code run in sandboxes); deleting through a symlinked directory is contained too. `allowed_hosts` is validated (and CIDR blocks now work), invalid limits, `working_dir`, labels and key names return `400` instead of `500`, and uploads no longer lock pre-v0.4.7 sessions out of their workspace. v0.4.8: release fix only: the v0.4.7 binaries could not be built for Windows, so v0.4.7 has no GitHub release assets; v0.4.8 has the same changes. v0.4.7: `/metrics` always needs a token (`METRICS_TOKEN`, else the master key), sandboxes run as the API user with `0700` session directories, `make up` generates the Redis and Postgres passwords, `make down-all` removes workspace files, `..` in file paths is rejected, session names are validated, the cost list takes `?limit`, and the dashboard shows key names, splits a command line typed in Command and hides Policy and API Keys from regular keys. v0.4.6: audit retention can no longer be abused to erase the log (it only deletes a verified, old prefix and pauses when an old entry fails verification), the audit warning names the failed entries and tells altered from affected ones, regular keys see a scoped verdict, and the dashboard returns to sign-in when a saved key has expired. v0.4.5: the audit log is hash-chained and verified as a whole (`GET /api/v1/audit/integrity`, banner in the dashboard), `allowed_hosts` needs `network_enabled`, a command line in `command` is rejected, the Python and Go SDKs take `allowed_hosts` and `secrets`, Costs lists named sessions and marks ended ones, deleting a session takes seconds. v0.4.4: costs are now recorded (CPU and memory allocation, billed every minute), a tampered audit entry is reported as `invalid` (`sig_status`), every 500 is logged, the API and CLIs report their version (`/health`, `--version`), revoked keys can be deleted, and the dashboard shows dates, key expiry and run commands consistently. v0.4.3: `make up` generates the audit signing key, `make down` keeps your sessions (`make down-all` removes them), the Costs page no longer crashes, quoted command arguments work, and the dashboard gains audit paging/export, sessions search and accessibility fixes. v0.4.1 added: Compose `allowed_hosts`, working dashboard, verifiable audit signatures, per-key secret allowlist. Since v0.4.0 the API is secure by default and needs `VAULTRUN_INSECURE_DEV=true` for local use (set in `.env.example`; `make dev-env` adds it). Upgrading: new migrations 021 and 022 run automatically and Compose gains a `netpolicy` service; see the [changelog](CHANGELOG.md).
->
-> **v0.3.2:** The Docker Compose quickstart (`make up` → session → command) now works end to end on a clean Linux host and is covered by a CI workflow; the secrets broker works under Compose, and the API returns `400` for invalid limits and unknown images. It also includes a second, cross-feature security pass — twelve more defects found and fixed, including an agent-impersonation channel in multi-agent collaboration, a session-quota bypass via checkpoint forking, and MCP browser tools that had their own unhardened copy of the Python-injection bug v0.3.1 fixed elsewhere. Recommended for every v0.3.0/v0.3.1 deployment; the full analysis is in the [security report](docs/security-testing-report.md#round-two--cross-feature-and-edge-case-testing).
->
-> **v0.3.1:** Security and correctness release for the six v0.3.0 features — eleven defects found and fixed, including Rego and iptables injection through LLM-generated policies, incomplete SSRF filtering, HMAC signatures that did not cover the data they protect, and two features that did not work at all.
->
-> **v0.3.0:** 6 killer features — Session Replay (time-travel debugging), Browser Automation (8 MCP tools), Cost Intelligence (real-time tracking), Natural Language Policies (LLM-powered), Session Templates (marketplace), Multi-Agent Collaboration (WebSocket + Redis). The MCP server speaks both stdio *and* HTTP (71 tools). Enterprise SSO (OIDC + SAML 2.0) available separately (mail@030.dev). See [changelog](CHANGELOG.md).
+Agents connect through the REST API, the Python and Go SDKs, or the [MCP server](#mcp-server-71-tools) (Claude, OpenAI, local models).
+
+## See it in 60 seconds
+
+With VaultRun running (see [Quickstart](#quickstart)):
+
+```bash
+export VAULTRUN_API_KEY=vr_...   # make bootstrap-key
+examples/evidence-demo/demo.sh
+```
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Your AI Agent  (Claude, GPT-4o, custom, …)                 │
-│                                                              │
-│  result = client.run(session_id,                             │
-│      command="python", args=["analyze.py"])                  │
-└────────────────────────┬─────────────────────────────────────┘
-                         │ API key
-                         ▼
-┌──────────────────────────────────────────────────────────────┐
-│  VaultRun API  (your server, your infra)                     │
-│                                                              │
-│  • Isolated Docker container per session                     │
-│  • exec API only — no shell injection                        │
-│  • Path traversal prevention in workspace                    │
-│  • HMAC-signed audit trail                                   │
-│  • CPU / memory / timeout limits per session                 │
-│  • Network disabled by default                               │
-└──────────────────────────────────────────────────────────────┘
+== 2. The agent runs the code it wrote
+exit 0: total 200
+== 3. The session is exported as a signed evidence pack
+Wrote evidence-demo/pack.json
+== 4. The auditor verifies it offline: no server, no API key
+VALID signature (ed25519, key 9d7c7dece222cc59)
+Timestamp 2026-10-29 08:20:16 UTC by CN=DigiCert SHA256 RSA4096 Timestamp Responder 2026 1 (RFC 3161)   # with EVIDENCE_TSA_URL set
+Session   "invoice-agent" · image python:3.12-slim · network off
+Runs      1 (1 exit 0)
+Audit     3 entries (scope all), 3 verified by the server at export
+== 5. Someone changes one character of the recorded output
+Error: NOT VALID: evidence signature does not match
 ```
 
 ## Quickstart
@@ -57,7 +56,7 @@ make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
 ```
 
-Open `http://localhost:3000` for the dashboard.
+Open `http://localhost:3000` for the dashboard. The API is secure by default; the quickstart `.env` sets `VAULTRUN_INSECURE_DEV=true` for local use, which you remove in production ([production hardening](docs/production-hardening.md)).
 
 On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermod -aG docker $USER`, then **log out and in again** (or run `newgrp docker`) before `make up`; the new group is not picked up by shells that are already open. Running `make up` through `sudo` works too, but then `.env` and the workspace files belong to root.
 
@@ -74,29 +73,57 @@ On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermo
 | **Go SDK** (`sdk/go`) | Typed Go client |
 | **Python SDK** (`sdk/python`) | Python client — [`pip install vaultrun-sdk`](https://pypi.org/project/vaultrun-sdk/) |
 
-## 🚀 Killer Features (6/6 Complete)
+## Features
 
-VaultRun includes production-ready features that make it **the** AI agent platform:
+| | |
+|---|---|
+| **Evidence packs** | Signed record of a session, verified offline with `vaultrun evidence verify`; external RFC 3161 timestamps; bulk export per period ([docs](docs/features/evidence-packs.md)) |
+| **Kernel isolation** | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor; tested in CI end to end ([docs](docs/configuration.md#sandbox-runtime-gvisor)) |
+| **Network allowlist** | `allowed_hosts` enforced with per-session iptables rules; no network by default ([docs](docs/security.md)) |
+| **Tamper-evident audit log** | Hash-chained, HMAC-signed, verified as a whole ([docs](docs/security.md)) |
+| **Session replay** | Checkpoints, restore and fork of a session's workspace ([docs](docs/features/session-replay.md)) |
+| **Browser automation** | Headless Chromium (Playwright) with 8 MCP tools and SSRF protection ([docs](docs/browser-automation.md)) |
+| **Cost intelligence** | Per-session cost tracking, budgets and alerts ([docs](docs/features/cost-intelligence.md)) |
+| **Natural-language policies** | "Allow github.com and pypi.org, max 2 CPU" → OPA policy, network rules, limits ([docs](docs/natural-language-policy.md)) |
+| **Templates and multi-agent** | Pre-configured environments; several agents in one session ([templates](docs/features/session-templates.md) · [collaboration](docs/features/multi-agent-collaboration.md)) |
 
-### ✅ Session Replay & Time-Travel Debugging
-Record every command execution with full state snapshots. Jump back to any moment, reproduce bugs exactly, test "what if" scenarios. HMAC-signed checkpoints prevent tampering. ([docs](docs/features/session-replay.md))
+Security testing: [report](docs/security-testing-report.md). Release notes: [CHANGELOG.md](CHANGELOG.md).
 
-### ✅ Browser Automation Layer
-Headless Chromium with Playwright pre-installed. 8 MCP tools for web scraping, E2E testing, PDF generation. SSRF protection blocks private IPs + cloud metadata. ([docs](docs/browser-automation.md))
+## VaultRun Enterprise
 
-### ✅ Cost Intelligence Dashboard
-Real-time cost tracking per session with HMAC-signed metrics. Budget alerts, idle detection, top spenders. Immutable cost records via DB trigger. ([docs](docs/features/cost-intelligence.md))
+For teams that answer to auditors, regulators or their customers' security reviews.
 
-### ✅ Natural Language Policy Engine
-Write "Allow github.com and pypi.org, max 2 CPU" → get OPA policies, iptables rules, Docker constraints. LLM-powered (OpenAI), 4 templates included, 20+ examples. ([docs](docs/natural-language-policy.md))
+| | Core (Apache 2.0) | Enterprise |
+|---|:-:|:-:|
+| Sandboxes, gVisor isolation, network allowlist, MCP server | ✓ | ✓ |
+| Signed evidence packs, external timestamps, offline verifier | ✓ | ✓ |
+| **Compliance report**: every pack verified and organised by control (integrity, independent time, audit log, traceability, isolation, network, accountability), with exceptions, findings and an evidence index; HTML/PDF and JSON | | ✓ |
+| **Single sign-on**: OIDC and SAML 2.0 (Okta, Entra ID, Google, AD FS) | | ✓ |
+| **Support** with agreed response times, security patches for supported releases | | ✓ |
+| **Audit help**: walking your auditor through the evidence | | ✓ |
 
-### ✅ Session Templates Marketplace
-Pre-configured environments (Python Data Science, Node.js API, Web Scraping, Rust Dev). One-click session creation with resource limits, network policies, env vars. ([docs](docs/features/session-templates.md))
+Enterprise is free to evaluate for development and testing. A pilot installs it in your environment and delivers your first compliance report. Contact: [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) · **mail@030.dev**
 
-### ✅ Multi-Agent Collaboration
-Multiple agents in one session via WebSocket + Redis. Real-time presence, agent-to-agent messaging, file version tracking. Max 4 agents/session (configurable). ([docs](docs/features/multi-agent-collaboration.md))
-
-**Progress: 100%** (6/6 features shipped) — Security tested ✅ ([report](docs/security-testing-report.md))
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Your AI Agent  (Claude, GPT-4o, custom, …)                 │
+│                                                              │
+│  result = client.run(session_id,                             │
+│      command="python", args=["analyze.py"])                  │
+└────────────────────────┬─────────────────────────────────────┘
+                         │ API key
+                         ▼
+┌──────────────────────────────────────────────────────────────┐
+│  VaultRun API  (your server, your infra)                     │
+│                                                              │
+│  • Isolated Docker container per session                     │
+│  • exec API only — no shell injection                        │
+│  • Path traversal prevention in workspace                    │
+│  • Signed audit log + evidence packs                         │
+│  • CPU / memory / timeout limits per session                 │
+│  • Network disabled by default, optional gVisor kernel       │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## Architecture
 
@@ -332,7 +359,7 @@ SSO ships as **VaultRun Enterprise** in a separate repository and is compiled in
 
 ### How to get Enterprise
 
-Pick a path on [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) — every request is emailed to **mail@030.dev**:
+See [VaultRun Enterprise](#vaultrun-enterprise) for what it adds. Pick a path on [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) — every request is emailed to **mail@030.dev**:
 
 1. **Evaluate** — free for development and testing; request evaluation access
 2. **License** — production SSO; include org, IdP, instances/seats, and timeline
@@ -430,6 +457,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history.
 VaultRun is open core:
 
 - Everything in this repository is licensed under **Apache 2.0** — see [LICENSE](LICENSE).
-- **VaultRun Enterprise** (SSO: OIDC + SAML 2.0) lives in a separate repository under the VaultRun Enterprise License.
+- **VaultRun Enterprise** (compliance report, SSO: OIDC + SAML 2.0) lives in a separate repository under the VaultRun Enterprise License.
 
 Enterprise licensing & support: **[vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise)** → emails **mail@030.dev**

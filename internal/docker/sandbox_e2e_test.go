@@ -6,7 +6,8 @@ package docker
 // daemon under VAULTRUN_TEST_RUNTIME (empty = the daemon default, runc), so a
 // failure under gVisor can be told apart from one that also happens under runc.
 //
-//	sudo -E VAULTRUN_TEST_RUNTIME=runsc go test -tags e2e ./internal/docker/ -run 'Egress|Browser' -v
+//	go test -c -tags e2e -o docker.test ./internal/docker/
+//	sudo VAULTRUN_TEST_RUNTIME=runsc ./docker.test -test.run 'TestEgressAllowlistE2E|TestBrowserImageE2E' -test.v
 
 import (
 	"bytes"

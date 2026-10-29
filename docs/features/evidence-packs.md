@@ -60,6 +60,12 @@ vaultrun evidence export <session-id> -o evidence.json
 curl -H "X-API-Key: $KEY" https://vaultrun.example.com/api/v1/sessions/<id>/evidence -o evidence.json
 ```
 
+Every session the key can see, for a period, into a directory:
+
+```bash
+vaultrun evidence export --all --since 2026-10-01 --until 2026-11-01 -d packs/
+```
+
 Exports work for stopped and deleted sessions too (their runs and audit entries
 are kept; deleted workspaces have no files). Every export is itself audited as
 `evidence.exported`.
@@ -90,12 +96,53 @@ warnings (for example audit entries the server could not verify at export).
 The verifier needs no API key and no network. It is part of the `vaultrun` CLI
 binary from the GitHub releases.
 
+## External timestamps (RFC 3161)
+
+Without one, a pack's time is what the server says: whoever holds the signing
+key could sign a new pack about the past. Set `EVIDENCE_TSA_URL` and every
+pack carries a timestamp token from an outside Time Stamping Authority over its
+signature, which in turn covers every byte of the pack. The verifier shows it:
+
+```
+VALID signature (ed25519, key 37718810960690c1)
+Timestamp 2026-10-29 07:24:19 UTC by CN=DigiCert SHA256 RSA4096 Timestamp Responder 2025 1,... (RFC 3161, serial ...)
+```
+
+- A token that does not belong to the pack (moved from another pack, or
+  changed) makes the pack `NOT VALID`.
+- A token from an authority that does not chain to the trusted roots as a
+  time-stamping certificate is a warning; pass its root with `--tsa-ca`
+  (default: the system roots). `--strict` fails on it.
+- The server checks the same before handing out a pack and answers `502` when
+  the TSA fails, so a deployment that asks for timestamps never exports a pack
+  without one.
+- Public TSAs put only their own certificate in the token. The intermediate
+  CA certificates are fetched once from the certificate's Authority
+  Information Access URL when stamping and stored in the pack
+  (`timestamp_chain`), so verification stays offline. They only help build a
+  chain to a root the verifier already trusts.
+- Servers that cannot reach a TSA: stamp the file afterwards from another
+  machine with `vaultrun evidence timestamp pack.json --tsa <url>`.
+
+Qualified TSAs under eIDAS (EU) issue tokens with legal standing as qualified
+electronic time stamps; use one when that matters to your auditor.
+
+## Compliance report (Enterprise)
+
+VaultRun Enterprise turns a directory of packs into a report for auditors:
+`vaultrun-report --key vaultrun-evidence.pub packs/ -o report.html`. It verifies
+every pack and its timestamp, and organises the evidence by control (integrity,
+independent time, audit log, traceability, kernel isolation, network egress,
+accountability) with exceptions, findings, sessions, commands and the SHA-256
+of every input file, as HTML (prints to PDF) and JSON. Contact mail@030.dev.
+
 ## Format
 
 ```json
 {
   "pack": "<base64 of the pack JSON>",
-  "signature": { "alg": "ed25519", "key_id": "<16 hex>", "value": "<base64>" }
+  "signature": { "alg": "ed25519", "key_id": "<16 hex>", "value": "<base64>" },
+  "timestamp": "<base64 DER RFC 3161 TimeStampToken over signature.value, optional>"
 }
 ```
 
@@ -113,6 +160,9 @@ check the Ed25519 signature over those bytes, then parse them as JSON.
   whoever controls the key, the same as for any signed log. The audit entries'
   own chain status, recorded per entry, shows whether the log was tampered with
   before export.
+- With an external timestamp it also proves the pack existed no later than the
+  TSA's time, which the key holder cannot change afterwards. Export packs
+  regularly (for example daily) so that time is close to the events.
 
 API: `GET /api/v1/sessions/:id/evidence`, `GET /api/v1/evidence/public-key`
 (viewer access to the session; the public key needs any valid key).

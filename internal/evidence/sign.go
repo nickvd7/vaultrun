@@ -94,10 +94,24 @@ func (s *Signer) Sign(p *Pack) (*Envelope, error) {
 // fails with ErrBadSignature when a single byte of the pack differs from what
 // was signed.
 func Verify(envelopeJSON []byte, pub ed25519.PublicKey) (*Pack, error) {
+	env, err := Open(envelopeJSON)
+	if err != nil {
+		return nil, err
+	}
+	return env.Verify(pub)
+}
+
+// Open decodes an exported pack file without checking it.
+func Open(envelopeJSON []byte) (*Envelope, error) {
 	var env Envelope
 	if err := json.Unmarshal(envelopeJSON, &env); err != nil {
 		return nil, fmt.Errorf("not an evidence pack: %w", err)
 	}
+	return &env, nil
+}
+
+// Verify checks the envelope's signature against pub and returns the pack.
+func (env *Envelope) Verify(pub ed25519.PublicKey) (*Pack, error) {
 	if env.Signature.Alg != SignatureAlg {
 		return nil, fmt.Errorf("unsupported signature algorithm %q", env.Signature.Alg)
 	}

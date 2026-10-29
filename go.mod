@@ -11,6 +11,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.1
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.2
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.69.2
+	github.com/digitorus/pkcs7 v0.0.0-20230713084857-e76b763bdc49
+	github.com/digitorus/timestamp v0.0.0-20250524132541-c45532741eea
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/gin-contrib/cors v1.7.3
 	github.com/gin-gonic/gin v1.10.0

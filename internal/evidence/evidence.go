@@ -46,6 +46,14 @@ const (
 type Envelope struct {
 	Pack      []byte    `json:"pack"` // JSON-encoded Pack; base64 in the file
 	Signature Signature `json:"signature"`
+	// Timestamp is an optional RFC 3161 TimeStampToken (DER) over
+	// Signature.Value from an outside TSA; see timestamp.go.
+	Timestamp []byte `json:"timestamp,omitempty"`
+	// TimestampChain holds intermediate CA certificates (DER) of the TSA that
+	// the token itself does not carry, fetched once when stamping so that
+	// verification works offline. They only help build a chain to a root the
+	// verifier already trusts; they cannot make a chain trusted.
+	TimestampChain [][]byte `json:"timestamp_chain,omitempty"`
 }
 
 // Signature is an Ed25519 signature over Envelope.Pack.

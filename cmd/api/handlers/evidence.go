@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -130,6 +131,22 @@ func (eh *EvidenceHandler) Export(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to sign evidence pack"})
 		return
 	}
+	var stamp *evidence.TimestampInfo
+	if eh.h.evidenceTSAURL != "" {
+		// Fail closed: a deployment that asks for timestamps never hands out
+		// a pack without one.
+		tctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err := evidence.RequestTimestamp(tctx, http.DefaultClient, eh.h.evidenceTSAURL, env)
+		cancel()
+		if err == nil {
+			stamp, err = evidence.VerifyTimestamp(env, eh.h.evidenceTSARoots)
+		}
+		if err != nil {
+			slog.Error("evidence: timestamp", "session_id", id, "tsa", eh.h.evidenceTSAURL, "err", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "timestamp authority failed: " + err.Error()})
+			return
+		}
+	}
 	body, err := json.Marshal(env)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encode evidence pack"})
@@ -147,8 +164,12 @@ func (eh *EvidenceHandler) Export(c *gin.Context) {
 			"files":         len(pack.Files),
 			"audit_entries": len(pack.Audit.Entries),
 			"audit_scope":   pack.Audit.Scope,
+			"timestamped":   stamp != nil,
 		},
 	})
+	if stamp != nil {
+		c.Header("X-Evidence-Timestamp", stamp.Time.Format(time.RFC3339))
+	}
 
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="vaultrun-evidence-%s.json"`, id))
 	c.Data(http.StatusOK, "application/json", body)

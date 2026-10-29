@@ -17,13 +17,14 @@ import (
 	"github.com/nickvd7/vaultrun/internal/audit"
 	"github.com/nickvd7/vaultrun/internal/config"
 	"github.com/nickvd7/vaultrun/internal/evidence"
+	"github.com/nickvd7/vaultrun/internal/evidence/evidencetest"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
 
 // newEvidenceRouter serves the evidence and key endpoints; signer may be nil.
-func newEvidenceRouter(t *testing.T, db *sqlx.DB, signer *evidence.Signer) (*gin.Engine, *audit.Logger) {
+func newEvidenceRouter(t *testing.T, db *sqlx.DB, signer *evidence.Signer, tsa ...*evidencetest.TSA) (*gin.Engine, *audit.Logger) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -35,6 +36,9 @@ func newEvidenceRouter(t *testing.T, db *sqlx.DB, signer *evidence.Signer) (*gin
 	hub := handlers.NewHub(db, nil, workspace.New(cfg.Workspace.BaseDir), nil, al, cfg, policy.AllowAll{}, nil, nil, nil, nil)
 	if signer != nil {
 		hub.SetEvidenceSigner(signer)
+	}
+	if len(tsa) > 0 {
+		hub.SetEvidenceTSA(tsa[0].URL, tsa[0].Roots)
 	}
 	api := r.Group("/api/v1", middleware.APIKeyAuth(db, testMasterKey, nil))
 	keysH := handlers.NewKeyHandler(hub)
@@ -153,5 +157,41 @@ func TestEvidenceExportScopeAndAccess(t *testing.T) {
 	pub, err := evidence.ParsePublicKeyPEM([]byte(pk.PEM))
 	if err != nil || !pub.Equal(signer.PublicKey()) || pk.KeyID != signer.KeyID() {
 		t.Errorf("public key endpoint: %v %+v", err, pk)
+	}
+}
+
+func TestEvidenceExportTimestamped(t *testing.T) {
+	truncateAll(t)
+	tsa := evidencetest.NewTSA(t, evidencetest.Options{})
+	signer := newSignerT(t)
+	r, _ := newEvidenceRouter(t, testDB, signer, tsa)
+	id := uuid.NewString()
+	insertFakeSession(t, id, "master")
+
+	w := rec(r, "GET", "/api/v1/sessions/"+id+"/evidence", "", masterHdr())
+	if w.Code != http.StatusOK || w.Header().Get("X-Evidence-Timestamp") == "" {
+		t.Fatalf("export: %d %s (timestamp header %q)", w.Code, w.Body, w.Header().Get("X-Evidence-Timestamp"))
+	}
+	env, err := evidence.Open(w.Body.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Verify(signer.PublicKey()); err != nil {
+		t.Fatalf("pack signature: %v", err)
+	}
+	if _, err := evidence.VerifyTimestamp(env, tsa.Roots); err != nil {
+		t.Fatalf("pack timestamp: %v", err)
+	}
+
+	// Asked for timestamps, the server hands out none without one.
+	tsa.Fail = true
+	if w := rec(r, "GET", "/api/v1/sessions/"+id+"/evidence", "", masterHdr()); w.Code != http.StatusBadGateway {
+		t.Errorf("TSA down: want 502, got %d: %s", w.Code, w.Body)
+	}
+	// A TSA that does not chain to the configured roots is refused too.
+	untrusted := evidencetest.NewTSA(t, evidencetest.Options{})
+	r2, _ := newEvidenceRouter(t, testDB, signer, &evidencetest.TSA{URL: untrusted.URL, Roots: tsa.Roots})
+	if w := rec(r2, "GET", "/api/v1/sessions/"+id+"/evidence", "", masterHdr()); w.Code != http.StatusBadGateway {
+		t.Errorf("untrusted TSA: want 502, got %d: %s", w.Code, w.Body)
 	}
 }

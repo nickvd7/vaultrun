@@ -102,6 +102,11 @@ func newRouter(
 		if signer, err := evidence.ParseSigningKey(key); err == nil {
 			hub.SetEvidenceSigner(signer)
 		}
+		if url := cfg.Observability.EvidenceTSAURL; url != "" {
+			if roots, err := evidence.LoadCertPool(cfg.Observability.EvidenceTSACAFile); err == nil {
+				hub.SetEvidenceTSA(url, roots)
+			}
+		}
 	}
 
 	health := handlers.NewHealthHandler(hub)

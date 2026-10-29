@@ -45,6 +45,7 @@ import (
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
 	"github.com/nickvd7/vaultrun/internal/evidence"
+	"github.com/nickvd7/vaultrun/internal/evidence/evidencetest"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
@@ -110,6 +111,7 @@ func TestE2ESmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tsa := evidencetest.NewTSA(t, evidencetest.Options{})
 	cfg := &config.Config{
 		Auth: config.AuthConfig{MasterKey: e2eMasterKey},
 		Docker: config.DockerConfig{
@@ -121,9 +123,13 @@ func TestE2ESmoke(t *testing.T) {
 			// container is created.
 			GPUDevices: "all",
 		},
-		Server:        config.ServerConfig{RateLimit: 0},
-		Workspace:     config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
-		Observability: config.ObservabilityConfig{EvidenceSigningKey: evidenceKey},
+		Server:    config.ServerConfig{RateLimit: 0},
+		Workspace: config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
+		Observability: config.ObservabilityConfig{
+			EvidenceSigningKey: evidenceKey,
+			EvidenceTSAURL:     tsa.URL,
+			EvidenceTSACAFile:  tsa.RootFile,
+		},
 	}
 
 	al := audit.New(db, "")
@@ -405,6 +411,10 @@ sys.exit(0)
 		pack, err := evidence.Verify(raw, pub)
 		if err != nil {
 			t.Fatalf("verify exported pack: %v", err)
+		}
+		exported, _ := evidence.Open(raw)
+		if _, err := evidence.VerifyTimestamp(exported, tsa.Roots); err != nil {
+			t.Errorf("pack timestamp: %v", err)
 		}
 
 		if pack.Session.ID != sessionID || pack.Session.Image != e2eImage || pack.Session.Runtime != dockerClient.Runtime() {

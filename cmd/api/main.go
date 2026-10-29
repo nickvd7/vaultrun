@@ -202,6 +202,13 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("evidence packs enabled", "key_id", signer.KeyID())
+		if url := cfg.Observability.EvidenceTSAURL; url != "" {
+			if _, err := evidence.LoadCertPool(cfg.Observability.EvidenceTSACAFile); err != nil {
+				slog.Error("EVIDENCE_TSA_CA_FILE is not usable", "err", err)
+				os.Exit(1)
+			}
+			slog.Info("evidence packs are timestamped", "tsa", url)
+		}
 	} else {
 		slog.Warn("evidence export disabled: set EVIDENCE_SIGNING_KEY to sign session evidence packs")
 	}

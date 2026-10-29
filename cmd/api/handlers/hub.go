@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/x509"
 	"database/sql"
 	"errors"
 	"log/slog"
@@ -42,8 +43,11 @@ type Hub struct {
 	warmPool       *warmpool.Pool // nil when pool disabled
 	artifactStore  artifacts.Store
 	evidenceSigner *evidence.Signer // nil when EVIDENCE_SIGNING_KEY is unset
-	sessionManager *sessionManager  // session access helper
-	orgManager     *orgManager      // org access helper
+	// EVIDENCE_TSA_URL / EVIDENCE_TSA_CA_FILE; empty URL = no timestamps.
+	evidenceTSAURL   string
+	evidenceTSARoots *x509.CertPool
+	sessionManager   *sessionManager // session access helper
+	orgManager       *orgManager     // org access helper
 }
 
 // sessionManager provides session access helpers
@@ -100,6 +104,12 @@ func NewHub(
 
 // SetEvidenceSigner enables session evidence export.
 func (h *Hub) SetEvidenceSigner(s *evidence.Signer) { h.evidenceSigner = s }
+
+// SetEvidenceTSA makes every exported pack carry an RFC 3161 timestamp from
+// url, whose signer must chain to roots (nil = system roots).
+func (h *Hub) SetEvidenceTSA(url string, roots *x509.CertPool) {
+	h.evidenceTSAURL, h.evidenceTSARoots = url, roots
+}
 
 // Policy exposes the active policy hook (for the policy handler).
 func (h *Hub) Policy() policy.Hook { return h.policy }

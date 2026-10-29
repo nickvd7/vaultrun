@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,7 +24,7 @@ sandbox configuration, every command with its output, the workspace files and
 the audit entries. It is signed with Ed25519, so anyone with the public key can
 check it offline, without access to the VaultRun server.`,
 	}
-	cmd.AddCommand(newEvidenceExportCmd(), newEvidenceVerifyCmd(), newEvidencePublicKeyCmd(), newEvidenceKeygenCmd())
+	cmd.AddCommand(newEvidenceExportCmd(), newEvidenceVerifyCmd(), newEvidenceTimestampCmd(), newEvidencePublicKeyCmd(), newEvidenceKeygenCmd())
 	return cmd
 }
 
@@ -107,6 +109,7 @@ for installations that manage the key themselves.`,
 func newEvidenceVerifyCmd() *cobra.Command {
 	var (
 		keyFile string
+		tsaCA   string
 		asJSON  bool
 		strict  bool
 	)
@@ -138,11 +141,20 @@ a pack, and also 1 for warnings when --strict is set.`,
 			if err != nil {
 				return err
 			}
-			pack, err := evidence.Verify(data, pub)
+			env, err := evidence.Open(data)
+			if err != nil {
+				return err
+			}
+			pack, err := env.Verify(pub)
 			if err != nil {
 				return fmt.Errorf("NOT VALID: %w", err)
 			}
 			findings := evidence.Check(pack)
+			stamp, stampFindings, err := checkPackTimestamp(env, tsaCA)
+			if err != nil {
+				return fmt.Errorf("NOT VALID: %w", err)
+			}
+			findings = append(findings, stampFindings...)
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -150,7 +162,7 @@ a pack, and also 1 for warnings when --strict is set.`,
 					return err
 				}
 			} else {
-				printPackSummary(cmd.OutOrStdout(), pack, evidence.KeyID(pub), findings)
+				printPackSummary(cmd.OutOrStdout(), pack, evidence.KeyID(pub), stamp, findings)
 			}
 			if strict {
 				for _, f := range findings {
@@ -165,11 +177,16 @@ a pack, and also 1 for warnings when --strict is set.`,
 	cmd.Flags().StringVar(&keyFile, "key", "", "public key PEM file")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the verified pack as JSON instead of a summary")
 	cmd.Flags().BoolVar(&strict, "strict", false, "fail when the pack has warnings")
+	cmd.Flags().StringVar(&tsaCA, "tsa-ca", "", "PEM roots the pack's timestamp authority must chain to (default: system roots)")
 	return cmd
 }
 
-func printPackSummary(w io.Writer, p *evidence.Pack, keyID string, findings []evidence.Finding) {
-	fmt.Fprintf(w, "VALID signature (ed25519, key %s)\n\n", keyID)
+func printPackSummary(w io.Writer, p *evidence.Pack, keyID string, stamp *evidence.TimestampInfo, findings []evidence.Finding) {
+	fmt.Fprintf(w, "VALID signature (ed25519, key %s)\n", keyID)
+	if stamp != nil {
+		fmt.Fprintf(w, "Timestamp %s by %s (RFC 3161, serial %s)\n", stamp.Time.Format("2006-01-02 15:04:05 MST"), stamp.TSA, stamp.Serial)
+	}
+	fmt.Fprintln(w)
 	fmt.Fprintf(w, "Pack      %s, exported %s by %s (%s %s)\n",
 		p.ID, p.CreatedAt.Format("2006-01-02 15:04:05 MST"), p.ExportedBy, p.Issuer.Product, p.Issuer.Version)
 
@@ -246,4 +263,90 @@ func printPackSummary(w io.Writer, p *evidence.Pack, keyID string, findings []ev
 			fmt.Fprintf(w, "  - %s\n", m)
 		}
 	}
+}
+
+// checkPackTimestamp verifies the pack's RFC 3161 timestamp, if any. A token
+// that does not match the pack is an error; one from a TSA that does not chain
+// to the roots is a warning, and so is having none.
+func checkPackTimestamp(env *evidence.Envelope, caFile string) (*evidence.TimestampInfo, []evidence.Finding, error) {
+	if len(env.Timestamp) == 0 {
+		return nil, []evidence.Finding{{Severity: "info",
+			Message: "no external timestamp: the pack's time is what the signing server says (see vaultrun evidence timestamp)"}}, nil
+	}
+	roots, err := evidence.LoadCertPool(caFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := evidence.VerifyTimestamp(env, roots)
+	switch {
+	case err == nil:
+		return info, nil, nil
+	case errors.Is(err, evidence.ErrTimestampUntrusted):
+		return nil, []evidence.Finding{{Severity: "warning", Message: fmt.Sprintf(
+			"timestamp of %s is intact but its authority is not trusted here (%v); pass its root with --tsa-ca",
+			info.Time.Format("2006-01-02 15:04:05 MST"), err)}}, nil
+	default:
+		return nil, nil, err
+	}
+}
+
+func newEvidenceTimestampCmd() *cobra.Command {
+	var (
+		tsaURL string
+		tsaCA  string
+		out    string
+	)
+	cmd := &cobra.Command{
+		Use:   "timestamp <pack.json>",
+		Short: "Add an RFC 3161 timestamp to an evidence pack",
+		Long: `Have a Time Stamping Authority (TSA) timestamp the pack's signature, proving
+the pack existed no later than the TSA's time. Use it for packs from servers
+that cannot reach a TSA themselves (with EVIDENCE_TSA_URL set, the server
+stamps every pack). The pack's own signature is not changed.`,
+		Example: `  vaultrun evidence timestamp evidence.json --tsa http://timestamp.digicert.com`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if tsaURL == "" {
+				return errors.New("--tsa is required: the URL of an RFC 3161 time stamping authority")
+			}
+			data, err := os.ReadFile(args[0])
+			if err != nil {
+				return err
+			}
+			env, err := evidence.Open(data)
+			if err != nil {
+				return err
+			}
+			if len(env.Timestamp) > 0 {
+				return errors.New("pack already has a timestamp")
+			}
+			if err := evidence.RequestTimestamp(cmd.Context(), http.DefaultClient, tsaURL, env); err != nil {
+				return err
+			}
+			roots, err := evidence.LoadCertPool(tsaCA)
+			if err != nil {
+				return err
+			}
+			info, err := evidence.VerifyTimestamp(env, roots)
+			if err != nil {
+				return err
+			}
+			b, err := json.Marshal(env)
+			if err != nil {
+				return err
+			}
+			if out == "" {
+				out = args[0]
+			}
+			if err := os.WriteFile(out, b, 0o600); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Timestamped %s at %s by %s\n", out, info.Time.Format(time.RFC3339), info.TSA)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&tsaURL, "tsa", "", "RFC 3161 time stamping authority URL")
+	cmd.Flags().StringVar(&tsaCA, "tsa-ca", "", "PEM roots the authority must chain to (default: system roots)")
+	cmd.Flags().StringVarP(&out, "output", "o", "", "file to write (default: overwrite the input)")
+	return cmd
 }

@@ -46,6 +46,9 @@ const (
 type Envelope struct {
 	Pack      []byte    `json:"pack"` // JSON-encoded Pack; base64 in the file
 	Signature Signature `json:"signature"`
+	// Timestamp is an optional RFC 3161 TimeStampToken (DER) over
+	// Signature.Value from an outside TSA; see timestamp.go.
+	Timestamp []byte `json:"timestamp,omitempty"`
 }
 
 // Signature is an Ed25519 signature over Envelope.Pack.

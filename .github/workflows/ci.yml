@@ -31,7 +31,15 @@ jobs:
           done
 
       - name: Unit tests
-        run: go test ./internal/... ./cmd/api/middleware/... ./cmd/ci-runner/... ./sdk/go/... ./sdk/mcp/... -race -timeout 120s
+        run: go test ./internal/... ./cmd/api/middleware/... ./cmd/ci-runner/... ./cmd/cli/... ./sdk/go/... ./sdk/mcp/... -race -timeout 120s
+
+      # Real RFC 3161 TSA, verified against the system roots. Informational:
+      # an outage at the public TSA must not block unrelated changes.
+      - name: Evidence timestamps against a public TSA (informational)
+        continue-on-error: true
+        run: go test ./internal/evidence/ -run TestRealTSA -v -count=1
+        env:
+          VAULTRUN_TEST_TSA_URL: http://timestamp.digicert.com
 
   integration:
     name: Handler integration tests

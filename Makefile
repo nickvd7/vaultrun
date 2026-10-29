@@ -66,7 +66,7 @@ ps:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
-	$(GO) test ./internal/... ./sdk/go/... ./cmd/local/... -v -race -timeout 60s
+	$(GO) test ./internal/... ./sdk/go/... ./cmd/local/... ./cmd/cli/... -v -race -timeout 60s
 
 test-local-gateway:
 	./scripts/local-gateway-smoke.sh

@@ -68,22 +68,26 @@ from vaultrun_sdk import Client
 client = Client("http://localhost:8080", api_key="vr_...")
 ```
 
-## Enterprise
+## Editions: Core, Team, Enterprise
 
-OIDC (Authorization Code + PKCE) and SAML 2.0, org-aware RBAC, IdP group mapping. Setup guide: https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md
+- **Core (Apache 2.0, free):** sandboxes, API, MCP, SDKs, CLI, dashboard, gVisor runtime (`DOCKER_RUNTIME=runsc`), signed audit trail, and per-session evidence packs (Ed25519-signed, RFC 3161 timestamped) that anyone can verify offline with `vaultrun evidence verify`.
+- **Team (commercial):** the compliance report (`vaultrun-report`). It verifies every evidence pack and organises the evidence by control (integrity, independent time, audit log, traceability, kernel isolation, network egress, accountability) as self-contained HTML/PDF and JSON. Without a license it is marked as an evaluation copy. Email support.
+- **Enterprise (commercial):** everything in Team plus OIDC (Authorization Code + PKCE) and SAML 2.0 SSO, org-aware RBAC, IdP group mapping, several production installations, support with agreed response times. SSO setup: https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md
 
-How companies get Enterprise (https://vaultrun.dev/#enterprise · one-pager https://vaultrun.dev/enterprise.html):
+Licenses are signed files checked offline; nothing phones home.
+
+How companies get Team or Enterprise (https://vaultrun.dev/#enterprise · one-pager https://vaultrun.dev/enterprise.html):
 
 1. **Evaluate** — free for development and testing; request evaluation access
-2. **License** — production SSO; provide org, IdP, instances/seats, timeline; custom quote
+2. **License** — provide org, edition, installations, IdP if any, timeline; proposal on request
 3. **Talk / schedule** — procurement, support, custom terms; email mail@030.dev to schedule a call
 
-Every request is emailed to mail@030.dev (FormSubmit on the website or mailto). No public pricing; commercial agreement required for production use.
+Every request is emailed to mail@030.dev (FormSubmit on the website or mailto). No public pricing; a subscription is required for production use of Team or Enterprise features.
 
 ## Canonical links
 
 - Website: https://vaultrun.dev/
-- Enterprise CTA: https://vaultrun.dev/#enterprise
+- Editions (Core / Team / Enterprise): https://vaultrun.dev/#enterprise
 - Enterprise one-pager: https://vaultrun.dev/enterprise.html
 - Source: https://github.com/nickvd7/vaultrun
 - PyPI: https://pypi.org/project/vaultrun-sdk/

@@ -31,6 +31,7 @@ These need action on your side:
 
 - **Workspace permissions.** Sandboxes run as the same uid:gid as the API process (65532 under Compose) and own their session directory, which is created `0700`, so no other host user or container can read it. The parent `WORKSPACE_BASE_DIR` is `0700` as well. Only when the API itself runs as root, or when you set `SANDBOX_USER` to another user (for example `nobody`), does VaultRun fall back to world-writable (`0777`) session directories, because that user is "other" to the directory owner; the `0700` parent then limits who can reach them. Keep the host single-tenant and do not mount the workspace directory anywhere else. Directories created by v0.4.6 and earlier stay `0777` until the session is deleted (the parent is `0700`, so they are not reachable by other users). Details: `internal/sandboxuser/sandboxuser.go`.
 - **Docker socket.** The API needs access to `/var/run/docker.sock`, which is effectively root on the host. Run VaultRun on a dedicated host or VM.
+- **Kernel isolation.** With the default runtime, sandboxes share the host kernel. For untrusted or LLM-generated code, install gVisor (`runsc install`, restart Docker) and set `DOCKER_RUNTIME=runsc`; the API refuses to start if Docker does not know the runtime. See [configuration.md](configuration.md#sandbox-runtime-gvisor).
 - **Image allowlist.** Set `DOCKER_IMAGE_ALLOWLIST` to the images you approve, and `COSIGN_PUBLIC_KEY` to fail closed on unsigned ones.
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.
 - **Network exposure.** Bind to a private interface or put the API behind a firewall; only expose 443 to trusted callers. The compose file already binds to `127.0.0.1`.
@@ -49,5 +50,6 @@ TLS_KEY_FILE=/etc/vaultrun/tls/privkey.pem
 DB_SSL_MODE=verify-full
 DB_SSL_ROOT_CERT=/etc/vaultrun/db-ca.pem
 DOCKER_IMAGE_ALLOWLIST=python:3.12-slim,node:20-slim
+DOCKER_RUNTIME=runsc
 AUDIT_HMAC_KEY=<openssl rand -hex 32>
 ```

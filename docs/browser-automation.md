@@ -16,6 +16,8 @@ docker pull vaultrun/browser:playwright-python
 docker build -f docker/browser-playwright-python.Dockerfile -t vaultrun/browser:playwright-python .
 ```
 
+Bouw de image opnieuw als je hem eerder hebt gebouwd: Chromium stond daarin in `/root/.cache`, onbereikbaar voor de niet-root sandbox-gebruiker. De image werkt ook onder gVisor (`DOCKER_RUNTIME=runsc`).
+
 ### 2. Create Session met Browser Support
 
 ```bash

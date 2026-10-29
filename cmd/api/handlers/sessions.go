@@ -147,6 +147,15 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Under gVisor without --nvproxy a GPU sandbox cannot start; say why up
+	// front instead of answering "container creation failed".
+	if req.GPUEnabled && sh.h.cfg.Docker.GPUDevices != "" {
+		if err := sh.h.docker.GPUSupported(); err != nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "gpu_enabled is not available in this deployment: " + err.Error()})
+			return
+		}
+	}
+
 	// Apply defaults for omitted (zero) values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage
@@ -386,17 +395,23 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 	session.ContainerID = &containerID
 	session.Status = models.SessionStatusRunning
 
+	createdMeta := models.JSONB{
+		"image":           req.Image,
+		"network_enabled": req.NetworkEnabled,
+		"cpu_limit":       req.CPULimit,
+		"memory_limit_mb": req.MemoryLimitMB,
+		"timeout_seconds": req.TimeoutSeconds,
+	}
+	// Record the isolation runtime (DOCKER_RUNTIME, e.g. gVisor's runsc) in the
+	// signed entry, so the audit log shows how each sandbox was isolated.
+	if rt := sh.h.docker.Runtime(); rt != "" {
+		createdMeta["runtime"] = rt
+	}
 	sh.h.audit.Log(c.Request.Context(), audit.Event{
 		Actor:     actor,
 		SessionID: &sessionID,
 		Action:    models.ActionSessionCreated,
-		Metadata: sessionAuditMeta(session, models.JSONB{
-			"image":           req.Image,
-			"network_enabled": req.NetworkEnabled,
-			"cpu_limit":       req.CPULimit,
-			"memory_limit_mb": req.MemoryLimitMB,
-			"timeout_seconds": req.TimeoutSeconds,
-		}),
+		Metadata:  sessionAuditMeta(session, createdMeta),
 	})
 
 	metrics.ActiveSessions.Inc()

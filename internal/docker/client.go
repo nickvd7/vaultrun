@@ -9,11 +9,14 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -32,6 +35,8 @@ type Client struct {
 	seccompJSON     string // raw JSON profile; "default" = daemon explicit default
 	cosignPublicKey string // path to cosign public key file; empty = verification disabled
 	requireTlog     bool   // COSIGN_REQUIRE_TLOG=true: pass --tlog-verify to cosign (requires Rekor)
+	runtime         string // DOCKER_RUNTIME: OCI runtime for sandboxes (e.g. "runsc"); empty = daemon default
+	gpuErr          error  // set by CheckRuntime when the runtime cannot pass GPUs through
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
@@ -44,6 +49,11 @@ type Client struct {
 // Cosign: when COSIGN_PUBLIC_KEY points to a PEM public key, every image is
 // verified with `cosign verify --key <file> <image>` before use. If the key
 // is set but the cosign binary is missing, CreateSandbox fails closed.
+//
+// Runtime: DOCKER_RUNTIME names the OCI runtime every sandbox runs under, for
+// example "runsc" (gVisor). Empty uses the daemon's default runtime (runc).
+// Call CheckRuntime at startup so a runtime the daemon does not know is
+// reported before the first session instead of failing every session.
 func New() (*Client, error) {
 	c, err := client.NewClientWithOpts(
 		client.FromEnv,
@@ -85,7 +95,91 @@ func New() (*Client, error) {
 		slog.Warn("docker: cosign image verification disabled (set COSIGN_PUBLIC_KEY to enable)")
 	}
 
+	dc.runtime = strings.TrimSpace(os.Getenv("DOCKER_RUNTIME"))
+	if dc.runtime != "" {
+		slog.Info("docker: sandboxes use OCI runtime", "runtime", dc.runtime)
+	}
+
 	return dc, nil
+}
+
+// ErrRuntimeUnavailable means DOCKER_RUNTIME names a runtime the Docker daemon
+// has not registered.
+var ErrRuntimeUnavailable = errors.New("docker runtime not registered with the daemon")
+
+// Runtime returns the OCI runtime sandboxes are created with ("" = daemon
+// default). Used by the warm pool so it isolates containers the same way as
+// CreateSandbox.
+func (c *Client) Runtime() string {
+	if c == nil {
+		return ""
+	}
+	return c.runtime
+}
+
+// CheckRuntime verifies that the configured runtime is registered with the
+// Docker daemon. It is a no-op when DOCKER_RUNTIME is empty.
+func (c *Client) CheckRuntime(ctx context.Context) error {
+	if c.runtime == "" {
+		return nil
+	}
+	info, err := c.inner.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("docker info: %w", err)
+	}
+	names := make([]string, 0, len(info.Runtimes))
+	for name := range info.Runtimes {
+		names = append(names, name)
+	}
+	if err := checkRuntimeRegistered(c.runtime, names); err != nil {
+		return err
+	}
+	c.gpuErr = gpuSupport(c.runtime, info.Runtimes[c.runtime].Runtime)
+	return nil
+}
+
+// ErrGPUUnsupported means the configured runtime cannot give sandboxes GPU
+// access, so a gpu_enabled session would fail to start.
+var ErrGPUUnsupported = errors.New("GPU passthrough is not supported by the sandbox runtime")
+
+// GPUSupported reports whether sandboxes can get GPU devices under the
+// configured runtime. Valid after CheckRuntime; nil when it was not called.
+func (c *Client) GPUSupported() error {
+	if c == nil {
+		return nil
+	}
+	return c.gpuErr
+}
+
+// gpuSupport returns ErrGPUUnsupported for a gVisor runtime that was
+// registered without --nvproxy, gVisor's NVIDIA driver proxy. A runtime
+// registered as a containerd shim keeps its flags in runsc.toml, which the
+// daemon does not report, so it is given the benefit of the doubt.
+func gpuSupport(name string, rt system.Runtime) error {
+	gvisor := name == "runsc" || filepath.Base(rt.Path) == "runsc" || strings.Contains(rt.Type, "runsc")
+	if !gvisor || (rt.Path == "" && rt.Type != "") {
+		return nil
+	}
+	for _, arg := range rt.Args {
+		switch arg {
+		case "--nvproxy", "-nvproxy", "--nvproxy=true", "-nvproxy=true":
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: gVisor runtime %q is not registered with --nvproxy "+
+		"(re-register it with: runsc install --runtime=%s -- --nvproxy)", ErrGPUUnsupported, name, name)
+}
+
+// checkRuntimeRegistered reports ErrRuntimeUnavailable, listing the runtimes
+// the daemon does know, when want is not among registered.
+func checkRuntimeRegistered(want string, registered []string) error {
+	for _, name := range registered {
+		if name == want {
+			return nil
+		}
+	}
+	sort.Strings(registered)
+	return fmt.Errorf("%w: %q (daemon has: %s)", ErrRuntimeUnavailable, want, strings.Join(registered, ", "))
 }
 
 func (c *Client) Inner() *client.Client {

@@ -148,6 +148,21 @@ func main() {
 	pingCancel()
 	slog.Info("docker daemon reachable", "host", cfg.Docker.Host)
 
+	// A DOCKER_RUNTIME the daemon does not know would fail every session (and
+	// silently falling back to runc would drop the isolation the operator asked
+	// for), so refuse to start instead.
+	rtCtx, rtCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := docker.CheckRuntime(rtCtx); err != nil {
+		slog.Error("DOCKER_RUNTIME is not usable — register it in the daemon's daemon.json or unset it",
+			"runtime", docker.Runtime(), "err", err)
+		rtCancel()
+		os.Exit(1)
+	}
+	rtCancel()
+	if err := docker.GPUSupported(); err != nil && cfg.Docker.GPUDevices != "" {
+		slog.Warn("DOCKER_GPU_DEVICES is set but sessions with gpu_enabled will be rejected", "err", err)
+	}
+
 	// allowed_hosts needs host iptables. Inside a container the API's own
 	// iptables would act on the wrong network namespace, so compose provides a
 	// host-network helper container that the API drives with docker exec.

@@ -129,6 +129,57 @@ jobs:
         env:
           INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_e2e?sslmode=disable
 
+      - name: Build browser image
+        run: docker build -f docker/browser-playwright-python.Dockerfile -t vaultrun/browser:playwright-python .
+
+      # allowed_hosts needs iptables, so the test binary runs as root; it is
+      # built as the runner user so the Go cache stays theirs. The runner's
+      # sudo ignores -E, so the test variables are passed explicitly.
+      - name: Network allowlist and browser tests (runc)
+        run: |
+          set -o pipefail
+          go test -c -tags e2e -o "$RUNNER_TEMP/docker.test" ./internal/docker/
+          sudo VAULTRUN_TEST_RUNTIME="$VAULTRUN_TEST_RUNTIME" VAULTRUN_TEST_BROWSER_IMAGE="$VAULTRUN_TEST_BROWSER_IMAGE" "$RUNNER_TEMP/docker.test" -test.run 'TestEgressAllowlistE2E|TestBrowserImageE2E' -test.v -test.timeout 300s 2>&1 | tee out.txt
+          # A skip (no internet, missing image) must not pass for coverage.
+          grep -q -- '--- PASS: TestEgressAllowlistE2E' out.txt && grep -q -- '--- PASS: TestBrowserImageE2E' out.txt
+        env:
+          VAULTRUN_TEST_BROWSER_IMAGE: vaultrun/browser:playwright-python
+
+      # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
+      - name: Install gVisor (runsc)
+        run: |
+          # Pinned release; releases ship one tarball (runsc + gvisor-bin/).
+          URL=https://storage.googleapis.com/gvisor/releases/release/20261019.0/$(uname -m)
+          curl -fsSLO "$URL/gvisor.tar.bz2" && curl -fsSLO "$URL/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin
+          sudo /usr/local/bin/runsc install
+          # reload, not restart: runtimes are reloadable and the Postgres service container keeps running
+          sudo systemctl reload docker
+          docker info --format '{{json .Runtimes}}' | grep -q runsc
+
+      - name: Sandbox runtime tests (gVisor)
+        run: go test -tags e2e ./internal/docker/ ./internal/warmpool/ -run Runtime -v -timeout 300s
+        env:
+          VAULTRUN_TEST_RUNTIME: runsc
+
+      - name: Network allowlist and browser tests (gVisor)
+        run: |
+          set -o pipefail
+          sudo VAULTRUN_TEST_RUNTIME="$VAULTRUN_TEST_RUNTIME" VAULTRUN_TEST_BROWSER_IMAGE="$VAULTRUN_TEST_BROWSER_IMAGE" "$RUNNER_TEMP/docker.test" -test.run 'TestEgressAllowlistE2E|TestBrowserImageE2E' -test.v -test.timeout 300s 2>&1 | tee out.txt
+          grep -q -- '--- PASS: TestEgressAllowlistE2E' out.txt && grep -q -- '--- PASS: TestBrowserImageE2E' out.txt && grep -q 'runtime=runsc' out.txt
+        env:
+          VAULTRUN_TEST_RUNTIME: runsc
+          VAULTRUN_TEST_BROWSER_IMAGE: vaultrun/browser:playwright-python
+
+      - name: E2E smoke test (gVisor)
+        run: |
+          PGPASSWORD=testpassword psql -h localhost -U vaultrun -d vaultrun_e2e -c 'CREATE DATABASE vaultrun_e2e_gvisor'
+          go test -tags e2e ./cmd/api/ -v -timeout 300s
+        env:
+          DOCKER_RUNTIME: runsc
+          INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_e2e_gvisor?sslmode=disable
+
   python-sdk:
     name: Python SDK tests
     runs-on: ubuntu-latest

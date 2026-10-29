@@ -129,6 +129,21 @@ jobs:
         env:
           INTEGRATION_DSN: postgres://vaultrun:testpassword@localhost:5432/vaultrun_e2e?sslmode=disable
 
+      - name: Build browser image
+        run: docker build -f docker/browser-playwright-python.Dockerfile -t vaultrun/browser:playwright-python .
+
+      # allowed_hosts needs iptables, so the test binary runs as root; it is
+      # built as the runner user so the Go cache stays theirs.
+      - name: Network allowlist and browser tests (runc)
+        run: |
+          set -o pipefail
+          go test -c -tags e2e -o "$RUNNER_TEMP/docker.test" ./internal/docker/
+          sudo -E "$RUNNER_TEMP/docker.test" -test.run 'TestEgressAllowlistE2E|TestBrowserImageE2E' -test.v -test.timeout 300s | tee out.txt
+          # A skip (no internet, missing image) must not pass for coverage.
+          grep -q -- '--- PASS: TestEgressAllowlistE2E' out.txt && grep -q -- '--- PASS: TestBrowserImageE2E' out.txt
+        env:
+          VAULTRUN_TEST_BROWSER_IMAGE: vaultrun/browser:playwright-python
+
       # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
       - name: Install gVisor (runsc)
         run: |
@@ -146,6 +161,15 @@ jobs:
         run: go test -tags e2e ./internal/docker/ ./internal/warmpool/ -run Runtime -v -timeout 300s
         env:
           VAULTRUN_TEST_RUNTIME: runsc
+
+      - name: Network allowlist and browser tests (gVisor)
+        run: |
+          set -o pipefail
+          sudo -E "$RUNNER_TEMP/docker.test" -test.run 'TestEgressAllowlistE2E|TestBrowserImageE2E' -test.v -test.timeout 300s | tee out.txt
+          grep -q -- '--- PASS: TestEgressAllowlistE2E' out.txt && grep -q -- '--- PASS: TestBrowserImageE2E' out.txt
+        env:
+          VAULTRUN_TEST_RUNTIME: runsc
+          VAULTRUN_TEST_BROWSER_IMAGE: vaultrun/browser:playwright-python
 
       - name: E2E smoke test (gVisor)
         run: |

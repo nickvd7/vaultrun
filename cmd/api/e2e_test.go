@@ -70,6 +70,11 @@ func TestE2ESmoke(t *testing.T) {
 	if _, err := dockerClient.Inner().Ping(ctx); err != nil {
 		t.Skipf("Docker ping failed — skipping E2E: %v", err)
 	}
+	// Same startup check as main.go; it also learns whether a GPU can be
+	// passed through under DOCKER_RUNTIME.
+	if err := dockerClient.CheckRuntime(ctx); err != nil {
+		t.Fatalf("DOCKER_RUNTIME: %v", err)
+	}
 
 	// Ensure the sandbox image is locally available. If CI has already pre-pulled
 	// it (via the "Pull sandbox image" workflow step), we skip the registry pull
@@ -105,6 +110,10 @@ func TestE2ESmoke(t *testing.T) {
 			DefaultImage:    e2eImage,
 			ContainerPrefix: "vaultrun-e2e",
 			NetworkName:     "none",
+			// No session in this test asks for a GPU except
+			// gpu_rejected_without_nvproxy, which must be refused before any
+			// container is created.
+			GPUDevices: "all",
 		},
 		Server:    config.ServerConfig{RateLimit: 0},
 		Workspace: config.WorkspaceConfig{BaseDir: wsDir, MaxFileMB: 100},
@@ -185,6 +194,21 @@ func TestE2ESmoke(t *testing.T) {
 	if t.Failed() || sessionID == "" {
 		t.Fatal("session setup failed — aborting E2E")
 	}
+
+	// Under gVisor without --nvproxy a GPU session cannot start; the API must
+	// refuse it with a reason instead of failing container creation.
+	t.Run("gpu_rejected_without_nvproxy", func(t *testing.T) {
+		if dockerClient.GPUSupported() == nil {
+			t.Skip("runtime supports GPU passthrough (or is not gVisor)")
+		}
+		code, body := c.postStatus("/api/v1/sessions", map[string]any{
+			"image":       e2eImage,
+			"gpu_enabled": true,
+		})
+		if code != http.StatusNotImplemented || !strings.Contains(body, "nvproxy") {
+			t.Fatalf("gpu session: want 501 mentioning nvproxy, got %d: %s", code, body)
+		}
+	})
 
 	// ── 6. Upload a Python script ─────────────────────────────────────────────
 	t.Run("upload_file", func(t *testing.T) {
@@ -461,6 +485,23 @@ func (c *smokeClient) postMap(path string, body map[string]any) map[string]any {
 		c.t.Fatalf("POST %s: decode: %v (body: %s)", path, err, raw)
 	}
 	return m
+}
+
+// postStatus posts body and returns the status code and raw response, for
+// requests that are expected to fail.
+func (c *smokeClient) postStatus(path string, body map[string]any) (int, string) {
+	c.t.Helper()
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, c.base+path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
 }
 
 func (c *smokeClient) deleteRaw(path string) {

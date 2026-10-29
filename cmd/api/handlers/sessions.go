@@ -147,6 +147,15 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Under gVisor without --nvproxy a GPU sandbox cannot start; say why up
+	// front instead of answering "container creation failed".
+	if req.GPUEnabled && sh.h.cfg.Docker.GPUDevices != "" {
+		if err := sh.h.docker.GPUSupported(); err != nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "gpu_enabled is not available in this deployment: " + err.Error()})
+			return
+		}
+	}
+
 	// Apply defaults for omitted (zero) values
 	if req.Image == "" {
 		req.Image = sh.h.cfg.Docker.DefaultImage

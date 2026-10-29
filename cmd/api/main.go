@@ -159,8 +159,8 @@ func main() {
 		os.Exit(1)
 	}
 	rtCancel()
-	if docker.Runtime() == "runsc" && cfg.Docker.GPUDevices != "" {
-		slog.Warn("DOCKER_GPU_DEVICES with gVisor: GPU sessions only start when runsc is configured with --nvproxy")
+	if err := docker.GPUSupported(); err != nil && cfg.Docker.GPUDevices != "" {
+		slog.Warn("DOCKER_GPU_DEVICES is set but sessions with gpu_enabled will be rejected", "err", err)
 	}
 
 	// allowed_hosts needs host iptables. Inside a container the API's own

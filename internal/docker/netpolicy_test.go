@@ -137,6 +137,8 @@ func TestApplyEgressPolicyInvalidDNSServer(t *testing.T) {
 // passes validation (subsequent iptables call will fail in test environment
 // but must NOT produce the IP-validation error).
 func TestApplyEgressPolicyValidIPPassesValidation(t *testing.T) {
+	// As root the rules really get installed; do not leave them on the host.
+	t.Cleanup(func() { removeEgressPolicy("vr-abc123def456", "br-abc123def456") })
 	err := applyEgressPolicy("vr-abc123def456", "br-abc123def456", "172.17.0.1", nil)
 	if err != nil && strings.Contains(err.Error(), "invalid DNS server IP") {
 		t.Errorf("valid gateway IP rejected: %v", err)

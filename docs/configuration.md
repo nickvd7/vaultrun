@@ -139,9 +139,21 @@ startup and refuses to start if the daemon does not know the runtime, rather
 than silently running sandboxes under `runc`. Each `session.created` audit entry
 records the runtime in its signed metadata (`"runtime": "runsc"`).
 
-Under gVisor, GPU sessions (`DOCKER_GPU_DEVICES`) only start when `runsc` is
-configured with `--nvproxy`. Syscall-heavy workloads run slower, and a few
-rarely used syscalls are not implemented; test your images before switching.
+`allowed_hosts` works unchanged under gVisor: the egress rules sit on the
+host, on the session's bridge, and gVisor's network stack sends traffic through
+that bridge. The Playwright browser image runs under gVisor as well. CI checks
+both under `runc` and `runsc`.
+
+GPU sessions (`DOCKER_GPU_DEVICES`) need gVisor's NVIDIA proxy. Register the
+runtime with it: `runsc install --runtime=runsc -- --nvproxy`, then reload
+Docker. When `runsc` is registered without `--nvproxy`, the API logs a warning
+at startup and answers `gpu_enabled` sessions with `501` and that instruction,
+instead of failing container creation. (A runtime registered as a containerd
+shim keeps its flags in `runsc.toml`, which Docker does not report; it is not
+checked.)
+
+Syscall-heavy workloads run slower under gVisor, and a few rarely used syscalls
+are not implemented; test your own images before switching.
 
 ### Cosign Image Signature Verification
 

@@ -1,7 +1,8 @@
 # VaultRun Browser Image - Playwright Python
 # Headless Chromium pre-installed for web automation and scraping
 
-FROM python:3.12-slim
+# bookworm: Playwright 1.40 install-deps does not know Debian trixie package names.
+FROM python:3.12-slim-bookworm
 
 # Install system dependencies for Playwright
 RUN apt-get update && apt-get install -y \
@@ -9,6 +10,11 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install the browsers outside /root: sandboxes run as a non-root user with
+# HOME=/tmp, so Playwright's default ($HOME/.cache/ms-playwright) would be empty
+# for them and /root is not readable anyway.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Install Playwright and browsers
 RUN pip install --no-cache-dir playwright==1.40.0 && \

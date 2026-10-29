@@ -201,7 +201,7 @@ export default function SessionsPage() {
           <h1 className="text-2xl font-semibold text-slate-100">Sessions</h1>
           <p className="text-slate-300 text-sm mt-1">
             {filtering ? `${visible.length} of ${sessions.length}` : sessions.length} session
-            {(filtering ? visible.length : sessions.length) !== 1 ? "s" : ""}
+            {sessions.length !== 1 ? "s" : ""}
             {orgId ? " in selected org" : ""}
           </p>
         </div>

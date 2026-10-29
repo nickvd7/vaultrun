@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { useApiKey } from "@/components/ApiKeyGate";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { MasterKeyNotice } from "@/components/ui/Notice";
+import { PersonalKeyCard } from "@/components/PersonalKeyCard";
 import { useToast } from "@/components/ui/Toast";
 import { Time } from "@/components/ui/Time";
 import { formatDateWithZone, toDateTimeLocalValue } from "@/lib/utils";
@@ -42,7 +43,7 @@ function isExpired(expiresAt: string): boolean {
 }
 
 export default function KeysPage() {
-  const { isMaster, roleReady } = useApiKey();
+  const { isMaster, roleReady, isSSO } = useApiKey();
   const toast = useToast();
   const [secretsInput, setSecretsInput] = useState("");
   const [revoking, setRevoking] = useState<APIKey | null>(null);
@@ -190,24 +191,25 @@ export default function KeysPage() {
             Manage keys used to authenticate with the VaultRun API
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            disabled={isMaster === false}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </button>
-          <button
-            onClick={() => { setShowForm(!showForm); setError(null); }}
-            disabled={isMaster === false}
-            title={isMaster === false ? "Requires the master key" : undefined}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Key
-          </button>
-        </div>
+        {isMaster !== false && (
+          <div className="flex gap-2">
+            <button
+              onClick={load}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-md hover:bg-slate-800"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+            <button
+              onClick={() => { setShowForm(!showForm); setError(null); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-white bg-indigo-600 rounded-md hover:bg-indigo-500"
+            >
+              <Plus className="w-3.5 h-3.5" /> New Key
+            </button>
+          </div>
+        )}
       </div>
+
+      {isSSO && <PersonalKeyCard />}
 
       {isMaster === false && <MasterKeyNotice what="Creating, listing and revoking API keys" />}
 

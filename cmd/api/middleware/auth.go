@@ -32,6 +32,17 @@ type SessionVerifier interface {
 	VerifyAPIKeyID(c *gin.Context) (string, error)
 }
 
+// ClientHeader must accompany a request authenticated by an SSO session cookie
+// when the request can change something (any method but GET, HEAD, OPTIONS).
+// Browsers attach cookies to cross-site form posts, but a page on another
+// site cannot add a custom header without a CORS preflight the API does not
+// grant, so the header proves the request came from the dashboard (CSRF).
+const ClientHeader = "X-VaultRun-Client"
+
+func safeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
 // APIKeyAuth validates Bearer or X-API-Key tokens against the database.
 // When sessions is non-nil, a valid SSO session cookie is also accepted.
 // Master key comparison is length-safe via HMAC before ConstantTimeCompare.
@@ -62,6 +73,10 @@ func APIKeyAuth(db *sqlx.DB, masterKey string, sessions SessionVerifier) gin.Han
 		if sessions != nil {
 			apiKeyID, err := sessions.VerifyAPIKeyID(c)
 			if err == nil && apiKeyID != "" {
+				if !safeMethod(c.Request.Method) && c.GetHeader(ClientHeader) == "" {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "requests authenticated by a session cookie must carry the " + ClientHeader + " header"})
+					return
+				}
 				// Resolve the key ID directly via DB lookup by primary key.
 				type keyRow struct {
 					ID   string `db:"id"`

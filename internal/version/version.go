@@ -20,6 +20,14 @@ var embedded string
 // to override the revision Go records from version control.
 var Commit string
 
+// Edition is "community" for the open-source build. The VaultRun Enterprise
+// overlay sets it to "enterprise" from an init function.
+var Edition = "community"
+
+// EditionDetail says more about the edition, e.g. the license it runs under.
+// Empty for the community edition.
+var EditionDetail string
+
 // Version is the release number, for example "0.4.3".
 func Version() string {
 	return strings.TrimSpace(embedded)

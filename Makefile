@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up dev-env down down-all logs help
+.PHONY: all build test lint clean up dev-env down down-all purge logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -57,6 +57,9 @@ down:
 # Also removes sandbox containers, networks and egress rules: sessions and their files are lost.
 down-all:
 	@./scripts/down.sh --all .env
+
+purge:
+	@./scripts/down.sh --purge .env
 
 logs:
 	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
@@ -138,6 +141,7 @@ help:
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
 	@echo "  make down            Stop the stack; sandboxes and their files keep running"
 	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"
+	@echo "  make purge           down-all, and also delete the database, Redis and certificate volumes"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

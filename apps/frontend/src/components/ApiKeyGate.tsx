@@ -1,13 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { Shield, Eye, EyeOff } from "lucide-react";
-import { UNAUTHORIZED_EVENT } from "@/lib/api";
+import { Shield, Eye, EyeOff, LogIn } from "lucide-react";
+import { UNAUTHORIZED_EVENT, SSO_SESSION, authHeaders, sso } from "@/lib/api";
 
 interface ApiKeyContextValue {
   apiKey: string;
   setApiKey: (key: string) => void;
   clearApiKey: () => void;
+  /** True when signed in with single sign-on rather than an API key. */
+  isSSO: boolean;
   /** true = master key, false = regular key, null = still checking / unknown. */
   isMaster: boolean | null;
   /** Name of the signed-in key ("master" for the master key); null while unknown. */
@@ -20,6 +22,7 @@ const ApiKeyContext = createContext<ApiKeyContextValue>({
   apiKey: "",
   setApiKey: () => {},
   clearApiKey: () => {},
+  isSSO: false,
   isMaster: null,
   keyName: null,
   roleReady: false,
@@ -41,10 +44,16 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [keyName, setKeyName] = useState<string | null>(null);
   const [roleReady, setRoleReady] = useState(false);
   const [notice, setNotice] = useState("");
+  const [providers, setProviders] = useState<{ oidc: boolean; saml: boolean } | null>(null);
 
   const rejectKey = useCallback(() => {
+    const wasSSO = localStorage.getItem(STORAGE_KEY) === SSO_SESSION;
     localStorage.removeItem(STORAGE_KEY);
-    setNotice("Your saved API key was rejected (expired or revoked). Enter a valid key to sign in again.");
+    setNotice(
+      wasSSO
+        ? "Your single sign-on session ended (expired, signed out or revoked). Sign in again."
+        : "Your saved API key was rejected (expired or revoked). Enter a valid key to sign in again."
+    );
     setApiKeyState("");
   }, []);
 
@@ -53,10 +62,29 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, rejectKey);
   }, [rejectKey]);
 
-  // Load from localStorage on mount (client-only)
+  // Load from localStorage on mount (client-only). Without a stored key, ask
+  // whether the server offers single sign-on and whether the browser already
+  // holds a session (it does right after the IdP redirected back).
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) || "";
-    setApiKeyState(stored);
+    let cancelled = false;
+    (async () => {
+      const offered = await sso.providers();
+      if (cancelled) return;
+      setProviders(offered);
+      if (!stored && offered && (await sso.hasSession())) {
+        if (cancelled) return;
+        localStorage.setItem(STORAGE_KEY, SSO_SESSION);
+        setApiKeyState(SSO_SESSION);
+        return;
+      }
+      if (!cancelled && stored) return;
+      if (!cancelled) setApiKeyState("");
+    })();
+    if (stored) setApiKeyState(stored);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Ask the API what this key may do. Older APIs have no /whoami; they are
@@ -70,7 +98,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
       return;
     }
     let cancelled = false;
-    const headers = { "X-API-Key": apiKey };
+    const headers = authHeaders(apiKey);
     (async () => {
       try {
         const who = await fetch("/api/v1/whoami", { headers });
@@ -112,9 +140,18 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearApiKey = useCallback(() => {
+    const wasSSO = localStorage.getItem(STORAGE_KEY) === SSO_SESSION;
     localStorage.removeItem(STORAGE_KEY);
     setNotice("");
     setApiKeyState("");
+    if (wasSSO) {
+      sso.logout().catch(() =>
+        setNotice(
+          "Signed out in this browser, but the server could not revoke the session. " +
+            "Anyone holding a copy of the session cookie can use it until it expires; tell your administrator."
+        )
+      );
+    }
   }, []);
 
   const handleConnect = async () => {
@@ -160,9 +197,37 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
             </div>
             <div className="text-center">
               <h1 className="text-xl font-semibold text-slate-100">Connect to VaultRun</h1>
-              <p className="text-slate-300 text-sm mt-1">Enter your API key to continue</p>
+              <p className="text-slate-300 text-sm mt-1">
+                {providers ? "Sign in with your organisation's account" : "Enter your API key to continue"}
+              </p>
             </div>
           </div>
+
+          {providers && (
+            <div className="space-y-2">
+              {providers.oidc && (
+                <a
+                  href={sso.loginURL("oidc")}
+                  className="w-full flex items-center justify-center gap-2 py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-500 transition-colors"
+                >
+                  <LogIn className="w-4 h-4" aria-hidden="true" /> Sign in with SSO
+                </a>
+              )}
+              {providers.saml && (
+                <a
+                  href={sso.loginURL("saml")}
+                  className={`w-full flex items-center justify-center gap-2 py-3 text-sm font-medium rounded-lg transition-colors ${
+                    providers.oidc
+                      ? "text-slate-200 border border-slate-700 hover:bg-slate-800"
+                      : "text-white bg-indigo-600 hover:bg-indigo-500"
+                  }`}
+                >
+                  <LogIn className="w-4 h-4" aria-hidden="true" /> Sign in with SAML
+                </a>
+              )}
+              <p className="text-center text-xs text-slate-300 pt-2">or connect with an API key</p>
+            </div>
+          )}
 
           <div className="space-y-3">
             <div className="relative">
@@ -179,7 +244,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
                 value={input}
                 onChange={(e) => { setInput(e.target.value); setError(""); }}
                 onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                autoFocus
+                autoFocus={!providers}
               />
               <button
                 type="button"
@@ -215,7 +280,7 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isMaster, keyName, roleReady }}>
+    <ApiKeyContext.Provider value={{ apiKey, setApiKey, clearApiKey, isSSO: apiKey === SSO_SESSION, isMaster, keyName, roleReady }}>
       {children}
     </ApiKeyContext.Provider>
   );

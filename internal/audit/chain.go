@@ -293,27 +293,45 @@ func (i *Integrity) ScopedTo(actor string) *Integrity {
 const (
 	maxReportedIDs   = 25
 	maxTrackedBad    = 10000
-	integrityCacheTT = 10 * time.Second
+	integrityCacheTT = time.Minute
 )
 
 // Integrity verifies the whole log: every signature, every link of the chain,
 // holes in the numbering, entries cut off the end and the chain head itself.
-// The result is cached briefly so a page refresh does not rescan the table.
+// The result is cached briefly so a page refresh does not rescan the table,
+// but only while the tables are unchanged: a cheap fingerprint of every row
+// (computed in the database) is compared first, so an entry edited directly
+// in the database shows up on the next check instead of after the cache ages.
 func (l *Logger) Integrity(ctx context.Context, force bool) (*Integrity, error) {
 	if !l.Enabled() {
 		return &Integrity{Status: IntegrityDisabled, CheckedAt: time.Now().UTC(), Problems: []string{}}, nil
 	}
 	l.scanMu.Lock()
 	defer l.scanMu.Unlock()
-	if !force && l.integrity != nil && time.Since(l.integrityAt) < integrityCacheTT {
+	fp, err := l.fingerprint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !force && l.integrity != nil && fp == l.integrityFP && time.Since(l.integrityAt) < integrityCacheTT {
 		return l.integrity, nil
 	}
 	res, err := l.scan(ctx)
 	if err != nil {
 		return nil, err
 	}
-	l.integrity, l.integrityAt = res, time.Now()
+	l.integrity, l.integrityAt, l.integrityFP = res, time.Now(), fp
 	return res, nil
+}
+
+// fingerprint summarises the content of the audit tables: it changes when any
+// column of any row changes, or rows are added or removed.
+func (l *Logger) fingerprint(ctx context.Context) (string, error) {
+	var fp string
+	err := l.db.GetContext(ctx, &fp, `SELECT
+		(SELECT count(*)::text || ':' || coalesce(sum(hashtextextended(a::text, 0)), 0)::text FROM audit_logs a)
+		|| '/' ||
+		(SELECT count(*)::text || ':' || coalesce(sum(hashtextextended(c::text, 0)), 0)::text FROM audit_chain c)`)
+	return fp, err
 }
 
 func (l *Logger) scan(ctx context.Context) (*Integrity, error) {

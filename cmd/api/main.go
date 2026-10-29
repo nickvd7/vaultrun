@@ -27,6 +27,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/evidence"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/missions"
@@ -193,6 +194,17 @@ func main() {
 	_ = os.Remove(probeFile)
 
 	al := audit.New(db, cfg.Observability.AuditHMACKey)
+
+	if key := cfg.Observability.EvidenceSigningKey; key != "" {
+		signer, err := evidence.ParseSigningKey(key)
+		if err != nil {
+			slog.Error("EVIDENCE_SIGNING_KEY is not usable", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("evidence packs enabled", "key_id", signer.KeyID())
+	} else {
+		slog.Warn("evidence export disabled: set EVIDENCE_SIGNING_KEY to sign session evidence packs")
+	}
 
 	// Cost tracker for resource usage and billing (uses same key as audit HMAC).
 	costTracker := cost.New(db, []byte(cfg.Observability.AuditHMACKey))

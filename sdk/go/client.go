@@ -351,6 +351,31 @@ func (c *Client) DownloadFile(ctx context.Context, sessionID, remotePath string)
 	return resp.Body, nil
 }
 
+// ExportEvidence downloads the session's signed evidence pack, as written to
+// a file for `vaultrun evidence verify`. The server needs EVIDENCE_SIGNING_KEY.
+func (c *Client) ExportEvidence(ctx context.Context, sessionID string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		c.baseURL+"/api/v1/sessions/"+sessionID+"/evidence", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("evidence export failed (%d): %s", resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
 // DownloadWorkspace downloads the entire workspace as a ZIP archive.
 // The caller is responsible for closing the returned ReadCloser.
 func (c *Client) DownloadWorkspace(ctx context.Context, sessionID string) (io.ReadCloser, error) {

@@ -154,6 +154,7 @@ type ObservabilityConfig struct {
 	WebhookSecret            string // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
 	AuditLogRetentionDays    int    // AUDIT_LOG_RETENTION_DAYS: delete audit logs older than N days (0 = keep forever)
 	AuditHMACKey             string // AUDIT_HMAC_KEY: HMAC-SHA256 key for audit log integrity signatures; empty = disabled
+	EvidenceSigningKey       string // EVIDENCE_SIGNING_KEY: Ed25519 key for session evidence packs (64 hex seed or PEM file path); empty = export disabled
 }
 
 // Limits caps applied to session creation requests.
@@ -304,6 +305,7 @@ func Load() (*Config, error) {
 			WebhookSecret:            getEnv("WEBHOOK_SECRET", ""),
 			AuditLogRetentionDays:    func() int { n, _ := strconv.Atoi(getEnv("AUDIT_LOG_RETENTION_DAYS", "90")); return n }(),
 			AuditHMACKey:             getEnv("AUDIT_HMAC_KEY", ""),
+			EvidenceSigningKey:       getEnv("EVIDENCE_SIGNING_KEY", ""),
 		},
 	}
 

@@ -7,6 +7,7 @@
 #                      has a data volume, because the database keeps the password
 #                      it was first started with and a new value would lock the
 #                      API out. A warning is printed instead.
+#   EVIDENCE_SIGNING_KEY empty: generated (Ed25519 seed for evidence packs).
 #   REDIS_PASSWORD     empty: generated, when Redis is the one Compose starts
 #                      (REDIS_ADDR unset or redis:6379). Redis takes the password
 #                      from its command line, so changing it is always safe.
@@ -85,4 +86,13 @@ redis_addr=$(env_value REDIS_ADDR)
 if [ -z "$(env_value REDIS_PASSWORD)" ] && { [ -z "$redis_addr" ] || [ "$redis_addr" = "redis:6379" ]; }; then
   set_var REDIS_PASSWORD "$(gen)"
   echo "Generated REDIS_PASSWORD in $ENV_FILE (Redis now requires a password)."
+fi
+
+# EVIDENCE_SIGNING_KEY: an Ed25519 seed (32 random bytes, hex) that signs
+# session evidence packs. Verifiers need the matching public key
+# (vaultrun evidence public-key); a new value means a new public key, but packs
+# signed earlier still verify with the old one.
+if [ -z "$(env_value EVIDENCE_SIGNING_KEY)" ]; then
+  set_var EVIDENCE_SIGNING_KEY "$(gen)"
+  echo "Generated EVIDENCE_SIGNING_KEY in $ENV_FILE (signs session evidence packs; get the public key with: vaultrun evidence public-key)."
 fi

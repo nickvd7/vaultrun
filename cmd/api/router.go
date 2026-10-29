@@ -20,6 +20,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/config"
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/evidence"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/missions"
@@ -96,6 +97,12 @@ func newRouter(
 	})
 
 	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool, artStore)
+	if key := cfg.Observability.EvidenceSigningKey; key != "" {
+		// main.go already refused to start on an unusable key.
+		if signer, err := evidence.ParseSigningKey(key); err == nil {
+			hub.SetEvidenceSigner(signer)
+		}
+	}
 
 	health := handlers.NewHealthHandler(hub)
 	// Health endpoint is unauthenticated (needed by load-balancer probes) but
@@ -229,6 +236,10 @@ func newRouter(
 	authGroup.GET("/sessions/:id", sessH.Get)
 	authGroup.DELETE("/sessions/:id", sessH.Delete)
 	authGroup.PATCH("/sessions/:id/labels", sessH.UpdateLabels)
+
+	evH := handlers.NewEvidenceHandler(hub)
+	authGroup.GET("/sessions/:id/evidence", evH.Export)
+	authGroup.GET("/evidence/public-key", evH.PublicKey)
 
 	filesH := handlers.NewFileHandler(hub)
 	authGroup.POST("/sessions/:id/files", filesH.Upload)

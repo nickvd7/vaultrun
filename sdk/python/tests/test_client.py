@@ -273,6 +273,20 @@ def test_download_file_success(client: Client) -> None:
     assert result == file_bytes
 
 
+@rsps.activate
+def test_export_evidence(client: Client) -> None:
+    pack = b'{"pack":"e30=","signature":{"alg":"ed25519"}}'
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/sessions/{SESSION_ID}/evidence",
+        body=pack,
+        status=200,
+        content_type="application/json",
+    )
+
+    assert client.export_evidence(SESSION_ID) == pack
+
+
 # ---------------------------------------------------------------------------
 # test_delete_session
 # ---------------------------------------------------------------------------

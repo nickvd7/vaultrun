@@ -18,6 +18,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/config"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/evidence"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
@@ -40,8 +41,9 @@ type Hub struct {
 	secrets        secrets.Provider
 	warmPool       *warmpool.Pool // nil when pool disabled
 	artifactStore  artifacts.Store
-	sessionManager *sessionManager // session access helper
-	orgManager     *orgManager     // org access helper
+	evidenceSigner *evidence.Signer // nil when EVIDENCE_SIGNING_KEY is unset
+	sessionManager *sessionManager  // session access helper
+	orgManager     *orgManager      // org access helper
 }
 
 // sessionManager provides session access helpers
@@ -95,6 +97,9 @@ func NewHub(
 		orgManager:     &orgManager{db: db},
 	}
 }
+
+// SetEvidenceSigner enables session evidence export.
+func (h *Hub) SetEvidenceSigner(s *evidence.Signer) { h.evidenceSigner = s }
 
 // Policy exposes the active policy hook (for the policy handler).
 func (h *Hub) Policy() policy.Hook { return h.policy }

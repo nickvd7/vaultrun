@@ -72,6 +72,9 @@ const (
 	// Multi-agent collaboration actions
 	ActionAgentJoined          = "agent.joined"
 	ActionCollaborationEnabled = "collaboration.enabled"
+
+	// Evidence packs.
+	ActionEvidenceExported = "evidence.exported"
 )
 
 // JSONB is a map that implements sql Scanner/Valuer for Postgres JSONB.

@@ -185,6 +185,13 @@ host-side iptables rules that allow only:
 All other egress is dropped. IPv6 egress from the session network is dropped
 entirely; hostnames are resolved once at session creation.
 
+Without `allowed_hosts`, a session with `network_enabled: true` gets the same
+kind of network with rules that allow the internet but drop private,
+loopback, link-local (cloud metadata) and CGNAT ranges. In both modes traffic
+to the host itself is dropped, except DNS to the gateway. Set
+`SANDBOX_ALLOW_PRIVATE_NETWORKS=true` to let sessions without `allowed_hosts`
+reach private ranges.
+
 Where the rules are installed depends on how the API runs:
 
 | Deployment | How |

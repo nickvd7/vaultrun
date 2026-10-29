@@ -44,7 +44,19 @@ When a session is created with `allowed_hosts` set and `network_enabled: true`:
 3. The chain allows: DNS (UDP/TCP 53), ESTABLISHED/RELATED replies, and IPs resolved from `allowed_hosts` — everything else is **dropped**
 4. On session stop, rules and the Docker network are removed
 
-Sessions without `allowed_hosts` (but with `network_enabled: true`) use the default bridge without iptables filtering. Sessions with `network_enabled: false` have no network at all, and `allowed_hosts` together with `network_enabled: false` is rejected with `400` (before v0.4.5 the list was ignored without a word).
+Sessions without `allowed_hosts` (but with `network_enabled: true`) get the same dedicated network, with rules that allow the internet but **drop private, loopback, link-local and CGNAT ranges**: the network the host sits in, other machines in the VPC and the cloud metadata service (`169.254.169.254`, which hands out the host's cloud credentials). `SANDBOX_ALLOW_PRIVATE_NETWORKS=true` lifts that for deployments that want sandboxes on the internal network; without iptables (no helper, no root) such sessions fall back to the default bridge without filtering and the API logs a warning.
+
+In both modes, traffic from the sandbox to the **host itself** (the bridge gateway or any host address, which passes iptables' INPUT chain rather than FORWARD) is dropped except DNS to the gateway, so services the host runs on `0.0.0.0` are out of reach.
+
+Sessions with `network_enabled: false` have no network at all, and `allowed_hosts` together with `network_enabled: false` is rejected with `400` (before v0.4.5 the list was ignored without a word).
+
+### Workspace files
+
+The sandbox controls its workspace and can replace any file or directory with a symlink at any moment, including between a check and an open. Every file operation the API performs on a workspace (downloads, uploads, the workspace zip, snapshots and their restore, evidence hashing, artifact promotion, the file list) goes through an `os.Root` for that workspace: the kernel resolves each path component inside it and refuses to leave it, through `..`, an absolute symlink or a symlink to a directory outside. Before v0.4.13 a sandbox could win that race and have the API read its own `/proc/self/environ` (master key, database password, signing keys) or write into another session's workspace on snapshot restore.
+
+### Workspace size
+
+`MAX_WORKSPACE_MB` caps each session's workspace. Uploads over the cap are refused; what the sandbox writes itself is measured every 5 seconds, and a sandbox over its cap is **paused** (all its processes frozen, background ones included) with a `session.quota_exceeded` audit entry. Runs are refused with `507` until files are deleted through the API; the next run then resumes the sandbox. The overshoot is bounded by what a sandbox can write in those seconds; a hard limit needs filesystem quotas (XFS project quotas) on the workspace directory.
 
 ### Image Signature Verification (cosign)
 

@@ -32,6 +32,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/quota"
 	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
@@ -389,6 +390,14 @@ func main() {
 	go cleanup.Start(cleanupCtx, db, docker, al, ws, 5*time.Minute, idleFor, cfg.Observability.AuditLogRetentionDays)
 	go costTracker.StartAccrual(cleanupCtx, time.Minute)
 	go al.WatchIntegrity(cleanupCtx, 5*time.Minute)
+	if cfg.Workspace.MaxWorkspaceMB > 0 {
+		// Sandboxes write to their workspace on the host's disk directly;
+		// pause the ones that grow past MAX_WORKSPACE_MB.
+		q := &quota.Enforcer{DB: db, Docker: docker, WS: ws, Audit: al, MaxBytes: cfg.Workspace.MaxWorkspaceMB << 20}
+		go q.Run(cleanupCtx, 5*time.Second)
+	} else {
+		slog.Warn("MAX_WORKSPACE_MB is 0: a sandbox can fill the host's disk — set a cap per session")
+	}
 
 	// SIEM audit export — optional; only active when AUDIT_EXPORT_URL is set.
 	if siemExp := siemexport.New(db); siemExp != nil {

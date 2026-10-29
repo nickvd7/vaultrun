@@ -248,9 +248,10 @@ func (m *Manager) RestoreCheckpoint(ctx context.Context, opts RestoreOpts) error
 		return err
 	}
 	
-	// Verify it belongs to the correct session
+	// Verify it belongs to the correct session. Another session's checkpoint
+	// is reported as not found, so the ID is no oracle.
 	if checkpoint.SessionID != opts.SessionID {
-		return errors.New("checkpoint does not belong to this session")
+		return ErrCheckpointNotFound
 	}
 	
 	// 2. Verify signature

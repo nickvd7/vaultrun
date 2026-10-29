@@ -114,6 +114,9 @@ func chainName(containerID string) string {
 	return prefix + containerID
 }
 
+// inputChain names the chain for traffic from a sandbox to the host itself.
+func inputChain(chain string) string { return chain + "-in" }
+
 // bridgeIface returns the Linux network interface name for a Docker bridge
 // network. Docker names custom bridge networks "br-<networkID[:12]>".
 func bridgeIface(networkID string) string {
@@ -140,7 +143,17 @@ func bridgeIface(networkID string) string {
 // dnsServer must be the IPv4 gateway of the session network. Restricting DNS
 // to this address prevents a container from tunnelling data to an
 // attacker-controlled nameserver via arbitrary port-53 queries.
-func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) error {
+//
+// openInternet selects the policy for a sandbox with network but no
+// allowed_hosts: instead of allowing only allowedIPs it drops every private,
+// loopback, link-local (cloud metadata) and CGNAT range and allows the rest,
+// so the sandbox reaches the internet but not the network the host sits in.
+//
+// In both modes traffic addressed to the host itself (the bridge gateway or
+// any other host address) is dropped too: it passes the INPUT chain, not
+// FORWARD, so without inputChain(chain) a sandbox could reach any service
+// the host runs on 0.0.0.0.
+func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, openInternet bool) error {
 	if !iptablesNameRe.MatchString(chain) {
 		return fmt.Errorf("invalid iptables chain name: %q", chain)
 	}
@@ -169,6 +182,17 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) erro
 	if err := ipt("-A", chain, "-p", "tcp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"); err != nil {
 		return fmt.Errorf("add DNS/TCP rule: %w", err)
 	}
+	if openInternet {
+		for _, n := range blockedNets {
+			if n.IP.To4() == nil {
+				continue // IPv6 is dropped wholesale below
+			}
+			if err := ipt("-A", chain, "-d", n.String(), "-j", "DROP"); err != nil {
+				return fmt.Errorf("add private-range drop rule for %s: %w", n, err)
+			}
+		}
+		allowedIPs = []string{"0.0.0.0/0"}
+	}
 	for _, ip := range allowedIPs {
 		// Hosts often resolve to AAAA records too. IPv6 egress is dropped
 		// wholesale below, and iptables rejects IPv6 literals.
@@ -188,6 +212,28 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) erro
 	}
 	if err := ipt("-I", "FORWARD", "-i", iface, "-j", chain); err != nil && !isIPTExistsErr(err) {
 		return fmt.Errorf("insert FORWARD jump (iface=%s, chain=%s): %w", iface, chain, err)
+	}
+
+	// Traffic to the host itself: only DNS to the gateway.
+	in := inputChain(chain)
+	if err := ipt("-N", in); err != nil && !isIPTExistsErr(err) {
+		return fmt.Errorf("create chain %q: %w", in, err)
+	}
+	if err := ipt("-F", in); err != nil {
+		return fmt.Errorf("flush chain %q: %w", in, err)
+	}
+	for _, rule := range [][]string{
+		{"-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
+		{"-p", "udp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"},
+		{"-p", "tcp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"},
+		{"-j", "DROP"},
+	} {
+		if err := ipt(append([]string{"-A", in}, rule...)...); err != nil {
+			return fmt.Errorf("add host-input rule: %w", err)
+		}
+	}
+	if err := ipt("-I", "INPUT", "-i", iface, "-j", in); err != nil && !isIPTExistsErr(err) {
+		return fmt.Errorf("insert INPUT jump (iface=%s, chain=%s): %w", iface, in, err)
 	}
 
 	// ── IPv6 (best-effort: binary may not be present) ────────────────────────
@@ -215,6 +261,16 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string) erro
 // removeEgressPolicy removes the iptables/ip6tables rules created by applyEgressPolicy.
 // Errors are logged as warnings — cleanup must not block container removal.
 func removeEgressPolicy(chain, iface string) {
+	in := inputChain(chain)
+	if err := ipt("-D", "INPUT", "-i", iface, "-j", in); err != nil {
+		slog.Warn("netpolicy: remove INPUT jump", "chain", in, "iface", iface, "err", err)
+	}
+	if err := ipt("-F", in); err != nil {
+		slog.Warn("netpolicy: flush chain", "chain", in, "err", err)
+	}
+	if err := ipt("-X", in); err != nil {
+		slog.Warn("netpolicy: delete chain", "chain", in, "err", err)
+	}
 	if err := ipt("-D", "FORWARD", "-i", iface, "-j", chain); err != nil {
 		slog.Warn("netpolicy: remove FORWARD jump", "chain", chain, "iface", iface, "err", err)
 	}

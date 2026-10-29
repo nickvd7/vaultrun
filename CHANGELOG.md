@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+- **Critical: a sandbox could read the API's secrets.** File reads checked a workspace path for symlinks and opened it afterwards; the sandbox controls its workspace and could swap a directory for a symlink in between, making the API serve its own `/proc/self/environ` (master key, database password, audit, evidence and SSO signing keys) through a file download or the workspace zip. Any API key holder, or code an agent runs in a sandbox, could do it within seconds. Restoring a snapshot could likewise write through a symlink into another session's workspace. Every workspace file operation now goes through an `os.Root` (kernel-enforced, race-free confinement). Rotate `MASTER_API_KEY`, `AUDIT_HMAC_KEY`, `EVIDENCE_SIGNING_KEY`, `SSO_SESSION_SECRET` and the database password if untrusted users had API keys.
+- **Sandboxes with network could reach the host's network.** With `network_enabled` and no `allowed_hosts` a sandbox reached private ranges, the cloud metadata service (`169.254.169.254`) and services on the host; with `allowed_hosts`, the host itself was still reachable (traffic to it bypassed the rules). Such sessions now get filtered egress: internet yes, private/link-local/metadata ranges and the host no. `SANDBOX_ALLOW_PRIVATE_NETWORKS=true` restores access to private ranges.
+- **A sandbox could fill the host's disk.** `MAX_WORKSPACE_MB` only applied to uploads. Sandboxes over the cap are now paused (and runs refused with `507`) until files are deleted. `.env.example` sets 2048 MB; the API warns at startup when it is 0.
+- Request bodies are capped (10 MB; uploads at `MAX_FILE_MB` + 1 MB) instead of being read whole into memory or spooled to disk.
+- Dashboard: Next.js 15.5.28 (fixes a critical image-optimizer RCE and cache-poisoning advisories), `sharp` 0.35.5, the image optimizer is off, and every page sends a Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy` and HSTS; `X-Powered-By` is gone.
+
 ### Added
 - `vaultrun evidence export --all [--since --until] -d dir` exports every session's evidence pack for a period (failures are reported per session and fail the command at the end).
 - **External timestamps for evidence packs.** With `EVIDENCE_TSA_URL` every pack carries an RFC 3161 timestamp over its signature from an outside Time Stamping Authority, so its time no longer rests on the server's word (export fails with `502` when the TSA fails: fail closed). `vaultrun evidence verify` checks it (`--tsa-ca` for TSAs outside the system roots); `vaultrun evidence timestamp` stamps packs from servers that cannot reach a TSA. CI checks interoperability with a public TSA.

@@ -43,9 +43,14 @@ type SandboxConfig struct {
 	// of the listed hosts are reachable. AllowedHosts entries are also injected
 	// into /etc/hosts via ExtraHosts for in-container DNS resolution.
 	//
-	// When empty (and NetworkEnabled), the container uses the default bridge
-	// without iptables filtering (operator is responsible for egress policy).
+	// When empty (and NetworkEnabled), the container gets the same dedicated
+	// network with rules that allow the internet but drop private, loopback
+	// and link-local ranges (the host's network, cloud metadata) and the host
+	// itself, unless AllowPrivateEgress is set or iptables is unavailable.
 	AllowedHosts []string
+	// AllowPrivateEgress lets a sandbox with network but no allowed_hosts
+	// reach private ranges too (SANDBOX_ALLOW_PRIVATE_NETWORKS).
+	AllowPrivateEgress bool
 	// GPUDevices enables NVIDIA GPU access inside the container.
 	// Values: "all" (all GPUs), "0" (first GPU), "0,1" (first two GPUs), "" (disabled).
 	// Requires nvidia-container-toolkit on the host.
@@ -96,8 +101,10 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	//
 	// Three modes:
 	//  a. NetworkEnabled=false  → NetworkMode "none"  (no network at all)
-	//  b. NetworkEnabled=true, AllowedHosts empty → NetworkMode "bridge"
-	//     (default bridge, no extra iptables rules)
+	//  b. NetworkEnabled=true, AllowedHosts empty → dedicated bridge network
+	//     with rules dropping private ranges and the host (internet only);
+	//     the default bridge without rules when AllowPrivateEgress is set or
+	//     iptables is unavailable
 	//  c. NetworkEnabled=true, AllowedHosts set   → dedicated bridge network
 	//     with iptables egress rules applied after container start
 	//
@@ -107,8 +114,9 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	var networkingCfg *network.NetworkingConfig
 	var sessionDNSServer string    // Docker bridge gateway; DNS is restricted to this IP
 
+	openInternet := cfg.NetworkEnabled && len(cfg.AllowedHosts) == 0 && !cfg.AllowPrivateEgress && EgressPolicyAvailable()
 	if cfg.NetworkEnabled {
-		if len(cfg.AllowedHosts) > 0 {
+		if len(cfg.AllowedHosts) > 0 || openInternet {
 			// Refuse up front rather than start a sandbox whose allowlist
 			// cannot be enforced.
 			if !EgressPolicyAvailable() {
@@ -151,11 +159,10 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 			}
 			sessionDNSServer = netInfo.IPAM.Config[0].Gateway
 		} else {
-			// No AllowedHosts: default bridge without iptables filtering.
-			// Containers have unrestricted egress — operator is responsible for
-			// host-level firewall rules to prevent access to internal services.
-			slog.Warn("sandbox: network_enabled=true with no allowed_hosts — container has unrestricted egress",
-				"session_id", cfg.SessionID)
+			// Default bridge without iptables filtering: the operator allowed
+			// private networks, or iptables is unavailable here.
+			slog.Warn("sandbox: network_enabled=true without egress filtering — the container can reach the host's network",
+				"session_id", cfg.SessionID, "allow_private", cfg.AllowPrivateEgress)
 			networkMode = container.NetworkMode("bridge")
 		}
 	}
@@ -294,17 +301,20 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 	// are in place. If policy application fails, we do NOT start the container —
 	// returning an error prevents a sandbox declared with AllowedHosts from
 	// running with unrestricted network access.
-	if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
-		allowedIPs, err := resolveToIPs(cfg.AllowedHosts)
-		if err != nil {
-			_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
-			_ = c.inner.NetworkRemove(ctx, sessionNetID)
-			metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
-			return "", fmt.Errorf("allowed hosts validation: %w", err)
+	if sessionNetID != "" {
+		var allowedIPs []string
+		if !openInternet {
+			allowedIPs, err = resolveToIPs(cfg.AllowedHosts)
+			if err != nil {
+				_ = c.inner.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+				_ = c.inner.NetworkRemove(ctx, sessionNetID)
+				metrics.ContainerCreationsTotal.WithLabelValues("failed").Inc()
+				return "", fmt.Errorf("allowed hosts validation: %w", err)
+			}
 		}
 		chain := chainName(resp.ID)
 		iface := bridgeIface(sessionNetID)
-		if err := applyEgressPolicy(chain, iface, sessionDNSServer, allowedIPs); err != nil {
+		if err := applyEgressPolicy(chain, iface, sessionDNSServer, allowedIPs, openInternet); err != nil {
 			// Policy failed — tear down the container and network rather than
 			// starting a sandbox with no egress controls.
 			removeEgressPolicy(chain, iface)
@@ -317,7 +327,7 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 
 	if err := c.inner.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		// Clean up the created (but not started) container and any network.
-		if sessionNetID != "" && len(cfg.AllowedHosts) > 0 {
+		if sessionNetID != "" {
 			chain := chainName(resp.ID)
 			iface := bridgeIface(sessionNetID)
 			removeEgressPolicy(chain, iface)

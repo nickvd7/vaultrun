@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -95,5 +96,41 @@ func TestSessionCookieWriteNeedsClientHeader(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/", nil))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 without %s, got %d", ClientHeader, w.Code)
+	}
+}
+
+func TestBodyLimit(t *testing.T) {
+	r := gin.New()
+	r.Use(BodyLimit(2 << 20))
+	r.POST("/", func(c *gin.Context) {
+		var v map[string]any
+		if err := c.ShouldBindJSON(&v); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		c.Status(http.StatusOK)
+	})
+	big := `{"a":"` + strings.Repeat("x", MaxJSONBody) + `"}`
+	for name, req := range map[string]*http.Request{
+		"declared length": httptest.NewRequest(http.MethodPost, "/", strings.NewReader(big)),
+		"chunked": func() *http.Request {
+			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(big))
+			r.ContentLength = -1
+			return r
+		}(),
+	} {
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code == http.StatusOK {
+			t.Errorf("%s: a body over MaxJSONBody was accepted", name)
+		}
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"a":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("small body: %d", w.Code)
 	}
 }

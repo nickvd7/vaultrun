@@ -126,6 +126,9 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
 		return
 	}
+	if !rh.h.admitRun(c, session) {
+		return
+	}
 
 	var req createRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -210,6 +213,9 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 	}
 	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
 		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+	if !rh.h.admitRun(c, session) {
 		return
 	}
 
@@ -368,6 +374,9 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	}
 	if session.ContainerID == nil || session.Status != models.SessionStatusRunning {
 		c.JSON(http.StatusConflict, gin.H{"error": "session container is not running"})
+		return
+	}
+	if !rh.h.admitRun(c, session) {
 		return
 	}
 

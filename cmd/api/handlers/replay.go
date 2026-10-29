@@ -352,15 +352,15 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 		StopActiveCommands: req.StopActiveCommands,
 	})
 
-	if err == replay.ErrCheckpointNotFound {
+	if errors.Is(err, replay.ErrCheckpointNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "checkpoint not found"})
 		return
 	}
-	if err == replay.ErrCheckpointTampered {
+	if errors.Is(err, replay.ErrCheckpointTampered) {
 		c.JSON(http.StatusConflict, gin.H{"error": "checkpoint signature invalid"})
 		return
 	}
-	if err == replay.ErrActiveCommandsRunning {
+	if errors.Is(err, replay.ErrActiveCommandsRunning) {
 		c.JSON(http.StatusConflict, gin.H{"error": "active commands running - set stop_active_commands=true to force"})
 		return
 	}

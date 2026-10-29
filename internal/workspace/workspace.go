@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -99,39 +100,55 @@ func (m *Manager) SafePath(sessionID uuid.UUID, userPath string) (string, error)
 	return resolved, nil
 }
 
-// safeReadPath extends SafePath with a symlink escape check.
-// Used for reads, where the target file already exists.
-func (m *Manager) safeReadPath(sessionID uuid.UUID, userPath string) (string, error) {
-	resolved, err := m.SafePath(sessionID, userPath)
+// openRoot opens the session's workspace as an os.Root. Every file access
+// below goes through it: the kernel resolves each path component relative to
+// the workspace and refuses to leave it, through "..", an absolute symlink or
+// a symlink to a directory outside it. Checking a path first (EvalSymlinks)
+// and opening it afterwards is not enough: the sandbox controls its workspace
+// and can swap a directory for a symlink in between, making the API open its
+// own /proc/self/environ (with every secret it holds) or another session's
+// files.
+func (m *Manager) openRoot(sessionID uuid.UUID) (*os.Root, error) {
+	return os.OpenRoot(m.sessionPath(sessionID))
+}
+
+// Root opens the session's workspace as an os.Root, for callers that walk or
+// read it themselves. The caller closes it.
+func (m *Manager) Root(sessionID uuid.UUID) (*os.Root, error) { return m.openRoot(sessionID) }
+
+// relPath turns a user path into a path relative to the workspace root, or
+// "." for the root itself, after the same checks as SafePath.
+func relPath(userPath string) (string, error) {
+	decoded, err := CheckPath(userPath)
 	if err != nil {
 		return "", err
 	}
-
-	// Resolve symlinks to their ultimate target and verify it's still inside root.
-	// This prevents a container creating /workspace/escape -> /etc/passwd.
-	real, err := filepath.EvalSymlinks(resolved)
-	if err != nil {
-		// File doesn't exist or symlink target is broken — treat as not found
-		return "", fmt.Errorf("file not found or inaccessible")
+	cleaned := filepath.Clean("/" + decoded)
+	if cleaned == "/" {
+		return ".", nil
 	}
-
-	root := m.sessionPath(sessionID)
-	if !strings.HasPrefix(real, root+string(os.PathSeparator)) && real != root {
-		return "", fmt.Errorf("symlink escape detected")
-	}
-
-	return real, nil
+	return strings.TrimPrefix(cleaned, "/"), nil
 }
+
+// ErrNotFound means a workspace path does not exist, or leads out of the
+// workspace (which is reported the same way, so it is no oracle for host
+// paths).
+var ErrNotFound = errors.New("file not found or inaccessible")
 
 // IsSymlink reports whether userPath is a symlink inside the workspace.
 // It uses Lstat, so the link itself is what is checked, not its target.
 // A path that escapes the workspace, or does not exist, is not a symlink.
 func (m *Manager) IsSymlink(sessionID uuid.UUID, userPath string) bool {
-	resolved, err := m.SafePath(sessionID, userPath)
+	rel, err := relPath(userPath)
+	if err != nil || rel == "." {
+		return false
+	}
+	root, err := m.openRoot(sessionID)
 	if err != nil {
 		return false
 	}
-	info, err := os.Lstat(resolved)
+	defer root.Close()
+	info, err := root.Lstat(rel)
 	if err != nil {
 		return false
 	}
@@ -142,10 +159,16 @@ func (m *Manager) IsSymlink(sessionID uuid.UUID, userPath string) bool {
 // session workspace. Symlinks that escape the workspace root are treated as
 // absent (not an oracle for host paths).
 func (m *Manager) Exists(sessionID uuid.UUID, userPath string) (bool, error) {
-	if _, err := m.SafePath(sessionID, userPath); err != nil {
+	rel, err := relPath(userPath)
+	if err != nil {
 		return false, err
 	}
-	if _, err := m.safeReadPath(sessionID, userPath); err != nil {
+	root, err := m.openRoot(sessionID)
+	if err != nil {
+		return false, nil
+	}
+	defer root.Close()
+	if _, err := root.Stat(rel); err != nil {
 		return false, nil
 	}
 	return true, nil
@@ -154,60 +177,54 @@ func (m *Manager) Exists(sessionID uuid.UUID, userPath string) (bool, error) {
 // WriteFile writes data to a safe path inside the workspace, creating
 // intermediate directories as needed.
 //
-// Security: guards against symlink-escape attacks where a container process
-// creates a symlink inside /workspace pointing to a host path outside the
-// workspace root. Two layers of protection are applied:
-//  1. The entire parent-directory chain is symlink-resolved and verified to
-//     stay inside the workspace root before any write takes place.
-//  2. The file is opened with O_NOFOLLOW so that if the final path component
-//     is itself a symlink (e.g. created in a TOCTOU window) the open fails.
+// Security: every step goes through the workspace's os.Root, so a symlink the
+// sandbox planted (or swaps in while this runs) cannot redirect the write
+// outside the workspace; a final component that is a symlink is refused
+// outright (O_NOFOLLOW).
 //
-// Permissions: directories use DirMode and files 0o644. os.Chmod is called
-// after creation to bypass the process umask.
+// Permissions: directories use DirMode and files 0o644, set with Chmod so the
+// result does not depend on the process umask.
 func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, maxBytes int64) (int64, error) {
-	dest, err := m.SafePath(sessionID, userPath)
+	rel, err := relPath(userPath)
 	if err != nil {
 		return 0, err
 	}
-
-	root := m.sessionPath(sessionID)
-	parentDir := filepath.Dir(dest)
+	if rel == "." {
+		return 0, ErrIsDirectory
+	}
+	root, err := m.openRoot(sessionID)
+	if err != nil {
+		return 0, fmt.Errorf("open workspace: %w", err)
+	}
+	defer root.Close()
 
 	// Follow the mode of the session directory: sessions created before v0.4.7
 	// are 0777 because their sandbox runs as "nobody", and tightening them to
 	// 0700 here would lock that sandbox out of its own workspace.
 	dirMode := sandboxuser.DirMode()
-	if info, err := os.Stat(root); err == nil {
+	if info, err := root.Stat("."); err == nil {
 		dirMode = info.Mode().Perm()
 	}
-	if err := os.MkdirAll(parentDir, dirMode); err != nil {
-		return 0, fmt.Errorf("create parent dirs: %w", err)
+	parent := filepath.Dir(rel)
+	if parent != "." {
+		if err := root.MkdirAll(parent, dirMode); err != nil {
+			if isEscape(err) {
+				return 0, fmt.Errorf("symlink escape detected")
+			}
+			return 0, fmt.Errorf("create parent dirs: %w", err)
+		}
 	}
-	// Chmod every directory from root down to parentDir so the mode does not
-	// depend on the process umask.
-	if err := chmodDirs(root, parentDir, dirMode); err != nil {
+	if err := chmodDirs(root, parent, dirMode); err != nil {
 		return 0, fmt.Errorf("chmod parent dirs: %w", err)
 	}
 
-	// Resolve every symlink in the parent directory chain and confirm it stays
-	// inside the workspace root. This catches symlinked subdirectories.
-	realParent, err := filepath.EvalSymlinks(parentDir)
-	if err != nil {
-		return 0, fmt.Errorf("resolve parent directory: %w", err)
-	}
-	if !strings.HasPrefix(realParent, root+string(os.PathSeparator)) && realParent != root {
-		return 0, fmt.Errorf("symlink escape detected")
-	}
-
-	// Reconstruct dest from the real (non-symlinked) parent path.
-	dest = filepath.Join(realParent, filepath.Base(dest))
-
-	// O_NOFOLLOW: if the final path component is a symlink the open returns
-	// ELOOP, preventing a race between the parent check above and this open.
-	f, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
 			return 0, fmt.Errorf("write target is a symlink — rejected")
+		}
+		if isEscape(err) {
+			return 0, fmt.Errorf("symlink escape detected")
 		}
 		return 0, fmt.Errorf("open file for write: %w", err)
 	}
@@ -218,49 +235,56 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 	lr := io.LimitReader(r, maxBytes)
 	n, err := io.Copy(f, lr)
 	if err != nil {
-		_ = os.Remove(dest)
+		_ = root.Remove(rel)
 		return 0, fmt.Errorf("write file: %w", err)
 	}
 	if n == maxBytes {
 		extra := make([]byte, 1)
 		if nr, _ := r.Read(extra); nr > 0 {
-			_ = os.Remove(dest)
+			_ = root.Remove(rel)
 			return 0, fmt.Errorf("file exceeds maximum size of %d bytes", maxBytes)
 		}
 	}
 
-	// Force file permissions umask-independently.
-	if err := os.Chmod(dest, 0o644); err != nil {
+	// Force file permissions umask-independently (on the open file, not by
+	// path, so a swapped-in symlink cannot redirect the chmod).
+	if err := f.Chmod(0o644); err != nil {
 		return 0, fmt.Errorf("chmod file: %w", err)
 	}
 
 	return n, nil
 }
 
-// chmodDirs applies mode to every directory from root down to target
-// (inclusive). It is used to guarantee world-execute on intermediate dirs
-// created by os.MkdirAll regardless of the process umask.
-func chmodDirs(root, target string, mode os.FileMode) error {
-	// Collect each path component from root to target.
-	dirs := []string{root}
-	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == "." {
-		// target == root — chmod root only
-		if err := os.Chmod(root, mode); err != nil && !errors.Is(err, os.ErrPermission) {
-			return err
+// blocked reports whether err means something the sandbox put in the
+// workspace (a symlink, or a file where a directory belongs) is in the way of
+// a restore; that entry is skipped instead of written through.
+func blocked(err error) bool {
+	return isEscape(err) || errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EEXIST) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// isEscape reports whether err is os.Root refusing a path that leads out of
+// the root.
+func isEscape(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "path escapes from parent")
+}
+
+// chmodDirs applies mode to the workspace root and every directory down to
+// rel (inclusive), through the workspace's os.Root. It guarantees
+// world-execute on intermediate dirs created by MkdirAll regardless of the
+// process umask.
+func chmodDirs(root *os.Root, rel string, mode os.FileMode) error {
+	dirs := []string{"."}
+	if rel != "." {
+		cur := ""
+		for _, p := range strings.Split(rel, string(os.PathSeparator)) {
+			cur = filepath.Join(cur, p)
+			dirs = append(dirs, cur)
 		}
-		return nil
-	}
-	parts := strings.Split(rel, string(os.PathSeparator))
-	cur := root
-	for _, p := range parts {
-		cur = filepath.Join(cur, p)
-		dirs = append(dirs, cur)
 	}
 	for _, d := range dirs {
 		// A directory created by a sandbox running as another user (older
 		// sessions) cannot be chmodded by the API; it is already usable by it.
-		if err := os.Chmod(d, mode); err != nil && !errors.Is(err, os.ErrPermission) {
+		if err := root.Chmod(d, mode); err != nil && !errors.Is(err, os.ErrPermission) {
 			return err
 		}
 	}
@@ -274,14 +298,21 @@ var ErrIsDirectory = errors.New("path is a directory")
 // Symlink targets are validated to remain inside the workspace and
 // directories are rejected with ErrIsDirectory.
 func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, error) {
-	dest, err := m.safeReadPath(sessionID, userPath)
+	rel, err := relPath(userPath)
 	if err != nil {
 		return nil, err
 	}
-
-	f, err := os.Open(dest)
+	root, err := m.openRoot(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("open file: %w", err)
+		return nil, ErrNotFound
+	}
+	defer root.Close()
+
+	// The file stays open after the root is closed. O_NONBLOCK keeps a FIFO
+	// the sandbox planted from blocking the request; it is rejected below.
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, ErrNotFound
 	}
 	info, err := f.Stat()
 	if err != nil {
@@ -292,6 +323,10 @@ func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, erro
 		f.Close()
 		return nil, ErrIsDirectory
 	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return nil, ErrNotFound
+	}
 	return f, nil
 }
 
@@ -300,22 +335,25 @@ func (m *Manager) OpenFile(sessionID uuid.UUID, userPath string) (*os.File, erro
 // so a symlinked directory cannot be used to delete files elsewhere. A symlink
 // in the final component is removed itself, never followed.
 func (m *Manager) Remove(sessionID uuid.UUID, userPath string) error {
-	dest, err := m.SafePath(sessionID, userPath)
+	rel, err := relPath(userPath)
 	if err != nil {
 		return err
 	}
-	root := m.sessionPath(sessionID)
-	if dest == root {
+	if rel == "." {
 		return fmt.Errorf("cannot remove workspace root")
 	}
-	realParent, err := filepath.EvalSymlinks(filepath.Dir(dest))
+	root, err := m.openRoot(sessionID)
 	if err != nil {
-		return fmt.Errorf("file not found or inaccessible")
+		return ErrNotFound
 	}
-	if !strings.HasPrefix(realParent, root+string(os.PathSeparator)) && realParent != root {
-		return fmt.Errorf("symlink escape detected")
+	defer root.Close()
+	if err := root.Remove(rel); err != nil {
+		if isEscape(err) {
+			return fmt.Errorf("symlink escape detected")
+		}
+		return err
 	}
-	return os.Remove(filepath.Join(realParent, filepath.Base(dest)))
+	return nil
 }
 
 func (m *Manager) sessionPath(sessionID uuid.UUID) string {
@@ -373,48 +411,53 @@ func (m *Manager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath s
 	}
 	tw := tar.NewWriter(gzw)
 
-	walkErr := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+	// Walk and read through the workspace's os.Root so the sandbox cannot
+	// swap a directory for a symlink mid-walk and have host files archived.
+	// Symlinks are not archived (restore never recreated them).
+	wsRoot, err := os.OpenRoot(root)
+	if err != nil {
+		_ = os.Remove(archivePath)
+		return "", 0, fmt.Errorf("open workspace: %w", err)
+	}
+	defer wsRoot.Close()
+	walkErr := fs.WalkDir(wsRoot.FS(), ".", func(rel string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
 		}
 		if rel == "." {
 			return nil
 		}
-
-		// Resolve symlinks; skip those that escape the workspace.
-		if info.Mode()&os.ModeSymlink != 0 {
-			real, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return nil // skip broken symlinks
-			}
-			if !strings.HasPrefix(real, root+string(os.PathSeparator)) && real != root {
-				return nil // skip escape symlinks
-			}
+		if !d.IsDir() && !d.Type().IsRegular() {
+			return nil // symlinks, sockets, devices, pipes
 		}
-
+		info, err := d.Info()
+		if err != nil {
+			return nil // removed meanwhile
+		}
 		hdr, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
 		}
 		hdr.Name = rel
+		if !info.Mode().IsRegular() {
+			return tw.WriteHeader(hdr)
+		}
 
+		ff, err := wsRoot.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return nil // replaced by a symlink or removed meanwhile
+		}
+		defer ff.Close()
+		st, err := ff.Stat()
+		if err != nil || !st.Mode().IsRegular() {
+			return nil
+		}
+		// Archive what is actually there now, which may differ in size.
+		hdr.Size = st.Size()
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		ff, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer ff.Close()
-		_, err = io.Copy(tw, ff)
+		_, err = io.Copy(tw, io.LimitReader(ff, st.Size()))
 		return err
 	})
 
@@ -438,13 +481,21 @@ func (m *Manager) CreateSnapshot(sessionID, snapshotID uuid.UUID) (archivePath s
 // Files in the archive overwrite existing files; the workspace is not cleared
 // first so existing files not in the snapshot are preserved.
 func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error {
-	root := m.sessionPath(sessionID)
-	if err := os.MkdirAll(root, sandboxuser.DirMode()); err != nil {
+	rootPath := m.sessionPath(sessionID)
+	if err := os.MkdirAll(rootPath, sandboxuser.DirMode()); err != nil {
 		return fmt.Errorf("create workspace: %w", err)
 	}
-	if err := os.Chmod(root, sandboxuser.DirMode()); err != nil {
+	if err := os.Chmod(rootPath, sandboxuser.DirMode()); err != nil {
 		return fmt.Errorf("chmod workspace: %w", err)
 	}
+	// Everything below writes through the workspace's os.Root: the sandbox may
+	// have replaced a directory named in the archive with a symlink to another
+	// session's workspace or to an API directory.
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return fmt.Errorf("open workspace: %w", err)
+	}
+	defer root.Close()
 
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -483,26 +534,34 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 		}
 
 		// Sanitize path: reject any traversal attempts.
-		if strings.Contains(hdr.Name, "..") {
+		dest, err := relPath(hdr.Name)
+		if err != nil || dest == "." {
 			continue
-		}
-		dest := filepath.Join(root, filepath.Clean("/"+hdr.Name))
-		if !strings.HasPrefix(dest, root+string(os.PathSeparator)) && dest != root {
-			continue // path traversal — reject
 		}
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(dest, sandboxuser.DirMode()); err != nil {
+			if err := root.MkdirAll(dest, sandboxuser.DirMode()); err != nil {
+				if blocked(err) {
+					continue // a symlink or file is in the way
+				}
 				return fmt.Errorf("mkdir %s: %w", hdr.Name, err)
 			}
-			_ = os.Chmod(dest, sandboxuser.DirMode())
+			_ = root.Chmod(dest, sandboxuser.DirMode())
 		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(dest), sandboxuser.DirMode()); err != nil {
-				return fmt.Errorf("mkdir parent of %s: %w", hdr.Name, err)
+			if parent := filepath.Dir(dest); parent != "." {
+				if err := root.MkdirAll(parent, sandboxuser.DirMode()); err != nil {
+					if blocked(err) {
+						continue
+					}
+					return fmt.Errorf("mkdir parent of %s: %w", hdr.Name, err)
+				}
 			}
-			out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			out, err := root.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
 			if err != nil {
+				if blocked(err) {
+					continue // a symlink is in the way; never write through it
+				}
 				return fmt.Errorf("create %s: %w", hdr.Name, err)
 			}
 			remaining := maxExtractTotalBytes - totalExtracted
@@ -515,6 +574,7 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 				perFileCap = remaining
 			}
 			n, copyErr := io.Copy(out, io.LimitReader(tr, perFileCap+1))
+			_ = out.Chmod(0o644)
 			_ = out.Close()
 			if copyErr != nil {
 				return fmt.Errorf("write %s: %w", hdr.Name, copyErr)
@@ -523,7 +583,6 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 				return fmt.Errorf("file %s exceeds extraction size limit", hdr.Name)
 			}
 			totalExtracted += n
-			_ = os.Chmod(dest, 0o644)
 		}
 	}
 	return nil

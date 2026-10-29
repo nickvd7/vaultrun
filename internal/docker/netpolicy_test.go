@@ -122,7 +122,7 @@ func TestIsIPT6NotFound(t *testing.T) {
 func TestApplyEgressPolicyInvalidDNSServer(t *testing.T) {
 	cases := []string{"", "not-an-ip", "256.0.0.1", "::xyz"}
 	for _, dns := range cases {
-		err := applyEgressPolicy("vr-abc123def456", "br-abc123def456", dns, nil)
+		err := applyEgressPolicy("vr-abc123def456", "br-abc123def456", dns, nil, false)
 		if err == nil {
 			t.Errorf("dnsServer=%q: expected error, got nil", dns)
 			continue
@@ -139,7 +139,7 @@ func TestApplyEgressPolicyInvalidDNSServer(t *testing.T) {
 func TestApplyEgressPolicyValidIPPassesValidation(t *testing.T) {
 	// As root the rules really get installed; do not leave them on the host.
 	t.Cleanup(func() { removeEgressPolicy("vr-abc123def456", "br-abc123def456") })
-	err := applyEgressPolicy("vr-abc123def456", "br-abc123def456", "172.17.0.1", nil)
+	err := applyEgressPolicy("vr-abc123def456", "br-abc123def456", "172.17.0.1", nil, false)
 	if err != nil && strings.Contains(err.Error(), "invalid DNS server IP") {
 		t.Errorf("valid gateway IP rejected: %v", err)
 	}

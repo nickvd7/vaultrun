@@ -36,6 +36,9 @@ These need action on your side:
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.
 - **Network exposure.** Bind to a private interface or put the API behind a firewall; only expose 443 to trusted callers. The compose file already binds to `127.0.0.1`.
 - **Webhooks.** Set `WEBHOOK_SECRET` for async callbacks.
+- **Workspace size.** Set `MAX_WORKSPACE_MB` (e.g. `2048`). With `0` a sandbox can fill the host's disk, and Postgres with it. Sandboxes over the cap are paused; for a hard limit, put the workspace directory on XFS with project quotas.
+- **Sandbox egress.** Sandboxes with `network_enabled` cannot reach private ranges, cloud metadata or the host. Keep `SANDBOX_ALLOW_PRIVATE_NETWORKS` unset unless sandboxes must reach internal services, and then prefer `allowed_hosts`. This needs iptables (the Compose `netpolicy` helper); the API logs a warning per session when it cannot filter.
+- **Request size.** Bodies are capped at 10 MB, uploads at `MAX_FILE_MB` + 1 MB. Put a reverse proxy with its own limits and timeouts in front as well.
 
 The longer list, including SSO and the MCP HTTP transport, is in [security.md](security.md#recommendations-for-production).
 
@@ -52,4 +55,5 @@ DB_SSL_ROOT_CERT=/etc/vaultrun/db-ca.pem
 DOCKER_IMAGE_ALLOWLIST=python:3.12-slim,node:20-slim
 DOCKER_RUNTIME=runsc
 AUDIT_HMAC_KEY=<openssl rand -hex 32>
+MAX_WORKSPACE_MB=2048
 ```

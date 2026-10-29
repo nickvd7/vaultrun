@@ -431,7 +431,23 @@ func snapshotDir(dir string) map[string]time.Time {
 	if dir == "" {
 		return snap
 	}
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	walkWorkspace(dir, func(p string, info fs.FileInfo) {
+		snap[p] = info.ModTime()
+	})
+	return snap
+}
+
+// walkWorkspace calls fn with the absolute path and Lstat info of every
+// non-directory entry in the workspace dir. It walks through an os.Root, so a
+// directory the sandbox swaps for a symlink mid-walk does not lead the walk
+// out of the workspace.
+func walkWorkspace(dir string, fn func(p string, info fs.FileInfo)) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	_ = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -439,10 +455,9 @@ func snapshotDir(dir string) map[string]time.Time {
 		if err != nil {
 			return nil
 		}
-		snap[p] = info.ModTime()
+		fn(filepath.Join(dir, rel), info)
 		return nil
 	})
-	return snap
 }
 
 // detectArtifacts walks the workspace directory and upserts any file that is
@@ -450,21 +465,14 @@ func snapshotDir(dir string) map[string]time.Time {
 // makes files written by container processes visible through the Files API
 // without requiring an explicit upload.
 func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir string, preSnap map[string]time.Time) {
-	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
+	walkWorkspace(dir, func(p string, info fs.FileInfo) {
 		// Skip if the file existed before the run and hasn't changed.
 		if prev, existed := preSnap[p]; existed && !info.ModTime().After(prev) {
-			return nil
+			return
 		}
 		rel, err := filepath.Rel(dir, p)
 		if err != nil {
-			return nil
+			return
 		}
 		// Normalise to /path form so artifact paths are consistent with
 		// paths stored by the upload handler (filepath.Clean("/" + userPath)).
@@ -497,7 +505,6 @@ func (r *Runner) detectArtifacts(ctx context.Context, sessionID uuid.UUID, dir s
 				"err", err,
 			)
 		}
-		return nil
 	})
 }
 

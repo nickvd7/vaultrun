@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"unicode/utf8"
 )
 
@@ -43,22 +44,30 @@ func capOutput(s string) (string, bool) {
 // MaxFiles entries are returned; truncated reports whether more existed.
 func HashWorkspace(root string) (files []File, truncated bool, err error) {
 	files = []File{}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	// Walk and read through an os.Root: the sandbox controls its workspace and
+	// could otherwise swap a directory for a symlink mid-walk and have the
+	// export describe files outside it.
+	wsRoot, err := os.OpenRoot(root)
+	if os.IsNotExist(err) {
+		// A deleted session has no workspace left; its runs and audit still count.
+		return files, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer wsRoot.Close()
+	err = fs.WalkDir(wsRoot.FS(), ".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == root || d.IsDir() {
+		if path == "." || d.IsDir() {
 			return nil
 		}
 		if len(files) >= MaxFiles {
 			truncated = true
 			return filepath.SkipAll
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = "/" + filepath.ToSlash(rel)
+		rel := "/" + path
 		info, err := d.Info()
 		if err != nil {
 			return err
@@ -67,51 +76,41 @@ func HashWorkspace(root string) (files []File, truncated bool, err error) {
 		case info.Mode()&fs.ModeSymlink != 0:
 			files = append(files, File{Path: rel, Size: info.Size(), Symlink: true})
 		case info.Mode().IsRegular():
-			sum, err := hashFile(path)
+			sum, size, err := hashFile(wsRoot, path)
 			if err != nil {
 				return fmt.Errorf("hash %s: %w", rel, err)
 			}
-			files = append(files, File{Path: rel, Size: info.Size(), SHA256: sum})
+			files = append(files, File{Path: rel, Size: size, SHA256: sum})
 		}
 		// Sockets, devices and pipes are not workspace content.
 		return nil
 	})
-	if os.IsNotExist(err) {
-		// A deleted session has no workspace left; its runs and audit still count.
-		return []File{}, false, nil
-	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, truncated, err
 }
 
-func hashFile(path string) (string, error) {
-	// The sandbox can change its workspace while this runs: re-check the type
-	// before opening, and that the opened file is the one that was checked.
-	before, err := os.Lstat(path)
+func hashFile(root *os.Root, path string) (string, int64, error) {
+	// The sandbox can change its workspace while this runs: never follow a
+	// symlink swapped in for the file (O_NOFOLLOW), never block on a FIFO
+	// (O_NONBLOCK), and only hash what is still a regular file.
+	f, err := root.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return "", err
-	}
-	if !before.Mode().IsRegular() {
-		// Swapped for a symlink or FIFO after the walk; opening a FIFO would block.
-		return "", fmt.Errorf("file changed while it was being exported")
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
+		return "", 0, fmt.Errorf("file changed while it was being exported")
 	}
 	defer f.Close()
-	after, err := f.Stat()
+	st, err := f.Stat()
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
-	if !os.SameFile(before, after) {
-		return "", fmt.Errorf("file changed while it was being exported")
+	if !st.Mode().IsRegular() {
+		return "", 0, fmt.Errorf("file changed while it was being exported")
 	}
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
 // Finding is something a verifier should report about a validly signed pack.

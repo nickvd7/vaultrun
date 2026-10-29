@@ -23,6 +23,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/quota"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
@@ -35,6 +36,7 @@ type Hub struct {
 	docker         *dockerpkg.Client
 	ws             *workspace.Manager
 	runner         *runner.Runner
+	quota          *quota.Enforcer // nil when MAX_WORKSPACE_MB is 0
 	audit          *audit.Logger
 	cfg            *config.Config
 	policy         policy.Hook
@@ -104,6 +106,26 @@ func NewHub(
 
 // SetEvidenceSigner enables session evidence export.
 func (h *Hub) SetEvidenceSigner(s *evidence.Signer) { h.evidenceSigner = s }
+
+// SetQuota makes runs check the workspace size cap first.
+func (h *Hub) SetQuota(q *quota.Enforcer) { h.quota = q }
+
+// admitRun refuses a run while the session's workspace is over its cap (and
+// unpauses a sandbox the cap had paused once it is back under). It writes the
+// response and returns false when the run must not start.
+func (h *Hub) admitRun(c *gin.Context, s *models.Session) bool {
+	err := h.quota.Admit(c.Request.Context(), s)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, quota.ErrOverQuota) {
+		c.JSON(http.StatusInsufficientStorage, gin.H{"error": err.Error()})
+		return false
+	}
+	slog.Error("quota admission failed", "session_id", s.ID, "err", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resume the sandbox"})
+	return false
+}
 
 // SetEvidenceTSA makes every exported pack carry an RFC 3161 timestamp from
 // url, whose signer must chain to roots (nil = system roots).

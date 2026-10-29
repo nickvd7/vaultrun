@@ -344,16 +344,17 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		}
 
 		containerID, err = sh.h.docker.CreateSandbox(c.Request.Context(), dockerpkg.SandboxConfig{
-			SessionID:         sessionID,
-			Image:             req.Image,
-			WorkspacePath:     wspath,
-			HostWorkspacePath: hostWorkspacePath,
-			NetworkEnabled:    req.NetworkEnabled,
-			CPULimit:          req.CPULimit,
-			MemoryLimitMB:     req.MemoryLimitMB,
-			ContainerName:     containerName,
-			AllowedHosts:      []string(allowedHosts),
-			GPUDevices:        gpuDevices,
+			SessionID:          sessionID,
+			Image:              req.Image,
+			WorkspacePath:      wspath,
+			HostWorkspacePath:  hostWorkspacePath,
+			NetworkEnabled:     req.NetworkEnabled,
+			CPULimit:           req.CPULimit,
+			MemoryLimitMB:      req.MemoryLimitMB,
+			ContainerName:      containerName,
+			AllowedHosts:       []string(allowedHosts),
+			AllowPrivateEgress: sh.h.cfg.Docker.AllowPrivateNetworks,
+			GPUDevices:         gpuDevices,
 		})
 	}
 	if err != nil {

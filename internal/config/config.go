@@ -89,6 +89,10 @@ type DockerConfig struct {
 	// GPUDevices enables NVIDIA GPU access in sessions that request it.
 	// "all" = all GPUs; "0,1" = specific GPU indices; "" = disabled.
 	GPUDevices string
+	// AllowPrivateNetworks lets sandboxes with network_enabled and no
+	// allowed_hosts reach private, loopback and link-local addresses (the
+	// host's own network, cloud metadata). Off by default.
+	AllowPrivateNetworks bool // SANDBOX_ALLOW_PRIVATE_NETWORKS
 }
 
 type WorkspaceConfig struct {
@@ -241,15 +245,16 @@ func Load() (*Config, error) {
 			DB:       redisDB,
 		},
 		Docker: DockerConfig{
-			Host:            getEnv("DOCKER_HOST", "unix:///var/run/docker.sock"),
-			NetworkName:     getEnv("DOCKER_NETWORK", "none"),
-			DefaultImage:    getEnv("DOCKER_DEFAULT_IMAGE", "python:3.12-slim"),
-			ContainerPrefix: getEnv("DOCKER_CONTAINER_PREFIX", "vaultrun"),
-			IdleTimeoutMins: idleTimeout,
-			ImageAllowlist:  imageAllowlist,
-			WarmPoolSize:    func() int { n, _ := strconv.Atoi(getEnv("WARM_POOL_SIZE", "0")); return n }(),
-			WarmPoolImage:   getEnv("WARM_POOL_IMAGE", ""),
-			GPUDevices:      getEnv("DOCKER_GPU_DEVICES", ""),
+			Host:                 getEnv("DOCKER_HOST", "unix:///var/run/docker.sock"),
+			NetworkName:          getEnv("DOCKER_NETWORK", "none"),
+			DefaultImage:         getEnv("DOCKER_DEFAULT_IMAGE", "python:3.12-slim"),
+			ContainerPrefix:      getEnv("DOCKER_CONTAINER_PREFIX", "vaultrun"),
+			IdleTimeoutMins:      idleTimeout,
+			ImageAllowlist:       imageAllowlist,
+			WarmPoolSize:         func() int { n, _ := strconv.Atoi(getEnv("WARM_POOL_SIZE", "0")); return n }(),
+			WarmPoolImage:        getEnv("WARM_POOL_IMAGE", ""),
+			GPUDevices:           getEnv("DOCKER_GPU_DEVICES", ""),
+			AllowPrivateNetworks: envBool("SANDBOX_ALLOW_PRIVATE_NETWORKS"),
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:                   getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),

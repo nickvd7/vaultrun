@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -292,13 +294,15 @@ func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
 		return
 	}
 
-	root := fh.h.ws.SessionPath(sessionID)
-
-	// Verify the workspace directory exists before touching response headers.
-	if _, err := os.Stat(root); os.IsNotExist(err) {
+	// Every read goes through the workspace's os.Root: the sandbox controls
+	// its workspace and could otherwise swap a directory for a symlink between
+	// a check and the open, and have the API zip up its own files.
+	root, err := fh.h.ws.Root(sessionID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workspace not found"})
 		return
 	}
+	defer root.Close()
 
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition",
@@ -308,37 +312,17 @@ func (fh *FileHandler) WorkspaceZip(c *gin.Context) {
 	zw := zip.NewWriter(c.Writer)
 	defer zw.Close()
 
-	rootWithSep := root + string(os.PathSeparator)
-	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
+	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
 			return nil // skip inaccessible entries
 		}
-		if info.IsDir() {
-			return nil
-		}
-
-		// Resolve symlinks and reject escapes.
-		real, err := filepath.EvalSymlinks(path)
+		// Symlinks are followed only within the workspace (os.Root refuses
+		// the rest); devices, FIFOs and directories are not archived.
+		f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return nil
-		}
-		if real != root && !strings.HasPrefix(real, rootWithSep) {
-			slog.Warn("workspace zip: skipping symlink escape",
-				"session_id", sessionID, "path", path, "target", real)
-			return nil
-		}
-
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-
-		f, err := os.Open(real)
-		if err != nil {
-			return nil // skip unreadable files
 		}
 		defer f.Close()
-		// A symlink to a directory (or a device/FIFO) is not archived.
 		if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
 			return nil
 		}

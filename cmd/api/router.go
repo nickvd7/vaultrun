@@ -25,6 +25,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/metrics"
 	"github.com/nickvd7/vaultrun/internal/missions"
 	"github.com/nickvd7/vaultrun/internal/policy"
+	"github.com/nickvd7/vaultrun/internal/quota"
 	"github.com/nickvd7/vaultrun/internal/replay"
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
@@ -59,6 +60,7 @@ func newRouter(
 	r.Use(gin.Logger())
 	r.Use(middleware.ServerErrorLog())
 	r.Use(metrics.HTTPMiddleware())
+	r.Use(middleware.BodyLimit(cfg.Workspace.MaxFileMB<<20 + 1<<20))
 
 	// Do not trust X-Forwarded-For from arbitrary proxies; prevents rate-limit
 	// bypass via IP spoofing. Operators behind a known proxy should configure
@@ -97,6 +99,10 @@ func newRouter(
 	})
 
 	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool, artStore)
+	if cfg.Workspace.MaxWorkspaceMB > 0 {
+		// Stateless: the watcher started in main pauses, this one admits runs.
+		hub.SetQuota(&quota.Enforcer{DB: db, Docker: docker, WS: ws, Audit: al, MaxBytes: cfg.Workspace.MaxWorkspaceMB << 20})
+	}
 	if key := cfg.Observability.EvidenceSigningKey; key != "" {
 		// main.go already refused to start on an unusable key.
 		if signer, err := evidence.ParseSigningKey(key); err == nil {

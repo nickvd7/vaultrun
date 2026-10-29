@@ -339,3 +339,79 @@ func TestWriteFileKeepsPrivateSessionMode(t *testing.T) {
 		t.Errorf("subdir mode = %o, want 700", got)
 	}
 }
+
+// The sandbox controls its workspace and can swap a directory for a symlink
+// between the API's check and its open. With an absolute symlink to a
+// directory outside the workspace, a checked-then-opened read would return a
+// file from there (in production: the API's own /proc/self/environ).
+func TestOpenFileSurvivesSymlinkSwapRace(t *testing.T) {
+	m, base := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+	sp := m.SessionPath(id)
+
+	outside := filepath.Join(base, "outside")
+	os.MkdirAll(outside, 0o755)
+	os.WriteFile(filepath.Join(outside, "secret"), []byte("TOP-SECRET"), 0o644)
+	os.MkdirAll(filepath.Join(sp, "d"), 0o755)
+	os.WriteFile(filepath.Join(sp, "d", "secret"), []byte("decoy"), 0o644)
+	os.MkdirAll(filepath.Join(sp, "real"), 0o755)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			os.Rename(filepath.Join(sp, "d"), filepath.Join(sp, "real", "d"))
+			os.Symlink(outside, filepath.Join(sp, "d"))
+			os.Remove(filepath.Join(sp, "d"))
+			os.Rename(filepath.Join(sp, "real", "d"), filepath.Join(sp, "d"))
+		}
+	}()
+	defer func() { close(stop); <-done }()
+
+	for i := 0; i < 20000; i++ {
+		f, err := m.OpenFile(id, "d/secret")
+		if err != nil {
+			continue
+		}
+		b, _ := io.ReadAll(f)
+		f.Close()
+		if string(b) == "TOP-SECRET" {
+			t.Fatalf("read a file outside the workspace through a swapped symlink (attempt %d)", i)
+		}
+	}
+}
+
+// Restoring must not write through a symlink the sandbox put where the
+// archive has a directory.
+func TestRestoreSnapshotDoesNotWriteThroughSymlinks(t *testing.T) {
+	m, base := newManager(t)
+	id := uuid.New()
+	m.Create(id)
+	sp := m.SessionPath(id)
+	os.MkdirAll(filepath.Join(sp, "x"), 0o755)
+	os.WriteFile(filepath.Join(sp, "x", "f"), []byte("payload"), 0o644)
+	archive, _, err := m.CreateSnapshot(id, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	victim := filepath.Join(base, "victim")
+	os.MkdirAll(victim, 0o755)
+	os.RemoveAll(filepath.Join(sp, "x"))
+	if err := os.Symlink(victim, filepath.Join(sp, "x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RestoreSnapshot(id, archive); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(victim, "f")); err == nil {
+		t.Fatal("restore wrote a file outside the workspace through a symlink")
+	}
+}

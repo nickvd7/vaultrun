@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,5 +138,47 @@ func TestEvidenceTimestampCommand(t *testing.T) {
 	_ = os.WriteFile(other, moved, 0o600)
 	if _, err := runEvidence(t, "verify", other, "--key", otherKey, "--tsa-ca", tsa.RootFile); err == nil || !strings.Contains(err.Error(), "NOT VALID") {
 		t.Errorf("moved timestamp: want NOT VALID, got %v", err)
+	}
+}
+
+func TestEvidenceExportAll(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/sessions", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"sessions":[
+			{"id":"s-old","created_at":"2026-09-30T23:59:00Z"},
+			{"id":"s-in","created_at":"2026-10-05T10:00:00Z"},
+			{"id":"s-broken","created_at":"2026-10-06T10:00:00Z"},
+			{"id":"s-late","created_at":"2026-11-01T00:00:00Z"}],
+			"pagination":{"total":4}}`)
+	})
+	mux.HandleFunc("/api/v1/sessions/s-in/evidence", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"pack":"e30="}`)
+	})
+	mux.HandleFunc("/api/v1/sessions/s-broken/evidence", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	prevURL, prevKey := apiURL, apiKey
+	apiURL, apiKey = srv.URL, "test"
+	defer func() { apiURL, apiKey = prevURL, prevKey }()
+
+	dir := filepath.Join(t.TempDir(), "packs")
+	out, err := runEvidence(t, "export", "--all", "--since", "2026-10-01", "--until", "2026-11-01", "-d", dir)
+	if err == nil || !strings.Contains(err.Error(), "1 sessions could not be exported") {
+		t.Fatalf("want an error for the broken session, got %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Exported 1 of 2 sessions") {
+		t.Errorf("output:\n%s", out)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "s-in.json" {
+		t.Errorf("exported files = %v", entries)
+	}
+	if _, err := runEvidence(t, "export", "--all", "s-in"); err == nil {
+		t.Error("--all with a session id accepted")
+	}
+	if _, err := runEvidence(t, "export"); err == nil {
+		t.Error("export without id or --all accepted")
 	}
 }

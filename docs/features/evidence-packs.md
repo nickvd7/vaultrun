@@ -60,6 +60,12 @@ vaultrun evidence export <session-id> -o evidence.json
 curl -H "X-API-Key: $KEY" https://vaultrun.example.com/api/v1/sessions/<id>/evidence -o evidence.json
 ```
 
+Every session the key can see, for a period, into a directory:
+
+```bash
+vaultrun evidence export --all --since 2026-10-01 --until 2026-11-01 -d packs/
+```
+
 Exports work for stopped and deleted sessions too (their runs and audit entries
 are kept; deleted workspaces have no files). Every export is itself audited as
 `evidence.exported`.
@@ -115,6 +121,15 @@ Timestamp 2026-10-29 07:24:19 UTC by CN=DigiCert SHA256 RSA4096 Timestamp Respon
 
 Qualified TSAs under eIDAS (EU) issue tokens with legal standing as qualified
 electronic time stamps; use one when that matters to your auditor.
+
+## Compliance report (Enterprise)
+
+VaultRun Enterprise turns a directory of packs into a report for auditors:
+`vaultrun-report --key vaultrun-evidence.pub packs/ -o report.html`. It verifies
+every pack and its timestamp, and organises the evidence by control (integrity,
+independent time, audit log, traceability, kernel isolation, network egress,
+accountability) with exceptions, findings, sessions, commands and the SHA-256
+of every input file, as HTML (prints to PDF) and JSON. Contact mail@030.dev.
 
 ## Format
 

@@ -217,3 +217,14 @@ footer{border-top:1px solid var(--line);padding:40px 0 calc(90px + env(safe-area
 .foot a:hover{color:var(--fg)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;scroll-behavior:auto!important}}
+.tiers{display:grid;gap:16px;grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){.tiers{grid-template-columns:1fr}}
+.tier{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:24px;min-width:0}
+.tier.good{border-color:var(--fg)}
+.tier-name{font:600 20px/1.2 var(--mono);margin:0 0 6px}
+.tier-tag{color:var(--dim);font-size:13px;margin:0 0 16px}
+.tier ul{margin:0 0 20px;padding-left:18px;color:var(--muted);flex:1}
+.tier li{margin:6px 0}
+.tier li b{color:var(--fg)}
+.tier .btn{align-self:flex-start}
+@media(max-width:640px){.tiers-matrix{display:none}}

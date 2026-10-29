@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultRun Enterprise — procurement one-pager</title>
-<meta name="description" content="VaultRun Enterprise: OIDC and SAML SSO for the self-hosted AI agent runtime. Evaluation free; production by commercial license. Contact mail@030.dev.">
+<meta name="description" content="VaultRun Team and Enterprise: compliance reports from signed, timestamped evidence packs, plus OIDC and SAML SSO for the self-hosted AI agent runtime. Evaluation free. Contact mail@030.dev.">
 <link rel="canonical" href="https://vaultrun.dev/enterprise.html">
 <link rel="alternate" type="text/plain" title="llms.txt" href="https://vaultrun.dev/llms.txt">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta property="og:title" content="VaultRun Enterprise">
-<meta property="og:description" content="SSO (OIDC + SAML) overlay for VaultRun. Evaluate free; production license on request.">
+<meta property="og:description" content="Compliance reports and SSO for VaultRun, the self-hosted AI agent runtime. Evaluate free; license on request.">
 <meta property="og:url" content="https://vaultrun.dev/enterprise.html">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://vaultrun.dev/brand/og.png">
@@ -18,7 +18,6 @@
 <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/brand/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
-<link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/nav.css">
 <link rel="stylesheet" href="/site.css">
 <style>
@@ -66,6 +65,10 @@
     h1 { font-size: 22px; }
     td:first-child { width: auto; }
   }
+  @media (max-width: 540px) {
+    .editions th { display: none; }
+    .editions td[data-label]::before { content: attr(data-label) " · "; color: var(--faint); }
+  }
   @media print {
     body { background: #fff; color: #111; }
     :root { --bg: #fff; --bg-alt: #f5f5f5; --fg: #111; --dim: #333; --faint: #666; --line: #ccc; }
@@ -96,10 +99,36 @@
   </div>
 </header>
 <div class="wrap">
-  <h1>VaultRun Enterprise</h1>
-  <p class="lede">Procurement one-pager. Self-hosted AI agent runtime with identity federation (OIDC + SAML). Core stays Apache 2.0; SSO ships as a commercial overlay.</p>
+  <h1>VaultRun Team &amp; Enterprise</h1>
+  <p class="lede">Procurement one-pager. VaultRun runs AI agents in isolated sandboxes on your own infrastructure, and proves afterwards what they did. The core stays Apache 2.0; the compliance report and SSO ship as a commercial overlay.</p>
 
-  <h2>What you get</h2>
+  <h2>Editions</h2>
+  <div class="table-wrap">
+  <table class="editions">
+    <tr><th></th><th>Core</th><th>Team</th><th>Enterprise</th></tr>
+    <tr><td>Sandboxes, API, MCP, SDKs, CLI, dashboard</td><td data-label="Core">✓</td><td data-label="Team">✓</td><td data-label="Enterprise">✓</td></tr>
+    <tr><td>gVisor runtime, network allowlist, signed audit trail</td><td data-label="Core">✓</td><td data-label="Team">✓</td><td data-label="Enterprise">✓</td></tr>
+    <tr><td>Evidence packs (Ed25519 + RFC 3161) and offline verification</td><td data-label="Core">✓</td><td data-label="Team">✓</td><td data-label="Enterprise">✓</td></tr>
+    <tr><td>Compliance report (HTML, PDF, JSON)</td><td data-label="Core">Evaluation copy</td><td data-label="Team">✓</td><td data-label="Enterprise">✓</td></tr>
+    <tr><td>OIDC + SAML SSO, IdP group → role mapping</td><td data-label="Core">—</td><td data-label="Team">—</td><td data-label="Enterprise">✓</td></tr>
+    <tr><td>Production installations</td><td data-label="Core">Unlimited</td><td data-label="Team">One</td><td data-label="Enterprise">Several</td></tr>
+    <tr><td>Support</td><td data-label="Core">Community</td><td data-label="Team">Email</td><td data-label="Enterprise">Agreed response times, audit help</td></tr>
+  </table>
+  </div>
+
+  <h2>Compliance report</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Item</th><th>Detail</th></tr>
+    <tr><td>Input</td><td>Evidence packs from <code>vaultrun evidence export --all</code> and the public signing key — nothing else, works offline</td></tr>
+    <tr><td>Checks</td><td>Every pack's Ed25519 signature and RFC 3161 timestamp chain; rejected packs are listed with the reason</td></tr>
+    <tr><td>Controls</td><td>Evidence integrity, independent time, audit log, traceability, kernel isolation, network egress, accountability — each with status, findings and exceptions</td></tr>
+    <tr><td>Output</td><td>Self-contained HTML (prints to PDF) and JSON, with the SHA-256 of every input file</td></tr>
+    <tr><td>Automation</td><td><code>--fail-on fail|attention</code> exits non-zero, for CI or a monthly job</td></tr>
+  </table>
+  </div>
+
+  <h2>Single sign-on (Enterprise)</h2>
   <div class="table-wrap">
   <table>
     <tr><th>Item</th><th>Detail</th></tr>
@@ -107,44 +136,47 @@
     <tr><td>SSO / SAML 2.0</td><td>Signed assertions; AD FS, Okta, OneLogin and similar IdPs</td></tr>
     <tr><td>Sessions</td><td>HttpOnly Secure cookies; server-side revocation; scoped API key auto-provisioned on login</td></tr>
     <tr><td>RBAC</td><td>Org-aware roles (viewer / executor / admin); IdP group mapping</td></tr>
-    <tr><td>Delivery</td><td>Private overlay repo; build with <code>go build -tags enterprise</code> onto open-core VaultRun</td></tr>
-    <tr><td>Hosting</td><td>Runs on <em>your</em> infrastructure — no VaultRun SaaS dependency</td></tr>
   </table>
   </div>
 
-  <h2>Licensing</h2>
+  <h2>Delivery &amp; licensing</h2>
   <div class="table-wrap">
   <table>
     <tr><th>Use</th><th>Terms</th></tr>
+    <tr><td>Delivery</td><td>Private overlay repo; build with <code>go build -tags enterprise</code> onto open-core VaultRun</td></tr>
+    <tr><td>Hosting</td><td>Runs on <em>your</em> infrastructure — no VaultRun SaaS dependency, no telemetry</td></tr>
+    <tr><td>License file</td><td>Signed file, checked offline; nothing phones home</td></tr>
     <tr><td>Development / test / evaluation</td><td>Free under the VaultRun Enterprise License</td></tr>
-    <tr><td>Production SSO</td><td>Commercial subscription or written agreement required</td></tr>
+    <tr><td>Production use</td><td>Annual Team or Enterprise subscription</td></tr>
     <tr><td>Managed service / hosting for third parties</td><td>Not permitted without a written commercial agreement</td></tr>
-    <tr><td>Pricing</td><td>Custom quote — no public price list yet; contact for a proposal</td></tr>
+    <tr><td>Pricing</td><td>On request — send us your situation and we'll make a proposal</td></tr>
   </table>
   </div>
 
   <h2>How to buy / evaluate</h2>
   <div class="box">
-    <p><strong style="color:var(--fg)">1. Evaluate</strong> — request repo access for a PoC (dev/test free).</p>
-    <p><strong style="color:var(--fg)">2. License</strong> — send org, IdP, instance count / seats, and timeline for a production quote.</p>
+    <p><strong style="color:var(--fg)">1. Evaluate</strong> — request repo access for a PoC (dev/test free). Run the report on your own packs.</p>
+    <p><strong style="color:var(--fg)">2. License</strong> — send org, edition (Team or Enterprise), installations, IdP if any, and timeline.</p>
     <p><strong style="color:var(--fg)">3. Talk / schedule</strong> — procurement, support, or a walkthrough. All paths email <strong style="color:var(--fg)">mail@030.dev</strong>.</p>
   </div>
   <div class="cta">
-    <a class="btn primary" href="/#contact">request via form →</a>
-    <a class="btn ghost" href="mailto:mail@030.dev?subject=VaultRun%20Enterprise%20%E2%80%94%20schedule%20a%20call">email license request</a>
-    <a class="btn ghost" href="/?intent=schedule#contact">propose call times</a>
+    <a class="btn primary" href="/?intent=eval#contact">request evaluation →</a>
+    <a class="btn ghost" href="/?intent=team#contact">ask about Team</a>
+    <a class="btn ghost" href="mailto:mail@030.dev?subject=VaultRun%20license%20request">email license request</a>
+    <a class="btn ghost" href="/?intent=call#contact">propose call times</a>
   </div>
 
   <h2>Technical references</h2>
   <ul>
+    <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/features/evidence-packs.md">Evidence packs</a> · <a href="https://github.com/nickvd7/vaultrun/tree/main/examples/evidence-demo">60-second demo</a></li>
     <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md">SSO setup guide</a></li>
     <li><a href="https://github.com/nickvd7/vaultrun/blob/main/docs/security.md">Security model</a></li>
     <li><a href="https://github.com/nickvd7/vaultrun">Open-core repository</a> (Apache 2.0)</li>
-    <li><a href="https://vaultrun.dev/">Product site</a> · <a href="https://vaultrun.dev/#enterprise">Enterprise CTA</a></li>
+    <li><a href="https://vaultrun.dev/">Product site</a> · <a href="https://vaultrun.dev/#enterprise">Editions</a></li>
     <li><a href="/llms.txt">llms.txt</a> · <a href="/llms-full.txt">llms-full.txt</a> (AI / LLM grounding)</li>
   </ul>
 
-  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-10-09</p>
+  <p class="meta">VaultRun / 030.dev · mail@030.dev · Print this page for RFPs · Last updated 2026-10-29</p>
 </div>
 <script src="/nav.js"></script>
 </body>

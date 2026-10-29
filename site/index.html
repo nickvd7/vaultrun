@@ -60,6 +60,9 @@
         "Verify checkpoints, control suite, sealed evidence digests",
         "Missions (workflow-as-asset), agent memory, swarm graph",
         "HMAC-signed audit trail",
+        "Signed evidence packs with RFC 3161 timestamps",
+        "gVisor runtime support",
+        "Compliance report from evidence packs (VaultRun Team, commercial)",
         "Enterprise OIDC + SAML SSO (commercial)"
       ],
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -298,7 +301,7 @@ if run.Stdout != nil { fmt.Println(*run.Stdout) }</code></pre></div>
           <li><span class="ic">2</span><div><b>Locked-down containers</b><span>Non-root, all Linux capabilities dropped, workspace path-traversal checks.</span></div></li>
           <li><span class="ic">3</span><div><b>Network off</b><span>Disabled by default; per-session iptables allowlist when a task needs it.</span></div></li>
           <li><span class="ic">4</span><div><b>Bounded resources</b><span>CPU, memory and timeout limits per session.</span></div></li>
-          <li><span class="ic">5</span><div><b>Tamper-evident audit</b><span>Every action HMAC-signed. API keys stored as SHA-256 hashes. Optional sealed verify evidence digests.</span></div></li>
+          <li><span class="ic">5</span><div><b>Tamper-evident audit</b><span>Every action HMAC-signed. API keys stored as SHA-256 hashes. Per-session evidence packs, Ed25519-signed and externally timestamped.</span></div></li>
           <li><span class="ic">6</span><div><b>Opt-in reach</b><span>AWS, database and host-filesystem tools are off until you enable them — no ambient credentials.</span></div></li>
         </ul>
       </div>
@@ -309,7 +312,8 @@ if run.Stdout != nil { fmt.Println(*run.Stdout) }</code></pre></div>
           <tr><td>Agent tries to exfiltrate data</td><td><span class="pill ok">blocked</span> network off unless allowlisted</td></tr>
           <tr><td>Fork bomb / runaway loop</td><td><span class="pill ok">bounded</span> CPU, memory and timeout limits</td></tr>
           <tr><td>Someone edits the audit log</td><td><span class="pill ok">detected</span> HMAC signature breaks</td></tr>
-          <tr><td>Container escape via a kernel bug</td><td><span class="pill part">add a layer</span> Docker shares the host kernel — run with gVisor or Kata for untrusted workloads</td></tr>
+          <tr><td>Someone backdates or edits session evidence</td><td><span class="pill ok">detected</span> Ed25519 signature and RFC 3161 timestamp break</td></tr>
+          <tr><td>Container escape via a kernel bug</td><td><span class="pill part">add a layer</span> Docker shares the host kernel — set <code>DOCKER_RUNTIME=runsc</code> to run sessions under gVisor</td></tr>
         </table>
         <p class="fine" style="margin-top:14px">Full write-up: <a href="https://github.com/nickvd7/vaultrun/blob/main/docs/security.md">docs/security.md</a> · Report a vulnerability: <a href="https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md">SECURITY.md</a></p>
       </div>
@@ -379,6 +383,7 @@ VAULTRUN_API_KEY=vr_your_key \
           <tr><td>Data leaves your network</td><td class="us">No</td><td>Yes</td><td>Depends on the agent</td></tr>
           <tr><td>Works with local models offline</td><td class="us">Yes</td><td>No</td><td>Yes</td></tr>
           <tr><td>Signed audit trail</td><td class="us">Built in</td><td>Varies</td><td>No</td></tr>
+          <tr><td>Evidence an auditor can verify offline</td><td class="us">Built in</td><td>No</td><td>No</td></tr>
           <tr><td>Setup effort</td><td class="us">Docker Compose</td><td>API key</td><td>None</td></tr>
           <tr><td>Cost</td><td class="us">Free core, your hardware</td><td>Per-second usage</td><td>Free</td></tr>
         </tbody>
@@ -404,25 +409,69 @@ VAULTRUN_API_KEY=vr_your_key \
 
 <section id="enterprise" aria-labelledby="enth">
   <div class="wrap">
-    <p class="eyebrow">Open core</p>
-    <h2 id="enth">Apache 2.0 core. SSO when your team needs it.</h2>
-    <p class="lead">Everything above is open source. VaultRun Enterprise adds OIDC and SAML single sign-on with org-aware roles. Evaluation is free.</p>
-    <div class="tbl-wrap" style="max-width:760px">
+    <p class="eyebrow">Open core · Team · Enterprise</p>
+    <h2 id="enth">Prove what your agents did. To an auditor.</h2>
+    <p class="lead">Every sandbox session can be exported as a signed, externally timestamped evidence pack. VaultRun Team turns those packs into a compliance report your auditor can check offline. Enterprise adds single sign-on and support with agreed response times.</p>
+
+    <div class="tiers">
+      <div class="tier">
+        <p class="tier-name">Core</p>
+        <p class="tier-tag">Apache 2.0 · free forever</p>
+        <ul>
+          <li>Sandboxes, API, MCP server, SDKs, CLI, dashboard</li>
+          <li>gVisor runtime for kernel isolation</li>
+          <li>HMAC-signed audit trail</li>
+          <li>Signed evidence packs with RFC 3161 timestamps</li>
+          <li>Offline verification: <code>vaultrun evidence verify</code></li>
+        </ul>
+        <a class="btn" href="https://github.com/nickvd7/vaultrun">Get it on GitHub ↗</a>
+      </div>
+      <div class="tier good">
+        <p class="tier-name">Team</p>
+        <p class="tier-tag">For small teams that need to show their work</p>
+        <ul>
+          <li>Everything in Core</li>
+          <li><b>Compliance report</b>: every pack verified, organised by control (integrity, independent time, audit log, isolation, egress, accountability)</li>
+          <li>Self-contained HTML and PDF, plus JSON for your GRC tooling</li>
+          <li>Named for your organisation, without the evaluation notice</li>
+          <li>CI gate: <code>--fail-on</code> breaks the build on a failing control</li>
+          <li>Email support</li>
+        </ul>
+        <a class="btn primary" href="#contact" data-intent="team">Ask about Team</a>
+      </div>
+      <div class="tier">
+        <p class="tier-name">Enterprise</p>
+        <p class="tier-tag">For regulated organisations</p>
+        <ul>
+          <li>Everything in Team</li>
+          <li>OIDC and SAML 2.0 SSO (Okta, Azure AD, Google, Keycloak…)</li>
+          <li>IdP group → role mapping</li>
+          <li>Several production installations</li>
+          <li>Support with agreed response times, help with your audit</li>
+        </ul>
+        <a class="btn" href="#contact" data-intent="license">Talk to us</a>
+      </div>
+    </div>
+
+    <div class="tbl-wrap tiers-matrix" style="margin-top:28px">
       <table class="tbl">
-        <thead><tr><th></th><th>Core · Apache 2.0</th><th>Enterprise</th></tr></thead>
+        <thead><tr><th></th><th>Core</th><th class="us">Team</th><th>Enterprise</th></tr></thead>
         <tbody>
-          <tr><td>Sandboxes, API, MCP, SDKs, CLI, CI runner, dashboard</td><td>✓</td><td>✓</td></tr>
-          <tr><td>API key auth</td><td>✓</td><td>✓</td></tr>
-          <tr><td>OIDC + SAML SSO (Okta, Azure AD, Google, Keycloak…)</td><td>—</td><td>✓</td></tr>
-          <tr><td>IdP group → role mapping</td><td>—</td><td>✓</td></tr>
-          <tr><td>Dev, test, evaluation</td><td>Free</td><td>Free</td></tr>
-          <tr><td>Production SSO</td><td>—</td><td>Commercial license</td></tr>
+          <tr><td>Sandboxes, API, MCP, SDKs, CLI, dashboard</td><td>✓</td><td class="us">✓</td><td>✓</td></tr>
+          <tr><td>gVisor runtime, network allowlist, audit trail</td><td>✓</td><td class="us">✓</td><td>✓</td></tr>
+          <tr><td>Signed, timestamped evidence packs</td><td>✓</td><td class="us">✓</td><td>✓</td></tr>
+          <tr><td>Compliance report (HTML, PDF, JSON)</td><td>Evaluation copy</td><td class="us">✓</td><td>✓</td></tr>
+          <tr><td>OIDC + SAML SSO, role mapping</td><td>—</td><td class="us">—</td><td>✓</td></tr>
+          <tr><td>Support</td><td>Community</td><td class="us">Email</td><td>Agreed response times</td></tr>
+          <tr><td>Evaluation, development, test</td><td>Free</td><td class="us">Free</td><td>Free</td></tr>
         </tbody>
       </table>
     </div>
-    <p style="margin-top:20px">
+    <p class="fine" style="margin-top:14px">Licenses are a signed file checked offline — nothing phones home. Pricing on request.</p>
+    <p style="margin-top:20px;display:flex;flex-wrap:wrap;gap:8px">
       <a class="btn primary" href="#contact" data-intent="eval">Request evaluation</a>
-      <a class="btn" href="/enterprise.html" style="margin-left:8px">Enterprise one-pager →</a>
+      <a class="btn" href="/enterprise.html">Procurement one-pager →</a>
+      <a class="btn" href="https://github.com/nickvd7/vaultrun/blob/main/docs/features/evidence-packs.md">How evidence packs work ↗</a>
     </p>
   </div>
 </section>
@@ -443,6 +492,7 @@ VAULTRUN_API_KEY=vr_your_key \
       <label>What's this about?
         <select id="intent" name="intent">
           <option value="general">General question</option>
+          <option value="team">VaultRun Team</option>
           <option value="eval">Enterprise evaluation</option>
           <option value="license">Production license</option>
           <option value="call">Schedule a call</option>
@@ -452,13 +502,13 @@ VAULTRUN_API_KEY=vr_your_key \
 
       <div class="callout fieldset" data-for="security" hidden>Please don't use this form for vulnerabilities. Report them privately as described in <a href="https://github.com/nickvd7/vaultrun/blob/main/SECURITY.md">SECURITY.md</a>.</div>
 
-      <div class="fieldset" data-for="general eval license call">
+      <div class="fieldset" data-for="general team eval license call">
         <div class="row two">
           <label>Name<input name="name" autocomplete="name" required></label>
           <label>Email<input name="email" id="email" type="email" autocomplete="email" required></label>
         </div>
       </div>
-      <div class="fieldset row two" data-for="eval license call" hidden>
+      <div class="fieldset row two" data-for="team eval license call" hidden>
         <label>Company<input name="company" autocomplete="organization"></label>
         <label>Identity provider<input name="idp" placeholder="Okta, Azure AD, Keycloak…"></label>
       </div>
@@ -475,10 +525,10 @@ VAULTRUN_API_KEY=vr_your_key \
         <input type="hidden" name="timezone" id="timezone" value="">
         <p class="fine" style="margin:8px 0 0">Times are in your timezone (<span id="tz"></span>). We confirm one by email — 30 minutes.</p>
       </div>
-      <div class="fieldset" data-for="general eval license call">
+      <div class="fieldset" data-for="general team eval license call">
         <label>Message<textarea name="message" required></textarea></label>
       </div>
-      <div class="fieldset" data-for="general eval license call">
+      <div class="fieldset" data-for="general team eval license call">
         <button class="btn primary" type="submit">Send message</button>
         <p class="fine">We use your details only to reply. See our <a href="#privacy">privacy statement</a>.</p>
       </div>

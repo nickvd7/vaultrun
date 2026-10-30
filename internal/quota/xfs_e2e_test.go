@@ -22,8 +22,8 @@ const testImage = "python:3.12-slim"
 
 // TestXFSWorkspaceQuotaE2E puts a workspace base directory on a loop-mounted
 // XFS filesystem with project quotas, applies the quota to a session's
-// directory and writes past it from a sandbox: the write fails with "Disk
-// quota exceeded" and the file stops at the limit.
+// directory and writes past it from a sandbox: the write fails with "No
+// space left on device" and the file stops at the limit.
 //
 // Needs root, a kernel with XFS quota support, mkfs.xfs, Docker and the
 // supervisor binary in VAULTRUN_TEST_SUPERVISOR (CGO_ENABLED=0 go build
@@ -113,7 +113,10 @@ func TestXFSWorkspaceQuotaE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("exec: %v", err)
 	}
-	if !strings.Contains(res.Stdout+res.Stderr, "quota exceeded") {
+	// XFS reports a full project quota as ENOSPC ("No space left on
+	// device"), the way a full directory tree would look; EDQUOT is for
+	// user and group quotas.
+	if out := res.Stdout + res.Stderr; !strings.Contains(out, "No space left on device") && !strings.Contains(out, "quota exceeded") {
 		t.Fatalf("writing 60 MB into a 20 MB workspace did not hit the quota: %+v", res)
 	}
 	info, err := os.Stat(filepath.Join(wsPath, "big"))

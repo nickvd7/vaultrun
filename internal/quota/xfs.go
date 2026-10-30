@@ -16,8 +16,8 @@ import (
 const xfsMountPoint = "/vaultrun-workspaces"
 
 // XFS gives each new session workspace a hard size limit with an XFS project
-// quota (WORKSPACE_QUOTA=xfs): writes past MaxBytes fail with "Disk quota
-// exceeded" in the sandbox, with no overshoot. The base directory must be on
+// quota (WORKSPACE_QUOTA=xfs): writes past MaxBytes fail with "No space
+// left on device" in the sandbox, with no overshoot. The base directory must be on
 // XFS mounted with prjquota. Setting a quota needs CAP_SYS_ADMIN, so it runs
 // as a one-shot privileged container through Docker (see
 // internal/xfsquota).

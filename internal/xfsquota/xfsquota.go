@@ -5,7 +5,8 @@
 //
 // Every session directory gets a project ID of its own, inherited by
 // everything created in it, and a hard block limit for that project: writes
-// past it fail with EDQUOT ("Disk quota exceeded") in the sandbox. The
+// past it fail with ENOSPC ("No space left on device") in the sandbox, which
+// is how XFS reports a full project quota. The
 // workspace base directory must be on XFS mounted with prjquota.
 //
 // Setting a project ID and a limit needs CAP_SYS_ADMIN, which the API does not

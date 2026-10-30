@@ -24,6 +24,17 @@ is_true() {
   esac
 }
 
+# WORKSPACE_QUOTA=xfs: the API refuses to start, in any mode, when the
+# workspace directory is not on XFS with project quotas.
+if [ "$(env_value WORKSPACE_QUOTA)" = "xfs" ] && command -v findmnt >/dev/null 2>&1; then
+  ws="$(env_value WORKSPACE_HOST_DIR)"; ws="${ws:-/var/lib/vaultrun/workspaces}"
+  if [ "$(findmnt -n -o FSTYPE --target "$ws" 2>/dev/null)" != "xfs" ] ||
+     ! findmnt -n -o OPTIONS --target "$ws" | tr ',' '\n' | grep -Eq '^(prjquota|pquota)'; then
+    echo "Note: WORKSPACE_QUOTA=xfs, but $ws is not on XFS mounted with prjquota, so the API will" >&2
+    echo "      refuse to start. Run make xfs-workspace (docs/production-hardening.md)." >&2
+  fi
+fi
+
 if ! grep -Eq '^[[:space:]]*VAULTRUN_INSECURE_DEV=' "$ENV_FILE"; then
   cat >&2 <<MSG
 Note: $ENV_FILE has no VAULTRUN_INSECURE_DEV. Since v0.4.0 the API refuses to start unless an OPA
@@ -52,6 +63,7 @@ master="$(env_value MASTER_API_KEY)"
 if [ -n "$master" ] && [ "${#master}" -lt 32 ]; then
   problems+=("MASTER_API_KEY is shorter than 32 characters")
 fi
+[ -z "$(env_value DOCKER_RUNTIME)" ] && problems+=("sandboxes share the host kernel: install gVisor (make gvisor) and set DOCKER_RUNTIME=runsc, or DOCKER_RUNTIME=runc to accept the shared kernel explicitly")
 [ -z "$(env_value AUDIT_HMAC_KEY)" ] && problems+=("audit log entries are unsigned: set AUDIT_HMAC_KEY")
 # Compose points the API at its own Redis unless REDIS_ADDR says otherwise.
 redis_addr="$(env_value REDIS_ADDR)"

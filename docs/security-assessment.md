@@ -69,13 +69,13 @@ git clone https://github.com/nickvd7/vaultrun && cd vaultrun
 cp .env.example .env
 # remove VAULTRUN_INSECURE_DEV=true and set MASTER_API_KEY, METRICS_TOKEN,
 # OPA_POLICY_FILE (or OPA_ALLOW_ALL=true), TLS_* or TLS_DISABLED=true behind a proxy
-make gvisor        # gVisor; make up then sets DOCKER_RUNTIME=runsc
+make harden        # gVisor + workspaces on XFS with project quotas
 make up
 make bootstrap-key
 ```
 
-For the hard workspace quota, put `WORKSPACE_HOST_DIR` on XFS mounted with
-`prjquota` and set `WORKSPACE_QUOTA=xfs`. For SSO, build the enterprise
+`make harden` sets `DOCKER_RUNTIME=runsc` and `WORKSPACE_QUOTA=xfs` (see
+[production-hardening.md](production-hardening.md)). For SSO, build the enterprise
 overlay (`make build-enterprise` in vaultrun-enterprise) and connect a test
 tenant of an IdP (Keycloak is easiest); `docs/sso-setup.md` has the steps.
 

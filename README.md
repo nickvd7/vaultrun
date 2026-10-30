@@ -52,6 +52,7 @@ git clone https://github.com/nickvd7/vaultrun
 cd vaultrun
 cp .env.example .env        # set MASTER_API_KEY (openssl rand -hex 32); make up generates the Postgres, Redis and audit secrets
 make gvisor                 # optional, Linux: install gVisor; make up then runs sandboxes under it
+                            # production host: make harden (gVisor + hard workspace quota on XFS)
 make up                     # detects the Docker GID, then starts API + Postgres + Redis + dashboard
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health

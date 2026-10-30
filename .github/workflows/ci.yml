@@ -165,17 +165,31 @@ jobs:
           sudo VAULTRUN_TEST_SUPERVISOR="$RUNNER_TEMP/vr-exec" "$RUNNER_TEMP/quota.test" -test.run TestXFSWorkspaceQuotaE2E -test.v -test.timeout 300s 2>&1 | tee -a out.txt
           grep -q -- '--- PASS: TestRuntimeTimeoutStopsCommandE2E' out.txt && grep -q -- '--- PASS: TestXFSWorkspaceQuotaE2E' out.txt
 
-      # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
-      - name: Install gVisor (runsc)
+      # make xfs-workspace on a fresh host: image file, fstab, .env; then the
+      # quota check the API runs at startup, a second run, and a remount from fstab.
+      - name: Host setup for the workspace quota (make xfs-workspace)
         run: |
-          # Pinned release; releases ship one tarball (runsc + gvisor-bin/).
-          URL=https://storage.googleapis.com/gvisor/releases/release/20261019.0/$(uname -m)
-          curl -fsSLO "$URL/gvisor.tar.bz2" && curl -fsSLO "$URL/gvisor.tar.bz2.sha512"
-          sha512sum -c gvisor.tar.bz2.sha512
-          sudo tar xjf gvisor.tar.bz2 -C /usr/local/bin
-          sudo /usr/local/bin/runsc install
-          # reload, not restart: runtimes are reloadable and the Postgres service container keeps running
-          sudo systemctl reload docker
+          WS="$RUNNER_TEMP/xfs-ws" ENV="$RUNNER_TEMP/xfs.env"
+          printf 'WORKSPACE_HOST_DIR=%s\nMAX_WORKSPACE_MB=0\nWORKSPACE_QUOTA=\n' "$WS" > "$ENV"
+          sudo cp /etc/fstab "$RUNNER_TEMP/fstab.orig"
+          XFS_SIZE=300M ./scripts/setup-xfs-workspace.sh "$ENV"
+          grep -qx 'WORKSPACE_QUOTA=xfs' "$ENV" && grep -qx 'MAX_WORKSPACE_MB=2048' "$ENV"
+          grep -q " $WS xfs loop,prjquota," /etc/fstab
+          [ "$(sudo stat -c %u:%a "$WS")" = "65532:700" ]
+          sudo "$RUNNER_TEMP/vr-exec" xfs-quota check "$WS"
+          ./scripts/setup-xfs-workspace.sh "$ENV" | grep -q 'already XFS with project quotas'
+          [ "$(grep -c " $WS " /etc/fstab)" = 1 ]
+          sudo umount "$WS" && sudo mount "$WS" && sudo "$RUNNER_TEMP/vr-exec" xfs-quota check "$WS"
+          ./scripts/check-env.sh "$ENV" 2>&1 | { ! grep -q 'not on XFS'; }
+          sudo umount "$WS" && sudo cp "$RUNNER_TEMP/fstab.orig" /etc/fstab
+          ./scripts/check-env.sh "$ENV" 2>&1 | grep -q 'not on XFS mounted with prjquota'
+
+      # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
+      # make gvisor's script: pinned release, checksum, runsc install, reload
+      # (not restart: the Postgres service container keeps running).
+      - name: Install gVisor (make gvisor)
+        run: |
+          ./scripts/install-gvisor.sh
           docker info --format '{{json .Runtimes}}' | grep -q runsc
 
       - name: Sandbox runtime tests (gVisor)

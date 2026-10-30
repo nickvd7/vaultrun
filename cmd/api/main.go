@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,13 +38,25 @@ import (
 	"github.com/nickvd7/vaultrun/internal/runner"
 	"github.com/nickvd7/vaultrun/internal/secrets"
 	"github.com/nickvd7/vaultrun/internal/siemexport"
+	"github.com/nickvd7/vaultrun/internal/supervise"
 	"github.com/nickvd7/vaultrun/internal/templates"
 	"github.com/nickvd7/vaultrun/internal/version"
 	"github.com/nickvd7/vaultrun/internal/warmpool"
 	"github.com/nickvd7/vaultrun/internal/workspace"
+	"github.com/nickvd7/vaultrun/internal/xfsquota"
 )
 
 func main() {
+	// Installed into every sandbox as /.vaultrun/vr-exec, this binary runs
+	// commands there under a timeout it enforces (see internal/supervise).
+	if filepath.Base(os.Args[0]) == supervise.Name {
+		// The same binary sets XFS workspace quotas from a privileged
+		// one-shot container (WORKSPACE_QUOTA=xfs).
+		if len(os.Args) > 1 && os.Args[1] == "xfs-quota" {
+			os.Exit(xfsquota.Main(os.Args[2:]))
+		}
+		os.Exit(supervise.Main(os.Args[1:]))
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version") {
 		fmt.Println("vaultrun-api", version.String())
 		return
@@ -135,6 +148,34 @@ func main() {
 	docker, err := dockerpkg.New()
 	if err != nil {
 		slog.Error("create docker client", "err", err)
+		os.Exit(1)
+	}
+	// The API binary is static, so it can be the run supervisor in any image.
+	if exe, err := os.Executable(); err == nil {
+		docker.SetSupervisorBinary(exe)
+	} else {
+		slog.Warn("cannot locate the API binary; run timeouts will not stop commands", "err", err)
+	}
+
+	// WORKSPACE_QUOTA=xfs must work before the API accepts sessions: a
+	// configured hard limit that silently does not apply is worse than none.
+	switch cfg.Workspace.Quota {
+	case "":
+	case "xfs":
+		if cfg.Workspace.MaxWorkspaceMB <= 0 {
+			slog.Error("WORKSPACE_QUOTA=xfs needs MAX_WORKSPACE_MB > 0")
+			os.Exit(1)
+		}
+		qctx, qcancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		err := newXFSQuota(cfg, db, docker).Check(qctx)
+		qcancel()
+		if err != nil {
+			slog.Error("workspace quota unavailable — refusing to start", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("workspace hard quota enabled", "backend", "xfs", "max_mb", cfg.Workspace.MaxWorkspaceMB)
+	default:
+		slog.Error("WORKSPACE_QUOTA must be empty or xfs", "value", cfg.Workspace.Quota)
 		os.Exit(1)
 	}
 	// Verify the Docker daemon is reachable before accepting traffic. A

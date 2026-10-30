@@ -99,6 +99,9 @@ func newRouter(
 	})
 
 	hub := handlers.NewHub(db, docker, ws, rnr, al, cfg, pol, queue, sec, pool, artStore)
+	if x := newXFSQuota(cfg, db, docker); x != nil {
+		hub.SetXFSQuota(x)
+	}
 	if cfg.Workspace.MaxWorkspaceMB > 0 {
 		// Stateless: the watcher started in main pauses, this one admits runs.
 		hub.SetQuota(&quota.Enforcer{DB: db, Docker: docker, WS: ws, Audit: al, MaxBytes: cfg.Workspace.MaxWorkspaceMB << 20})
@@ -384,4 +387,17 @@ func newRouter(
 	})
 
 	return r
+}
+
+// newXFSQuota returns the hard workspace quota when WORKSPACE_QUOTA=xfs (main
+// has verified the filesystem at startup), or nil.
+func newXFSQuota(cfg *config.Config, db *sqlx.DB, docker *dockerpkg.Client) *quota.XFS {
+	if cfg.Workspace.Quota != "xfs" || cfg.Workspace.MaxWorkspaceMB <= 0 {
+		return nil
+	}
+	host := cfg.Workspace.DockerHostBaseDir
+	if host == "" {
+		host = cfg.Workspace.BaseDir
+	}
+	return &quota.XFS{Docker: docker, NextID: quota.DBProjectIDs(db), HostBaseDir: host, MaxBytes: cfg.Workspace.MaxWorkspaceMB << 20, Image: cfg.Docker.DefaultImage}
 }

@@ -89,6 +89,10 @@ type DockerConfig struct {
 	// GPUDevices enables NVIDIA GPU access in sessions that request it.
 	// "all" = all GPUs; "0,1" = specific GPU indices; "" = disabled.
 	GPUDevices string
+	// Runtime is the OCI runtime sandboxes run under (DOCKER_RUNTIME): "runsc"
+	// for gVisor, "runc" to accept the shared host kernel explicitly, empty
+	// for the daemon default.
+	Runtime string
 	// AllowPrivateNetworks lets sandboxes with network_enabled and no
 	// allowed_hosts reach private, loopback and link-local addresses (the
 	// host's own network, cloud metadata). Off by default.
@@ -96,12 +100,16 @@ type DockerConfig struct {
 }
 
 type WorkspaceConfig struct {
-	BaseDir              string
-	DockerHostBaseDir    string // DOCKER_HOST_WORKSPACE_BASE_DIR: path on Docker host for bind mounts (defaults to BaseDir)
-	MaxFileMB            int64
-	MaxOutputMB          int64
-	MaxWorkspaceMB       int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
-	MaxArtifactStorageMB int64 // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
+	BaseDir           string
+	DockerHostBaseDir string // DOCKER_HOST_WORKSPACE_BASE_DIR: path on Docker host for bind mounts (defaults to BaseDir)
+	MaxFileMB         int64
+	MaxOutputMB       int64
+	MaxWorkspaceMB    int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
+	// Quota enforces MaxWorkspaceMB in the filesystem: "xfs" gives every
+	// session directory an XFS project quota (hard limit). Empty: a watcher
+	// pauses sandboxes over the cap (bounded overshoot).
+	Quota                string // WORKSPACE_QUOTA
+	MaxArtifactStorageMB int64  // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
 	// S3 artifact storage — when ArtifactS3Bucket is set, artifacts are stored
 	// in S3 instead of the local filesystem. Supports AWS S3 and S3-compatible
 	// stores (MinIO, etc.) via the endpoint override.
@@ -255,6 +263,7 @@ func Load() (*Config, error) {
 			WarmPoolImage:        getEnv("WARM_POOL_IMAGE", ""),
 			GPUDevices:           getEnv("DOCKER_GPU_DEVICES", ""),
 			AllowPrivateNetworks: envBool("SANDBOX_ALLOW_PRIVATE_NETWORKS"),
+			Runtime:              strings.TrimSpace(getEnv("DOCKER_RUNTIME", "")),
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:                   getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
@@ -262,6 +271,7 @@ func Load() (*Config, error) {
 			MaxFileMB:                 maxFileMB,
 			MaxOutputMB:               maxOutputMB,
 			MaxWorkspaceMB:            func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
+			Quota:                     getEnv("WORKSPACE_QUOTA", ""),
 			MaxArtifactStorageMB:      func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
 			ArtifactS3Bucket:          getEnv("ARTIFACT_S3_BUCKET", ""),
 			ArtifactS3Region:          getEnv("ARTIFACT_S3_REGION", "us-east-1"),
@@ -387,6 +397,11 @@ func (c *Config) ProductionProblems() []string {
 	}
 	if c.Redis.Addr != "" && c.Redis.Password == "" {
 		p = append(p, "Redis has no password: set REDIS_PASSWORD")
+	}
+	// Sandboxes run code nobody reviewed; with the default runtime a kernel
+	// exploit in it reaches the host. gVisor puts a user-space kernel between.
+	if c.Docker.Runtime == "" {
+		p = append(p, "sandboxes share the host kernel: install gVisor (make gvisor) and set DOCKER_RUNTIME=runsc, or DOCKER_RUNTIME=runc to accept the shared kernel explicitly")
 	}
 	return p
 }

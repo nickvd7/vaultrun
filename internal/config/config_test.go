@@ -163,6 +163,7 @@ func hardenedConfig() *Config {
 		Server:        ServerConfig{TLSCertFile: "c.pem", TLSKeyFile: "k.pem"},
 		Production:    ProductionConfig{MetricsToken: "t"},
 		Observability: ObservabilityConfig{AuditHMACKey: "audit-key"},
+		Docker:        DockerConfig{Runtime: "runsc"},
 	}
 }
 
@@ -175,7 +176,7 @@ func TestProductionProblemsHardenedConfigIsClean(t *testing.T) {
 func TestProductionProblemsQuickstartDefaults(t *testing.T) {
 	c := &Config{Auth: AuthConfig{MasterKey: "short"}}
 	got := strings.Join(c.ProductionProblems(), "\n")
-	for _, want := range []string{"OPA", "TLS", "METRICS_TOKEN", "MASTER_API_KEY"} {
+	for _, want := range []string{"OPA", "TLS", "METRICS_TOKEN", "MASTER_API_KEY", "DOCKER_RUNTIME"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in problems:\n%s", want, got)
 		}
@@ -212,5 +213,17 @@ func TestProductionProblemsEmptyMasterKeyAllowed(t *testing.T) {
 	c.Auth.MasterKey = ""
 	if p := c.ProductionProblems(); len(p) != 0 {
 		t.Fatalf("empty key (cleared after bootstrap) must not be flagged: %v", p)
+	}
+}
+
+func TestProductionProblemsSharedKernel(t *testing.T) {
+	c := hardenedConfig()
+	c.Docker.Runtime = ""
+	if p := c.ProductionProblems(); len(p) != 1 || !strings.Contains(p[0], "gVisor") {
+		t.Fatalf("default runtime should be flagged: %v", p)
+	}
+	c.Docker.Runtime = "runc"
+	if p := c.ProductionProblems(); len(p) != 0 {
+		t.Fatalf("DOCKER_RUNTIME=runc is an explicit opt-out: %v", p)
 	}
 }

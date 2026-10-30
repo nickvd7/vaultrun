@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up dev-env down down-all purge logs help
+.PHONY: all build test lint clean up dev-env down down-all purge gvisor logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -39,6 +39,7 @@ up:
 	@./scripts/detect-docker-gid.sh --write .env
 	@./scripts/ensure-audit-key.sh .env
 	@./scripts/ensure-secrets.sh .env
+	@./scripts/ensure-runtime.sh .env
 	@./scripts/check-env.sh .env
 	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
 	  if [ $$rc -eq 0 ]; then ./scripts/wait-healthy.sh .env 90 || exit 1; else ./scripts/wait-healthy.sh .env 15 compose-failed || true; fi; exit $$rc
@@ -60,6 +61,9 @@ down-all:
 
 purge:
 	@./scripts/down.sh --purge .env
+
+gvisor:
+	@./scripts/install-gvisor.sh
 
 logs:
 	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
@@ -142,6 +146,7 @@ help:
 	@echo "  make down            Stop the stack; sandboxes and their files keep running"
 	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"
 	@echo "  make purge           down-all, and also delete the database, Redis and certificate volumes"
+	@echo "  make gvisor          Install gVisor (Linux, sudo) so sandboxes get a user-space kernel"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

@@ -153,6 +153,18 @@ jobs:
         env:
           VAULTRUN_TEST_BROWSER_IMAGE: vaultrun/browser:playwright-python
 
+      # The run supervisor stops timed-out commands; WORKSPACE_QUOTA=xfs gives
+      # each workspace a hard limit with XFS project quotas on a loop mount.
+      - name: Run timeouts and workspace quota (runc)
+        run: |
+          set -o pipefail
+          sudo apt-get install -y -q xfsprogs >/dev/null || (sudo apt-get update -q && sudo apt-get install -y -q xfsprogs >/dev/null)
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/vr-exec" ./cmd/vr-exec
+          go test -c -tags e2e -o "$RUNNER_TEMP/quota.test" ./internal/quota/
+          go test -tags e2e ./internal/docker/ -run TestRuntimeTimeoutStopsCommandE2E -v -timeout 300s 2>&1 | tee out.txt
+          sudo VAULTRUN_TEST_SUPERVISOR="$RUNNER_TEMP/vr-exec" "$RUNNER_TEMP/quota.test" -test.run TestXFSWorkspaceQuotaE2E -test.v -test.timeout 300s 2>&1 | tee -a out.txt
+          grep -q -- '--- PASS: TestRuntimeTimeoutStopsCommandE2E' out.txt && grep -q -- '--- PASS: TestXFSWorkspaceQuotaE2E' out.txt
+
       # DOCKER_RUNTIME=runsc: the same flow with every sandbox under gVisor.
       - name: Install gVisor (runsc)
         run: |
@@ -170,6 +182,12 @@ jobs:
         run: go test -tags e2e ./internal/docker/ ./internal/warmpool/ -run Runtime -v -timeout 300s
         env:
           VAULTRUN_TEST_RUNTIME: runsc
+
+      - name: Workspace quota (gVisor)
+        run: |
+          set -o pipefail
+          sudo VAULTRUN_TEST_RUNTIME=runsc VAULTRUN_TEST_SUPERVISOR="$RUNNER_TEMP/vr-exec" "$RUNNER_TEMP/quota.test" -test.run TestXFSWorkspaceQuotaE2E -test.v -test.timeout 300s 2>&1 | tee out.txt
+          grep -q -- '--- PASS: TestXFSWorkspaceQuotaE2E' out.txt && grep -q 'runtime=runsc' out.txt
 
       - name: Network allowlist and browser tests (gVisor)
         run: |

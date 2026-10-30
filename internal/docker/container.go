@@ -202,6 +202,12 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		containerLabels[labelNetID] = sessionNetID
 	}
 
+	// The run supervisor enforces command timeouts inside the sandbox.
+	supMount, supervised := c.supervisorMount(ctx, cfg.Image)
+	if supervised {
+		containerLabels[labelSupervisor] = "1"
+	}
+
 	hostCfg := &container.HostConfig{
 		NetworkMode: networkMode,
 		Mounts: []mount.Mount{
@@ -253,6 +259,9 @@ func (c *Client) CreateSandbox(ctx context.Context, cfg SandboxConfig) (string, 
 		// Runtime selects the OCI runtime (DOCKER_RUNTIME). With "runsc" the
 		// sandbox gets gVisor's user-space kernel instead of the host kernel.
 		Runtime: c.runtime,
+	}
+	if supervised {
+		hostCfg.Mounts = append(hostCfg.Mounts, supMount)
 	}
 
 	// GPU device requests — only applied when GPUDevices is set and the host

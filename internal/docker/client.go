@@ -37,6 +37,7 @@ type Client struct {
 	requireTlog     bool   // COSIGN_REQUIRE_TLOG=true: pass --tlog-verify to cosign (requires Rekor)
 	runtime         string // DOCKER_RUNTIME: OCI runtime for sandboxes (e.g. "runsc"); empty = daemon default
 	gpuErr          error  // set by CheckRuntime when the runtime cannot pass GPUs through
+	supervisor      supervisorState
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.

@@ -51,6 +51,7 @@ Error: NOT VALID: evidence signature does not match
 git clone https://github.com/nickvd7/vaultrun
 cd vaultrun
 cp .env.example .env        # set MASTER_API_KEY (openssl rand -hex 32); make up generates the Postgres, Redis and audit secrets
+make gvisor                 # optional, Linux: install gVisor; make up then runs sandboxes under it
 make up                     # detects the Docker GID, then starts API + Postgres + Redis + dashboard
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
@@ -78,7 +79,7 @@ On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermo
 | | |
 |---|---|
 | **Evidence packs** | Signed record of a session, verified offline with `vaultrun evidence verify`; external RFC 3161 timestamps; bulk export per period ([docs](docs/features/evidence-packs.md)) |
-| **Kernel isolation** | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor; tested in CI end to end ([docs](docs/configuration.md#sandbox-runtime-gvisor)) |
+| **Kernel isolation** | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor (`make gvisor` installs it; `make up` picks it up; production starts require it or an explicit opt-out); tested in CI end to end ([docs](docs/configuration.md#sandbox-runtime-gvisor)) |
 | **Network allowlist** | `allowed_hosts` enforced with per-session iptables rules; no network by default ([docs](docs/security.md)) |
 | **Tamper-evident audit log** | Hash-chained, HMAC-signed, verified as a whole ([docs](docs/security.md)) |
 | **Session replay** | Checkpoints, restore and fork of a session's workspace ([docs](docs/features/session-replay.md)) |
@@ -369,7 +370,7 @@ See [docs/sso-setup.md](docs/sso-setup.md) for a step-by-step setup guide (IdP r
 
 ## Security
 
-See [docs/security.md](docs/security.md) for the full security model.
+See [docs/security.md](docs/security.md) for the full security model, and [docs/security-assessment.md](docs/security-assessment.md) for the brief for an external penetration test.
 
 - No shell execution — commands go through Docker exec API
 - Non-root containers with all capabilities dropped

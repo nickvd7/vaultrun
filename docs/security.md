@@ -225,6 +225,8 @@ For someone outside your installation, HMAC proves nothing: only the key holder 
 
 ## Recommendations for Production
 
+Before production, have VaultRun tested by an independent party; [security-assessment.md](security-assessment.md) is the brief to give them (scope, setup, accounts, focus areas, earlier findings).
+
 The API refuses to start with open defaults unless `VAULTRUN_INSECURE_DEV=true` is set (the quickstart `.env.example` sets it); remove it in production. See [production-hardening.md](production-hardening.md).
 
 **API server:**

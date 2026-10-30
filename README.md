@@ -370,7 +370,7 @@ See [docs/sso-setup.md](docs/sso-setup.md) for a step-by-step setup guide (IdP r
 
 ## Security
 
-See [docs/security.md](docs/security.md) for the full security model.
+See [docs/security.md](docs/security.md) for the full security model, and [docs/security-assessment.md](docs/security-assessment.md) for the brief for an external penetration test.
 
 - No shell execution — commands go through Docker exec API
 - Non-root containers with all capabilities dropped

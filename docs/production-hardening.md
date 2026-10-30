@@ -14,6 +14,7 @@ The API refuses to start unless all of these hold:
 | Master key | if set, at least 32 characters (`openssl rand -hex 32`); empty is allowed once you have bootstrapped | none |
 | Audit signing | `AUDIT_HMAC_KEY=<random>` | none |
 | Redis password | `REDIS_PASSWORD`, checked only when `REDIS_ADDR` is set | none |
+| Kernel isolation | `DOCKER_RUNTIME=runsc` (gVisor; `make gvisor` installs it on Linux) | `DOCKER_RUNTIME=runc` (accept the shared host kernel) |
 
 Every failed check is logged as `insecure configuration` with the variable to set.
 
@@ -31,7 +32,7 @@ These need action on your side:
 
 - **Workspace permissions.** Sandboxes run as the same uid:gid as the API process (65532 under Compose) and own their session directory, which is created `0700`, so no other host user or container can read it. The parent `WORKSPACE_BASE_DIR` is `0700` as well. Only when the API itself runs as root, or when you set `SANDBOX_USER` to another user (for example `nobody`), does VaultRun fall back to world-writable (`0777`) session directories, because that user is "other" to the directory owner; the `0700` parent then limits who can reach them. Keep the host single-tenant and do not mount the workspace directory anywhere else. Directories created by v0.4.6 and earlier stay `0777` until the session is deleted (the parent is `0700`, so they are not reachable by other users). Details: `internal/sandboxuser/sandboxuser.go`.
 - **Docker socket.** The API needs access to `/var/run/docker.sock`, which is effectively root on the host. Run VaultRun on a dedicated host or VM.
-- **Kernel isolation.** With the default runtime, sandboxes share the host kernel. For untrusted or LLM-generated code, install gVisor (`runsc install`, restart Docker) and set `DOCKER_RUNTIME=runsc`; the API refuses to start if Docker does not know the runtime. See [configuration.md](configuration.md#sandbox-runtime-gvisor).
+- **Kernel isolation.** Covered by the startup check above: install gVisor with `make gvisor` (pinned release, checksum verified, registered with Docker without a restart) and `make up` sets `DOCKER_RUNTIME=runsc`. The API refuses to start if Docker does not know the runtime. Everything (run timeouts, network filtering, workspace quotas, evidence) is tested under gVisor in CI. See [configuration.md](configuration.md#sandbox-runtime-gvisor).
 - **Image allowlist.** Set `DOCKER_IMAGE_ALLOWLIST` to the images you approve, and `COSIGN_PUBLIC_KEY` to fail closed on unsigned ones.
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.
 - **Network exposure.** Bind to a private interface or put the API behind a firewall; only expose 443 to trusted callers. The compose file already binds to `127.0.0.1`.

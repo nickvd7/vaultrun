@@ -131,10 +131,12 @@ and does not depend on external files or the daemon's default filter.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DOCKER_RUNTIME` | | OCI runtime every sandbox (and warm pool container) is created with. Empty = the daemon's default (`runc`). Set `runsc` to run sandboxes under [gVisor](https://gvisor.dev), whose user-space kernel sits between untrusted code and the host kernel. |
+| `DOCKER_RUNTIME` | | OCI runtime every sandbox (and warm pool container) is created with. Empty = the daemon's default (`runc`), which production starts refuse; set `runc` to accept the shared host kernel explicitly. Set `runsc` to run sandboxes under [gVisor](https://gvisor.dev), whose user-space kernel sits between untrusted code and the host kernel. |
 
-The runtime must be registered with the Docker daemon (`runsc install` adds it to
-`/etc/docker/daemon.json`; restart Docker afterwards). The API checks this at
+`make gvisor` installs a pinned gVisor release (checksum verified) and registers
+it with Docker without a restart; `make up` then sets `DOCKER_RUNTIME=runsc` in
+`.env` when it is empty. By hand: `runsc install` adds it to
+`/etc/docker/daemon.json`; reload or restart Docker afterwards. The API checks this at
 startup and refuses to start if the daemon does not know the runtime, rather
 than silently running sandboxes under `runc`. Each `session.created` audit entry
 records the runtime in its signed metadata (`"runtime": "runsc"`).

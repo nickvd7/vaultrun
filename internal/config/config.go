@@ -89,6 +89,10 @@ type DockerConfig struct {
 	// GPUDevices enables NVIDIA GPU access in sessions that request it.
 	// "all" = all GPUs; "0,1" = specific GPU indices; "" = disabled.
 	GPUDevices string
+	// Runtime is the OCI runtime sandboxes run under (DOCKER_RUNTIME): "runsc"
+	// for gVisor, "runc" to accept the shared host kernel explicitly, empty
+	// for the daemon default.
+	Runtime string
 	// AllowPrivateNetworks lets sandboxes with network_enabled and no
 	// allowed_hosts reach private, loopback and link-local addresses (the
 	// host's own network, cloud metadata). Off by default.
@@ -259,6 +263,7 @@ func Load() (*Config, error) {
 			WarmPoolImage:        getEnv("WARM_POOL_IMAGE", ""),
 			GPUDevices:           getEnv("DOCKER_GPU_DEVICES", ""),
 			AllowPrivateNetworks: envBool("SANDBOX_ALLOW_PRIVATE_NETWORKS"),
+			Runtime:              strings.TrimSpace(getEnv("DOCKER_RUNTIME", "")),
 		},
 		Workspace: WorkspaceConfig{
 			BaseDir:                   getEnv("WORKSPACE_BASE_DIR", "/data/workspaces"),
@@ -392,6 +397,11 @@ func (c *Config) ProductionProblems() []string {
 	}
 	if c.Redis.Addr != "" && c.Redis.Password == "" {
 		p = append(p, "Redis has no password: set REDIS_PASSWORD")
+	}
+	// Sandboxes run code nobody reviewed; with the default runtime a kernel
+	// exploit in it reaches the host. gVisor puts a user-space kernel between.
+	if c.Docker.Runtime == "" {
+		p = append(p, "sandboxes share the host kernel: install gVisor (make gvisor) and set DOCKER_RUNTIME=runsc, or DOCKER_RUNTIME=runc to accept the shared kernel explicitly")
 	}
 	return p
 }

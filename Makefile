@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up dev-env down down-all purge gvisor logs help
+.PHONY: all build test lint clean up dev-env down down-all purge gvisor xfs-workspace harden logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -64,6 +64,16 @@ purge:
 
 gvisor:
 	@./scripts/install-gvisor.sh
+
+# Hard per-session workspace limit: workspaces on XFS with project quotas.
+# XFS_DEVICE=/dev/sdX formats that disk; otherwise an image file of XFS_SIZE (50G).
+xfs-workspace:
+	@./scripts/setup-xfs-workspace.sh .env
+
+# Production host setup: gVisor and the hard workspace quota, then make up.
+harden: gvisor xfs-workspace
+	@./scripts/ensure-runtime.sh .env
+	@echo "Host hardened. Run make up to (re)start VaultRun with gVisor and the workspace quota."
 
 logs:
 	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
@@ -147,6 +157,8 @@ help:
 	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"
 	@echo "  make purge           down-all, and also delete the database, Redis and certificate volumes"
 	@echo "  make gvisor          Install gVisor (Linux, sudo) so sandboxes get a user-space kernel"
+	@echo "  make xfs-workspace   Put workspaces on XFS with project quotas (hard per-session limit; sudo)"
+	@echo "  make harden          make gvisor + make xfs-workspace: production host setup"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

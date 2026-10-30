@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"fmt"
+	"math"
 	"path"
 	"strconv"
 
@@ -32,6 +33,13 @@ type XFS struct {
 // Check fails when the workspace base directory has no project quotas. It
 // pulls the tool container's image if needed, so later Apply calls find it.
 func (x *XFS) Check(ctx context.Context) error {
+	if x.Docker.Guarded(ctx) {
+		// The guard runs the tool from its own image and binary.
+		if err := x.Docker.GuardQuota(ctx, dockerpkg.GuardQuotaRequest{Op: "check"}); err != nil {
+			return fmt.Errorf("WORKSPACE_QUOTA=xfs: %w", err)
+		}
+		return nil
+	}
 	if ok, err := x.Docker.ImageExists(ctx, x.Image); err != nil || !ok {
 		if err := x.Docker.PullImage(ctx, x.Image); err != nil {
 			return fmt.Errorf("WORKSPACE_QUOTA=xfs: pull %s: %w", x.Image, err)
@@ -51,6 +59,15 @@ func (x *XFS) Apply(ctx context.Context, sessionID uuid.UUID) error {
 	id, err := x.NextID(ctx)
 	if err != nil {
 		return fmt.Errorf("allocate project id: %w", err)
+	}
+	if x.Docker.Guarded(ctx) {
+		if id <= 0 || id > math.MaxUint32 {
+			return fmt.Errorf("project id %d out of range", id)
+		}
+		if err := x.Docker.GuardQuota(ctx, dockerpkg.GuardQuotaRequest{Op: "set", Name: sessionID.String(), Project: uint32(id), Bytes: x.MaxBytes}); err != nil {
+			return fmt.Errorf("set workspace quota: %w", err)
+		}
+		return nil
 	}
 	dir := path.Join(xfsMountPoint, sessionID.String())
 	if _, err := x.Docker.RunPrivilegedTool(ctx, x.Image, map[string]string{x.HostBaseDir: xfsMountPoint},

@@ -11,10 +11,6 @@ services:
       dockerfile: deployments/Dockerfile.api
     ports:
       - "127.0.0.1:${PORT:-8080}:8080"
-    # Docker socket access for the non-root API user. The GID differs per distro
-    # (Ubuntu 999, Debian 102, ...). `make up` detects it and writes it to .env.
-    group_add:
-      - "${DOCKER_GID:?DOCKER_GID must be set - run `make up` or scripts/detect-docker-gid.sh --write}"
     # Everything in .env reaches the API, so settings that are not listed below
     # (SECRETS_PROVIDER, VAULT_*, AWS_*, VAULTRUN_SECRET_*, SSO, ...) are not
     # silently ignored. Entries in `environment:` take precedence over .env.
@@ -31,7 +27,9 @@ services:
       - DOCKER_HOST_WORKSPACE_BASE_DIR=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - MIGRATIONS_PATH=/app/migrations
       - MASTER_API_KEY=${MASTER_API_KEY:?MASTER_API_KEY must be set}
-      - DOCKER_HOST=unix:///var/run/docker.sock
+      # The API has no Docker socket: it talks to the docker-guard service,
+      # which forwards only what running sandboxes needs.
+      - DOCKER_HOST=unix:///run/vaultrun-docker/docker.sock
       - DOCKER_CONTAINER_PREFIX=vaultrun
       - MAX_FILE_MB=${MAX_FILE_MB:-100}
       - MAX_OUTPUT_MB=${MAX_OUTPUT_MB:-10}
@@ -85,12 +83,14 @@ services:
     # network namespace, not the host's. Egress filtering for allowed_hosts goes
     # through the netpolicy helper below.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - docker_guard:/run/vaultrun-docker
       - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - acme_cache:/data/acme-cache
     depends_on:
       workspace-init:
         condition: service_completed_successfully
+      docker-guard:
+        condition: service_healthy
       netpolicy:
         condition: service_started
       postgres:
@@ -105,13 +105,59 @@ services:
       retries: 5
       start_period: 15s
 
-  # One-shot root container: creates the host workspace directory and hands it to
-  # the API's non-root user (uid 65532). Docker would otherwise create it as root.
+  # The only container with the Docker socket, which is root on the host. It
+  # serves the Docker API to the API container on a socket of its own and
+  # forwards only what running sandboxes needs: no privileged containers, no
+  # host mounts other than a session directory, no commands in containers that
+  # are not VaultRun's (internal/dockerguard). It also creates and removes the
+  # session directories, so the API cannot replace one with a symlink.
+  docker-guard:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.api
+    entrypoint: ["/app/api", "docker-guard"]
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN        # hand new session directories to the API's user
+      - DAC_OVERRIDE # remove session directories the API's user owns
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - WORKSPACE_HOST_DIR=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
+      - DOCKER_RUNTIME=${DOCKER_RUNTIME:-}
+      - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
+      - NETPOLICY_CONTAINER=vaultrun-netpolicy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
+      - docker_guard:/run/vaultrun-docker
+    depends_on:
+      workspace-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/api", "docker-guard", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot root container: prepares the host workspace directory. It belongs
+  # to root and is readable (not writable) by the API's group (65532), so only
+  # the guard can create, rename or remove session directories in it; the API
+  # owns snapshots/, artifacts/ and what is inside each session directory.
   workspace-init:
     image: alpine:3.21
     user: "0:0"
     command: >
-      sh -c 'mkdir -p "$$WS" && chown 65532:65532 "$$WS" && chmod 700 "$$WS"'
+      sh -c 'mkdir -p "$$WS/snapshots" "$$WS/artifacts" &&
+             chown 0:65532 "$$WS" && chmod 750 "$$WS" &&
+             chown 65532:65532 "$$WS/snapshots" "$$WS/artifacts" &&
+             chmod 700 "$$WS/snapshots" "$$WS/artifacts"'
     environment:
       - WS=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
     volumes:
@@ -188,6 +234,7 @@ services:
       retries: 10
 
 volumes:
+  docker_guard:
   postgres_data:
   redis_data:
   acme_cache:

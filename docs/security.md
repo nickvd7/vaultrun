@@ -31,7 +31,7 @@ VaultRun is designed to safely execute untrusted AI agent code. The primary thre
 | Read-only root filesystem | `ReadonlyRootfs: true` — container image layers are immutable; prevents processes from modifying shared image state |
 | Writable `/tmp` (tmpfs) | A 64 MB `tmpfs` is mounted at `/tmp`; the only writable location outside `/workspace`. Size-limited to prevent host memory exhaustion |
 | Home directory isolation | `HOME=/tmp` — tools that write to `$HOME` (pip cache, Python bytecode, etc.) land in the ephemeral `/tmp` tmpfs, not the rootfs |
-| No docker.sock exposure | The container never gets access to the Docker socket |
+| No docker.sock exposure | Sandboxes never get the Docker socket, and under Compose neither does the API (see the docker guard below) |
 | Seccomp syscall filter | Embedded vaultrun profile applied at compile time via `//go:embed`; no external file dependency |
 | User-space kernel (optional) | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor, so a kernel exploit in sandboxed code hits gVisor's Sentry instead of the host kernel. The API refuses to start if the runtime is not registered, and `session.created` audit entries record it. See [configuration.md](configuration.md#sandbox-runtime-gvisor) |
 
@@ -61,6 +61,17 @@ The sandbox controls its workspace and can replace any file or directory with a 
 ### Run timeouts
 
 Docker cannot kill a process started with `docker exec`, so before v0.4.13 a timed-out run only stopped being waited for and kept running. Every sandbox now has a supervisor mounted read-only at `/.vaultrun/vr-exec` (the API's static binary); each command runs under it in a process group of its own, and at the deadline the supervisor kills that group. The run is recorded as `timeout` with exit status 124 and keeps the output it produced.
+
+### Docker socket (the docker guard)
+
+Access to the Docker socket is root on the host: a client can start a privileged container with `/` mounted. Under Compose the API does not have it. The `docker-guard` service (`internal/dockerguard`) is the only container with the socket; it serves the Docker API to the API on a socket of its own and forwards a request only when it is one the API makes, with the settings the API uses:
+
+- **Containers:** created only with the `vaultrun.managed` label, `no-new-privileges`, VaultRun's seccomp profile and the configured runtime; no privileges, added capabilities, host namespaces, devices (except NVIDIA GPUs), published ports, sysctls or cgroup changes. The only bind mount allowed is a session directory directly in the workspace base, checked at create and again at start; the only volume is `vaultrun-tools`. The request is re-encoded from what was checked, so fields the guard does not know never reach the daemon.
+- **Other operations** (inspect, exec, logs, archive, stop, remove, ...) only on VaultRun's own containers; exec IDs only when the guard created them. `iptables` runs only in the netpolicy helper, only on VaultRun's `vr-*` chains and the jumps to them for one sandbox bridge.
+- **Workspaces:** the base directory belongs to root (readable by the API's group), so the API cannot create, rename or remove session directories and cannot swap one for a symlink to a host path before Docker mounts it. The guard creates and removes them. It also runs the XFS quota tool, from its own image and binary, not from the volume the API writes.
+- Everything else (listing containers, builds, image import, volumes with driver options, other networks) gets `403`, and the guard logs it.
+
+The guard has no network, a read-only filesystem and only the `CHOWN`, `DAC_OVERRIDE` and `FOWNER` capabilities. A compromised API can still do what the API may do: run sandboxes, read and write workspaces, and pull images. It can no longer take the host. Outside Compose (the API binary on a host), run `vaultrun-api docker-guard` the same way, or the API logs at startup that it talks to the daemon directly.
 
 ### Image Signature Verification (cosign)
 
@@ -218,8 +229,8 @@ For someone outside your installation, HMAC proves nothing: only the key holder 
 | Limitation | Notes |
 |---|---|
 | No secret injection at the container level | Env vars in runs are stored as plaintext JSONB in Postgres. Use a secrets broker sidecar for sensitive values. |
-| Single-node only | No distributed runner pool; horizontal scale requires sharding by session ID |
-| Docker socket on host | The API process requires access to `/var/run/docker.sock` |
+| Single host | One server runs the API and every sandbox. There is no failover: when it goes down, running sandboxes and in-flight runs are lost; sessions, files and the audit log come back from a backup. See [operations.md](operations.md) |
+| Docker socket on host | The docker guard holds it, not the API (above); the guard itself is root-equivalent, so keep the host dedicated to VaultRun |
 | Shared host kernel by default | With the default `runc` runtime, container escape attacks are mitigated by seccomp + CapDrop but not eliminated. Set `DOCKER_RUNTIME=runsc` (gVisor) for untrusted code; there is no microVM (Firecracker) runner yet |
 | OPA policy file only | The policy hook supports OPA/Rego; no UI for rule management |
 

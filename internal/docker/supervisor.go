@@ -111,6 +111,9 @@ func (c *Client) installSupervisor(ctx context.Context, image, binary string) er
 		&container.HostConfig{
 			NetworkMode: "none",
 			Mounts:      []mount.Mount{{Type: mount.TypeVolume, Source: supervisorVolume, Target: "/vaultrun-tools"}},
+			CapDrop:     []string{"ALL"},
+			SecurityOpt: []string{"no-new-privileges"},
+			Runtime:     c.runtime,
 		}, nil, nil, "")
 	if err != nil {
 		return fmt.Errorf("create helper container: %w", err)

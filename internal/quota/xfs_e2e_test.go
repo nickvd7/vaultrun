@@ -4,6 +4,8 @@ package quota_test
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/dockerguard"
 	"github.com/nickvd7/vaultrun/internal/quota"
 	"github.com/nickvd7/vaultrun/internal/workspace"
 )
@@ -82,7 +85,48 @@ func TestXFSWorkspaceQuotaE2E(t *testing.T) {
 		t.Fatalf("Check: %v", err)
 	}
 
-	ws := workspace.New(base)
+	fill(t, dc, x, workspace.New(base))
+
+	// The same through the Docker guard, as under Compose: the guard creates
+	// the workspace and runs the quota tool from its own binary.
+	g, err := dockerguard.New("/var/run/docker.sock",
+		dockerguard.Policy{WorkspaceDir: base, Runtime: os.Getenv("VAULTRUN_TEST_RUNTIME"), Seccomp: dc.SeccompJSON()},
+		&dockerguard.Dirs{Base: base, UID: os.Getuid(), GID: os.Getgid(), ToolImage: testImage, ToolBinary: supervisor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(dir, "guard.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: g}
+	go srv.Serve(ln) //nolint:errcheck
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("DOCKER_HOST", "unix://"+sock)
+	gdc, err := dockerpkg.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gdc.Guarded(ctx) {
+		t.Fatal("client does not see the guard")
+	}
+	gdc.SetSupervisorBinary(supervisor)
+	gx := *x
+	gx.Docker = gdc
+	if err := gx.Check(ctx); err != nil {
+		t.Fatalf("Check through the guard: %v", err)
+	}
+	gws := workspace.New(base)
+	gws.SetDirOps(gdc)
+	fill(t, gdc, &gx, gws)
+}
+
+// fill writes past the quota from a sandbox in a new session workspace and
+// checks the write stopped at the limit.
+func fill(t *testing.T, dc *dockerpkg.Client, x *quota.XFS, ws *workspace.Manager) {
+	t.Helper()
+	ctx := context.Background()
 	sessionID := uuid.New()
 	wsPath, err := ws.Create(sessionID)
 	if err != nil {
@@ -126,5 +170,5 @@ func TestXFSWorkspaceQuotaE2E(t *testing.T) {
 	if info.Size() > 20<<20 {
 		t.Fatalf("file grew to %d bytes past the 20 MB quota", info.Size())
 	}
-	t.Logf("write stopped at %d MB (runtime=%s)", info.Size()>>20, os.Getenv("VAULTRUN_TEST_RUNTIME"))
+	t.Logf("write stopped at %d MB (runtime=%s, guarded=%v)", info.Size()>>20, os.Getenv("VAULTRUN_TEST_RUNTIME"), dc.Guarded(ctx))
 }

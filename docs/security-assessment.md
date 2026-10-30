@@ -39,6 +39,7 @@ In order of priority:
 | REST API (`/api/v1/*`, `/auth/*`, `/health`, `/metrics`) | `cmd/api` |
 | Sandboxes: container configuration, gVisor, seccomp profile, egress filtering, workspace handling, run supervisor | `internal/docker`, `internal/workspace`, `internal/supervise` |
 | Workspace quotas (watcher and XFS) | `internal/quota`, `internal/xfsquota` |
+| Docker guard: the filtering proxy that holds the Docker socket instead of the API | `internal/dockerguard` |
 | Dashboard (Next.js) and its `/api`, `/auth` proxy | `apps/frontend` |
 | MCP server, stdio and HTTP transport | `sdk/mcp` |
 | SSO: OIDC and SAML (VaultRun Enterprise overlay) | `ee/sso`, `ee/api` (enterprise repository) |
@@ -53,7 +54,8 @@ In order of priority:
   container registries, cloud metadata itself.
 - Social engineering and physical access.
 - Findings that require the master key, root on the host or access to the
-  Docker socket, unless they lead somewhere those should not.
+  real Docker socket (the guard's), unless they lead somewhere those should
+  not. Access to the API container is in scope: see the docker guard below.
 - License enforcement as copy protection: license files are a reminder by
   design (see `ee/license`); forging one is only interesting when it breaks
   something else.
@@ -99,6 +101,15 @@ customer's deployment.
 
 ## Where we would look first
 
+- **The docker guard.** Assume the API is compromised: from inside the `api`
+  container (`docker compose exec api sh`, then
+  `curl --unix-socket /run/vaultrun-docker/docker.sock ...`), get the host.
+  The guard should only let through sandboxes as VaultRun creates them, bind
+  mounts of a session directory, and commands in VaultRun's own containers.
+  Try JSON tricks (duplicate or differently cased keys), API-version
+  prefixes, path encodings, the create-to-start window, symlinks in the
+  workspace base, exec IDs of other containers, iptables arguments, and the
+  `/vaultrun/*` endpoints.
 - **Workspace file handling.** The sandbox controls its workspace; every API
   operation on it (download, upload, zip, snapshot create and restore,
   evidence hashing, artifact promotion) goes through `os.Root`. Races between

@@ -38,6 +38,7 @@ type Client struct {
 	runtime         string // DOCKER_RUNTIME: OCI runtime for sandboxes (e.g. "runsc"); empty = daemon default
 	gpuErr          error  // set by CheckRuntime when the runtime cannot pass GPUs through
 	supervisor      supervisorState
+	guard           guardState
 }
 
 // New creates a new Docker client using the environment / DOCKER_HOST.
@@ -66,23 +67,17 @@ func New() (*Client, error) {
 
 	dc := &Client{inner: c}
 
-	profile := os.Getenv("DOCKER_SECCOMP_PROFILE")
-	switch profile {
+	seccomp, err := SeccompFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	dc.seccompJSON = seccomp
+	switch profile := os.Getenv("DOCKER_SECCOMP_PROFILE"); profile {
 	case "":
-		// Use the vaultrun seccomp profile embedded at compile time. This
-		// ensures syscall filtering is applied even when the Docker daemon's
-		// built-in default is absent or looser than our requirements.
-		dc.seccompJSON = defaultSeccompProfile
 		slog.Info("docker: using embedded vaultrun seccomp profile")
 	case "default":
-		dc.seccompJSON = "default"
 		slog.Info("docker: using daemon default seccomp profile (explicit)")
 	default:
-		data, err := os.ReadFile(profile)
-		if err != nil {
-			return nil, fmt.Errorf("load seccomp profile %q: %w", profile, err)
-		}
-		dc.seccompJSON = string(data)
 		slog.Info("docker: custom seccomp profile loaded", "path", profile)
 	}
 
@@ -181,6 +176,26 @@ func checkRuntimeRegistered(want string, registered []string) error {
 	}
 	sort.Strings(registered)
 	return fmt.Errorf("%w: %q (daemon has: %s)", ErrRuntimeUnavailable, want, strings.Join(registered, ", "))
+}
+
+// SeccompFromEnv returns the seccomp option sandboxes carry, from
+// DOCKER_SECCOMP_PROFILE: the embedded profile (unset), "default", or the
+// JSON of the named file. The Docker guard uses it to recognise the API's.
+func SeccompFromEnv() (string, error) {
+	switch profile := os.Getenv("DOCKER_SECCOMP_PROFILE"); profile {
+	case "":
+		// The vaultrun profile embedded at compile time: syscall filtering
+		// applies even when the daemon's built-in default is absent or looser.
+		return defaultSeccompProfile, nil
+	case "default":
+		return "default", nil
+	default:
+		data, err := os.ReadFile(profile)
+		if err != nil {
+			return "", fmt.Errorf("load seccomp profile %q: %w", profile, err)
+		}
+		return string(data), nil
+	}
 }
 
 func (c *Client) Inner() *client.Client {

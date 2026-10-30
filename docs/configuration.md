@@ -105,7 +105,7 @@ is used (jobs are lost on restart).
 
 | Variable | Default | Description |
 |---|---|---|
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon address |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon address. Compose points it at the docker guard (`unix:///run/vaultrun-docker/docker.sock`), which holds the real socket ([security.md](security.md#docker-socket-the-docker-guard)) |
 | `DOCKER_CONTAINER_PREFIX` | `vaultrun` | Prefix for container names |
 | `DOCKER_DEFAULT_IMAGE` | `python:3.12-slim` | Default container image when a session doesn't specify one |
 | `DOCKER_IDLE_TIMEOUT_MINS` | `30` | Minutes of inactivity before a session container is stopped (workspace preserved) |

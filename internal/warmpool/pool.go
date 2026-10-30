@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,10 +36,29 @@ type Pool struct {
 	image     string
 	size      int
 	baseDir   string // workspace base; each warm container gets its own sub-dir
+	dirs      dirOps // set when the Docker guard owns the base directory
 
 	pool   chan Entry
 	stopCh chan struct{}
 	once   sync.Once
+}
+
+// dirOps creates and removes directories in the workspace base (the Docker
+// guard; see workspace.DirOps).
+type dirOps interface {
+	MakeWorkspace(name string, mode os.FileMode) error
+	RemoveWorkspace(name string) error
+}
+
+// SetDirOps makes the pool create and remove its workspaces through d.
+func (p *Pool) SetDirOps(d dirOps) { p.dirs = d }
+
+func (p *Pool) removeWorkspace(path string) {
+	if p.dirs != nil {
+		_ = p.dirs.RemoveWorkspace(filepath.Base(path))
+		return
+	}
+	_ = os.RemoveAll(path)
 }
 
 // New creates a warm pool. Call Start to begin filling it.
@@ -88,7 +108,7 @@ func (p *Pool) Stop() {
 					container.RemoveOptions{Force: true}); err != nil {
 					slog.Warn("warmpool: remove on stop", "id", e.ContainerID, "err", err)
 				}
-				_ = os.RemoveAll(e.WorkspacePath)
+				p.removeWorkspace(e.WorkspacePath)
 			default:
 				return
 			}
@@ -131,7 +151,7 @@ func (p *Pool) fill(ctx context.Context) {
 			case <-p.stopCh:
 				rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_ = p.dockerCli.Inner().ContainerRemove(rmCtx, e.ContainerID, container.RemoveOptions{Force: true})
-				_ = os.RemoveAll(e.WorkspacePath)
+				p.removeWorkspace(e.WorkspacePath)
 				cancel()
 				return
 			}
@@ -161,11 +181,17 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 
 	wsID := uuid.New()
 	wsPath := fmt.Sprintf("%s/warm-%s", p.baseDir, wsID.String())
-	if err := os.MkdirAll(wsPath, sandboxuser.DirMode()); err != nil {
-		return Entry{}, fmt.Errorf("mkdir workspace: %w", err)
-	}
-	if err := os.Chmod(wsPath, sandboxuser.DirMode()); err != nil {
-		return Entry{}, fmt.Errorf("chmod workspace: %w", err)
+	if p.dirs != nil {
+		if err := p.dirs.MakeWorkspace(filepath.Base(wsPath), sandboxuser.DirMode()); err != nil {
+			return Entry{}, fmt.Errorf("mkdir workspace: %w", err)
+		}
+	} else {
+		if err := os.MkdirAll(wsPath, sandboxuser.DirMode()); err != nil {
+			return Entry{}, fmt.Errorf("mkdir workspace: %w", err)
+		}
+		if err := os.Chmod(wsPath, sandboxuser.DirMode()); err != nil {
+			return Entry{}, fmt.Errorf("chmod workspace: %w", err)
+		}
 	}
 
 	seccompJSON := p.dockerCli.SeccompJSON()
@@ -208,11 +234,11 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 	}
 
 	// Same run supervisor as CreateSandbox, so timeouts stop commands here too.
-	var labels map[string]string
+	labels := map[string]string{"vaultrun.managed": "true"}
 	if m, ok := p.dockerCli.SupervisorMount(ctx, pinnedImage); ok {
 		hostCfg.Mounts = append(hostCfg.Mounts, m)
 		k, v := dockerpkg.SupervisorLabel()
-		labels = map[string]string{k: v}
+		labels[k] = v
 	}
 
 	name := fmt.Sprintf("vaultrun-warm-%s", wsID.String()[:8])
@@ -228,13 +254,13 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 		hostCfg, nil, nil, name,
 	)
 	if err != nil {
-		_ = os.RemoveAll(wsPath)
+		p.removeWorkspace(wsPath)
 		return Entry{}, fmt.Errorf("container create: %w", err)
 	}
 
 	if err := p.dockerCli.Inner().ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		_ = p.dockerCli.Inner().ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
-		_ = os.RemoveAll(wsPath)
+		p.removeWorkspace(wsPath)
 		return Entry{}, fmt.Errorf("container start: %w", err)
 	}
 

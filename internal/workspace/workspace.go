@@ -20,7 +20,19 @@ import (
 
 type Manager struct {
 	baseDir string
+	dirs    DirOps
 }
+
+// DirOps creates and removes session directories in the base directory on
+// the Manager's behalf. With the Docker guard the base directory belongs to
+// root and the guard does this (see internal/dockerguard).
+type DirOps interface {
+	MakeWorkspace(name string, mode os.FileMode) error
+	RemoveWorkspace(name string) error
+}
+
+// SetDirOps makes the Manager create and remove session directories through d.
+func (m *Manager) SetDirOps(d DirOps) { m.dirs = d }
 
 func New(baseDir string) *Manager {
 	return &Manager{baseDir: baseDir}
@@ -32,6 +44,12 @@ func New(baseDir string) *Manager {
 // explicit os.Chmod afterwards is umask-independent.
 func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 	path := m.sessionPath(sessionID)
+	if m.dirs != nil {
+		if err := m.dirs.MakeWorkspace(sessionID.String(), sandboxuser.DirMode()); err != nil {
+			return "", fmt.Errorf("create workspace dir: %w", err)
+		}
+		return path, nil
+	}
 	if err := os.MkdirAll(path, sandboxuser.DirMode()); err != nil {
 		return "", fmt.Errorf("create workspace dir: %w", err)
 	}
@@ -44,8 +62,10 @@ func (m *Manager) Create(sessionID uuid.UUID) (string, error) {
 
 // Delete removes the workspace directory.
 func (m *Manager) Delete(sessionID uuid.UUID) error {
-	path := m.sessionPath(sessionID)
-	return os.RemoveAll(path)
+	if m.dirs != nil {
+		return m.dirs.RemoveWorkspace(sessionID.String())
+	}
+	return os.RemoveAll(m.sessionPath(sessionID))
 }
 
 // ErrPathTraversal is returned for a path with a ".." component.

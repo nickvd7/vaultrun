@@ -266,10 +266,69 @@ jobs:
             echo 'egress chains were not cleaned up' >&2; exit 1
           fi
 
+      - name: The API has no Docker socket; the guard refuses what could take the host
+        run: |
+          C="docker compose -f deployments/docker-compose.yml --env-file .env"
+          $C exec -T api sh -c 'test ! -e /var/run/docker.sock'
+          $C exec -T api sh -c 'curl -fsS --unix-socket /run/vaultrun-docker/docker.sock http://d/_ping' | grep -q OK
+          refused() {
+            CODE=$($C exec -T api curl -s -o /dev/null -w '%{http_code}' --unix-socket /run/vaultrun-docker/docker.sock \
+              -X "$1" -H 'Content-Type: application/json' "http://d$2" ${3:+-d "$3"})
+            echo "$1 $2 -> $CODE"
+            [ "$CODE" = "403" ]
+          }
+          refused POST /v1.43/containers/create '{"Image":"python:3.12-slim","Labels":{"vaultrun.managed":"true"},"HostConfig":{"Privileged":true,"SecurityOpt":["no-new-privileges"]}}'
+          refused POST /containers/create '{"Image":"python:3.12-slim","Labels":{"vaultrun.managed":"true"},"HostConfig":{"Mounts":[{"Type":"bind","Source":"/","Target":"/host"}],"SecurityOpt":["no-new-privileges"]}}'
+          refused POST /containers/create '{"Image":"python:3.12-slim","Labels":{"vaultrun.managed":"true"},"HostConfig":{"PidMode":"host","SecurityOpt":["no-new-privileges"]}}'
+          PG=$($C ps -q postgres)
+          refused POST "/containers/$PG/exec" '{"Cmd":["id"]}'
+          refused GET "/containers/$PG/json"
+          refused POST /containers/vaultrun-netpolicy/exec '{"Cmd":["iptables","-F","INPUT"]}'
+          refused GET /containers/json
+          # The API cannot create or replace entries in the workspace base.
+          WS=$(grep '^WORKSPACE_HOST_DIR=' .env | cut -d= -f2-)
+          if $C exec -T api sh -c "ln -s / '$WS/00000000-0000-4000-8000-000000000000'" 2>/dev/null; then
+            echo "the API could create an entry in the workspace base" >&2; exit 1
+          fi
+          [ "$(sudo stat -c %u:%g:%a "$WS")" = "0:65532:750" ]
+          $C logs docker-guard | grep -q 'docker guard: refused'
+
       - name: Delete session
         run: |
           curl -fsS -X DELETE "http://localhost:8080/api/v1/sessions/$SESSION_ID" \
             -H "X-API-Key: $API_KEY"
+          sleep 1
+          WS=$(grep '^WORKSPACE_HOST_DIR=' .env | cut -d= -f2-)
+          if sudo test -e "$WS/$SESSION_ID"; then echo "workspace not removed" >&2; exit 1; fi
+
+      - name: Back up, lose everything, restore (make backup / make restore)
+        run: |
+          api() { curl -fsS -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' "$@"; }
+          S=$(api -X POST http://localhost:8080/api/v1/sessions -d '{"image":"python:3.12-slim"}' | jq -er .id)
+          api -X POST "http://localhost:8080/api/v1/sessions/$S/run" -d '{"command":"sh","args":["-c","echo keep-me > kept.txt"]}' >/dev/null
+          SNAP=$(api -X POST "http://localhost:8080/api/v1/sessions/$S/snapshots" -d '{"name":"before-disaster"}' | jq -er .id)
+          AUDIT_BEFORE=$(api "http://localhost:8080/api/v1/audit/integrity?refresh=true" | jq .chained_entries)
+          make backup
+          B=$(ls -d backups/* | tail -n1); ls -l "$B"
+          # The host is lost: sandboxes, workspaces, database, keys.
+          make purge
+          WS=$(grep '^WORKSPACE_HOST_DIR=' .env | cut -d= -f2-)
+          sudo rm -rf "$WS"
+          mv .env .env.lost
+          make restore BACKUP="$B"
+          cmp -s .env "$B/env"
+          make up
+          # The same key still works, the audit log verifies, the snapshot is back.
+          INTEGRITY=$(api "http://localhost:8080/api/v1/audit/integrity?refresh=true"); echo "$INTEGRITY" | jq -c .
+          [ "$(echo "$INTEGRITY" | jq -r .status)" = "ok" ]
+          [ "$(echo "$INTEGRITY" | jq .chained_entries)" -ge "$AUDIT_BEFORE" ]
+          api "http://localhost:8080/api/v1/sessions/$S/snapshots" | jq -e --arg id "$SNAP" '[.. | objects | select(.id? == $id)] | length > 0'
+          api "http://localhost:8080/api/v1/snapshots/$SNAP/download" -o snap.tar.gz
+          tar -xzOf snap.tar.gz ./kept.txt 2>/dev/null | grep -q keep-me || tar -xzOf snap.tar.gz kept.txt | grep -q keep-me
+          # The session's sandbox did not survive: it is closed, and a new one works.
+          [ "$(api "http://localhost:8080/api/v1/sessions/$S" | jq -r .status)" != "running" ]
+          N=$(api -X POST http://localhost:8080/api/v1/sessions -d '{"image":"python:3.12-slim"}' | jq -er .id)
+          [ "$(api -X POST "http://localhost:8080/api/v1/sessions/$N/run" -d '{"command":"echo","args":["back"]}' | jq -r .stdout)" = "back" ]
 
       - name: Dump logs on failure
         if: failure()

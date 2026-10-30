@@ -89,9 +89,10 @@ else
   command -v systemctl >/dev/null 2>&1 && sudo systemctl daemon-reload 2>/dev/null || true
 fi
 
-# The API runs as uid 65532 (see workspace-init in docker-compose.yml).
-sudo chown 65532:65532 "$WS"
-sudo chmod 700 "$WS"
+# As workspace-init in docker-compose.yml leaves it: root's, readable by the
+# API's group (65532); only the docker guard creates session directories.
+sudo chown 0:65532 "$WS"
+sudo chmod 750 "$WS"
 
 set_env WORKSPACE_QUOTA xfs
 max="$(env_value MAX_WORKSPACE_MB)"

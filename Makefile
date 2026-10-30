@@ -1,4 +1,4 @@
-.PHONY: all build test lint clean up dev-env down down-all purge gvisor xfs-workspace harden logs help
+.PHONY: all build test lint clean up dev-env down down-all purge gvisor xfs-workspace harden backup restore logs help
 
 BINARY_API   := bin/vaultrun-api
 BINARY_CLI   := bin/vaultrun
@@ -36,7 +36,6 @@ run-api: build-api
 # ── Docker Compose ────────────────────────────────────────────────────────────
 up:
 	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
-	@./scripts/detect-docker-gid.sh --write .env
 	@./scripts/ensure-audit-key.sh .env
 	@./scripts/ensure-secrets.sh .env
 	@./scripts/ensure-runtime.sh .env
@@ -64,6 +63,15 @@ purge:
 
 gvisor:
 	@./scripts/install-gvisor.sh
+
+# Database, snapshots, artifacts and .env, to BACKUP_DIR (default backups/).
+backup:
+	@./scripts/backup.sh .env
+
+# make restore BACKUP=backups/<time>: with VaultRun stopped, on this or a new host.
+restore:
+	@if [ -z "$(BACKUP)" ]; then echo "Usage: make restore BACKUP=backups/<time>" >&2; exit 1; fi
+	@./scripts/restore.sh "$(BACKUP)" .env
 
 # Hard per-session workspace limit: workspaces on XFS with project quotas.
 # XFS_DEVICE=/dev/sdX formats that disk; otherwise an image file of XFS_SIZE (50G).
@@ -159,6 +167,8 @@ help:
 	@echo "  make gvisor          Install gVisor (Linux, sudo) so sandboxes get a user-space kernel"
 	@echo "  make xfs-workspace   Put workspaces on XFS with project quotas (hard per-session limit; sudo)"
 	@echo "  make harden          make gvisor + make xfs-workspace: production host setup"
+	@echo "  make backup          Back up the database, snapshots, artifacts and .env (BACKUP_DIR)"
+	@echo "  make restore BACKUP=dir  Restore a backup (VaultRun stopped; this or a new host)"
 	@echo "  make logs            Tail API logs"
 	@echo "  make test            Run unit tests"
 	@echo "  make test-integration Run integration tests (requires running stack)"

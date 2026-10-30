@@ -28,6 +28,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/cost"
 	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	dockerpkg "github.com/nickvd7/vaultrun/internal/docker"
+	"github.com/nickvd7/vaultrun/internal/dockerguard"
 	"github.com/nickvd7/vaultrun/internal/evidence"
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/metrics"
@@ -56,6 +57,11 @@ func main() {
 			os.Exit(xfsquota.Main(os.Args[2:]))
 		}
 		os.Exit(supervise.Main(os.Args[1:]))
+	}
+	// The Docker guard: the only process with the Docker socket (see
+	// internal/dockerguard and the docker-guard service in compose).
+	if len(os.Args) > 1 && os.Args[1] == "docker-guard" {
+		os.Exit(dockerguard.Main(os.Args[2:]))
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version") {
 		fmt.Println("vaultrun-api", version.String())
@@ -190,6 +196,13 @@ func main() {
 	}
 	pingCancel()
 	slog.Info("docker daemon reachable", "host", cfg.Docker.Host)
+	guarded := docker.Guarded(context.Background())
+	if guarded {
+		slog.Info("docker access goes through the VaultRun docker guard: the API cannot start privileged containers or mount host paths")
+	} else {
+		slog.Warn("the API talks to the Docker daemon directly, which amounts to root on the host; " +
+			"run it behind the docker guard (the docker-guard service in deployments/docker-compose.yml)")
+	}
 
 	// A DOCKER_RUNTIME the daemon does not know would fail every session (and
 	// silently falling back to runc would drop the isolation the operator asked
@@ -219,6 +232,11 @@ func main() {
 	}
 
 	ws := workspace.New(cfg.Workspace.BaseDir)
+	if guarded {
+		// The base directory belongs to root; the guard creates and removes
+		// session directories.
+		ws.SetDirOps(docker)
+	}
 
 	// Ensure base workspace dir exists (0o700 = owner-only; no group/world read)
 	if err := os.MkdirAll(cfg.Workspace.BaseDir, 0o700); err != nil {
@@ -227,7 +245,11 @@ func main() {
 	}
 	// Verify the workspace directory is actually writable. A read-only mount or
 	// wrong ownership would cause silent failures at session creation time.
-	probeFile := fmt.Sprintf("%s/.vaultrun-startup-probe", cfg.Workspace.BaseDir)
+	probeDir := cfg.Workspace.BaseDir
+	if guarded {
+		probeDir = filepath.Join(cfg.Workspace.BaseDir, "artifacts")
+	}
+	probeFile := filepath.Join(probeDir, ".vaultrun-startup-probe")
 	if err := os.WriteFile(probeFile, []byte("ok"), 0o600); err != nil {
 		slog.Error("workspace base dir is not writable — check WORKSPACE_BASE_DIR permissions",
 			"dir", cfg.Workspace.BaseDir, "err", err)
@@ -375,6 +397,9 @@ func main() {
 			"size", cfg.Docker.WarmPoolSize)
 		pool = warmpool.New(docker, cfg.Docker.WarmPoolImage,
 			cfg.Docker.WarmPoolSize, cfg.Workspace.BaseDir)
+		if guarded {
+			pool.SetDirOps(docker)
+		}
 		pool.Start(poolCtx)
 	}
 

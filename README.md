@@ -58,7 +58,7 @@ make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
 ```
 
-Open `http://localhost:3000` for the dashboard. The API is secure by default; the quickstart `.env` sets `VAULTRUN_INSECURE_DEV=true` for local use, which you remove in production ([production hardening](docs/production-hardening.md)).
+Open `http://localhost:3000` for the dashboard. The API is secure by default; the quickstart `.env` sets `VAULTRUN_INSECURE_DEV=true` for local use, which you remove in production ([production hardening](docs/production-hardening.md)). VaultRun runs on one host: back it up with `make backup` ([operations](docs/operations.md)).
 
 On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermod -aG docker $USER`, then **log out and in again** (or run `newgrp docker`) before `make up`; the new group is not picked up by shells that are already open. Running `make up` through `sudo` works too, but then `.env` and the workspace files belong to root.
 
@@ -81,6 +81,7 @@ On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermo
 |---|---|
 | **Evidence packs** | Signed record of a session, verified offline with `vaultrun evidence verify`; external RFC 3161 timestamps; bulk export per period ([docs](docs/features/evidence-packs.md)) |
 | **Kernel isolation** | `DOCKER_RUNTIME=runsc` runs every sandbox under gVisor (`make gvisor` installs it; `make up` picks it up; production starts require it or an explicit opt-out); tested in CI end to end ([docs](docs/configuration.md#sandbox-runtime-gvisor)) |
+| **Docker socket** | Only the `docker-guard` service has it; the API gets a filtered Docker API that refuses privileged containers, host mounts and commands in other containers ([docs](docs/security.md#docker-socket-the-docker-guard)) |
 | **Network allowlist** | `allowed_hosts` enforced with per-session iptables rules; no network by default ([docs](docs/security.md)) |
 | **Tamper-evident audit log** | Hash-chained, HMAC-signed, verified as a whole ([docs](docs/security.md)) |
 | **Session replay** | Checkpoints, restore and fork of a session's workspace ([docs](docs/features/session-replay.md)) |

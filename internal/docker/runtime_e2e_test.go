@@ -13,7 +13,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +175,82 @@ func TestRuntimeUnknownIsRejectedE2E(t *testing.T) {
 	if err == nil {
 		_ = c.StopSandbox(ctx, id)
 		t.Fatal("CreateSandbox with an unknown runtime succeeded")
+	}
+}
+
+// buildSupervisor compiles cmd/vr-exec as a static binary for the sandbox.
+func buildSupervisor(t *testing.T) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "vr-exec")
+	cmd := exec.Command("go", "build", "-o", out, "../../cmd/vr-exec")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build vr-exec: %v\n%s", err, b)
+	}
+	return out
+}
+
+// A command that runs past its timeout is stopped inside the sandbox together
+// with the processes it started (Docker cannot kill an exec), while its
+// output and the exit status of normal commands are unchanged.
+func TestRuntimeTimeoutStopsCommandE2E(t *testing.T) {
+	runtime := os.Getenv("VAULTRUN_TEST_RUNTIME")
+	c := newRuntimeTestClient(t, runtime)
+	c.SetSupervisorBinary(buildSupervisor(t))
+	ctx := context.Background()
+	sessionID := uuid.New()
+	id, err := c.CreateSandbox(ctx, SandboxConfig{
+		SessionID:     sessionID,
+		Image:         runtimeTestImage,
+		WorkspacePath: newRuntimeTestWorkspace(t),
+		CPULimit:      0.5,
+		MemoryLimitMB: 256,
+		ContainerName: "vaultrun-timeout-test-" + sessionID.String(),
+	})
+	if err != nil {
+		t.Fatalf("CreateSandbox: %v", err)
+	}
+	t.Cleanup(func() { _ = c.StopSandbox(context.Background(), id) })
+
+	countSleeps := func() int {
+		t.Helper()
+		res, err := c.Exec(ctx, ExecConfig{ContainerID: id, Command: "python", Args: []string{"-c", `import os
+n = 0
+for p in os.listdir("/proc"):
+    if p.isdigit() and p != "1":
+        try:
+            if open(f"/proc/{p}/cmdline", "rb").read().split(b"\0")[0].endswith(b"sleep"):
+                n += 1
+        except OSError:
+            pass
+print(n)`}, TimeoutSeconds: 30})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(res.Stdout))
+		return n
+	}
+
+	res, err := c.Exec(ctx, ExecConfig{ContainerID: id, Command: "sh", Args: []string{"-c", "echo started; sleep 300 & sleep 300"}, TimeoutSeconds: 2})
+	if err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if !res.TimedOut || res.ExitCode != 124 || !strings.Contains(res.Stdout, "started") || !strings.Contains(res.Stderr, "timed out") {
+		t.Fatalf("timed-out run: %+v", res)
+	}
+	if n := countSleeps(); n != 0 {
+		t.Fatalf("%d sleep processes still running after the timeout", n)
+	}
+
+	ok, err := c.Exec(ctx, ExecConfig{ContainerID: id, Command: "sh", Args: []string{"-c", "echo hi; exit 7"}, TimeoutSeconds: 10})
+	if err != nil || ok.TimedOut || ok.ExitCode != 7 || strings.TrimSpace(ok.Stdout) != "hi" {
+		t.Fatalf("normal run: %+v %v", ok, err)
+	}
+	missing, err := c.Exec(ctx, ExecConfig{ContainerID: id, Command: "no-such-command", TimeoutSeconds: 10})
+	if err != nil || missing.ExitCode != 127 {
+		t.Fatalf("missing command: %+v %v", missing, err)
+	}
+	if strings.Contains(runtime, "runsc") {
+		t.Log("runtime=runsc")
 	}
 }

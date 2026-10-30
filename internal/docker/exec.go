@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types"
 
 	"github.com/nickvd7/vaultrun/internal/sandboxuser"
+	"github.com/nickvd7/vaultrun/internal/supervise"
 )
 
 // ExecConfig holds parameters for running a command inside a container.
@@ -102,11 +103,29 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 		return nil, err
 	}
 
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
 	execUser := sandboxuser.User()
-	if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.Config != nil && info.Config.User != "" {
-		// Sandboxes created before v0.4.7 run as "nobody"; exec as the user the
-		// container was started with so their files stay writable.
-		execUser = info.Config.User
+	supervised := false
+	if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.Config != nil {
+		if info.Config.User != "" {
+			// Sandboxes created before v0.4.7 run as "nobody"; exec as the user the
+			// container was started with so their files stay writable.
+			execUser = info.Config.User
+		}
+		supervised = info.Config.Labels[labelSupervisor] == "1"
+	}
+	// In a supervised sandbox the supervisor kills the command's process group
+	// at the deadline; the API waits a little longer so it can report that.
+	// Without it, a timed-out command keeps running (Docker cannot kill an
+	// exec), so the API only stops waiting.
+	waitFor := timeout
+	if supervised {
+		cmd = supervise.Args(timeout, cfg.Command, cfg.Args)
+		waitFor = timeout + 5*time.Second
 	}
 
 	execID, err := c.inner.ContainerExecCreate(ctx, cfg.ContainerID, types.ExecConfig{
@@ -127,11 +146,7 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 	}
 	defer resp.Close()
 
-	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, waitFor)
 	defer cancel()
 
 	start := time.Now()
@@ -168,6 +183,10 @@ func (c *Client) execInternal(ctx context.Context, cfg ExecConfig, stdout, stder
 	res := &ExecResult{
 		ExitCode:   inspect.ExitCode,
 		DurationMS: durationMS,
+	}
+	if supervised && inspect.ExitCode == supervise.ExitTimeout && time.Duration(durationMS)*time.Millisecond >= timeout {
+		// The supervisor stopped the command at its deadline.
+		res.TimedOut = true
 	}
 	if inspect.ExitCode == ExitCodeSIGKILL {
 		if info, err := c.inner.ContainerInspect(ctx, cfg.ContainerID); err == nil && info.ContainerJSONBase != nil {

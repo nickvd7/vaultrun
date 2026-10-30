@@ -207,6 +207,14 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 		Runtime:        p.dockerCli.Runtime(),
 	}
 
+	// Same run supervisor as CreateSandbox, so timeouts stop commands here too.
+	var labels map[string]string
+	if m, ok := p.dockerCli.SupervisorMount(ctx, pinnedImage); ok {
+		hostCfg.Mounts = append(hostCfg.Mounts, m)
+		k, v := dockerpkg.SupervisorLabel()
+		labels = map[string]string{k: v}
+	}
+
 	name := fmt.Sprintf("vaultrun-warm-%s", wsID.String()[:8])
 	resp, err := p.dockerCli.Inner().ContainerCreate(ctx,
 		&container.Config{
@@ -215,6 +223,7 @@ func (p *Pool) createOne(ctx context.Context) (Entry, error) {
 			WorkingDir: "/workspace",
 			User:       sandboxuser.User(),
 			Env:        []string{"HOME=/tmp"},
+			Labels:     labels,
 		},
 		hostCfg, nil, nil, name,
 	)

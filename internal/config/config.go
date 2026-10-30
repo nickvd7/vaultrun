@@ -96,12 +96,16 @@ type DockerConfig struct {
 }
 
 type WorkspaceConfig struct {
-	BaseDir              string
-	DockerHostBaseDir    string // DOCKER_HOST_WORKSPACE_BASE_DIR: path on Docker host for bind mounts (defaults to BaseDir)
-	MaxFileMB            int64
-	MaxOutputMB          int64
-	MaxWorkspaceMB       int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
-	MaxArtifactStorageMB int64 // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
+	BaseDir           string
+	DockerHostBaseDir string // DOCKER_HOST_WORKSPACE_BASE_DIR: path on Docker host for bind mounts (defaults to BaseDir)
+	MaxFileMB         int64
+	MaxOutputMB       int64
+	MaxWorkspaceMB    int64 // MAX_WORKSPACE_MB: total workspace size cap per session (0 = unlimited)
+	// Quota enforces MaxWorkspaceMB in the filesystem: "xfs" gives every
+	// session directory an XFS project quota (hard limit). Empty: a watcher
+	// pauses sandboxes over the cap (bounded overshoot).
+	Quota                string // WORKSPACE_QUOTA
+	MaxArtifactStorageMB int64  // MAX_ARTIFACT_STORAGE_MB: total artifact storage cap per actor (0 = unlimited)
 	// S3 artifact storage — when ArtifactS3Bucket is set, artifacts are stored
 	// in S3 instead of the local filesystem. Supports AWS S3 and S3-compatible
 	// stores (MinIO, etc.) via the endpoint override.
@@ -262,6 +266,7 @@ func Load() (*Config, error) {
 			MaxFileMB:                 maxFileMB,
 			MaxOutputMB:               maxOutputMB,
 			MaxWorkspaceMB:            func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_WORKSPACE_MB", "0"), 10, 64); return n }(),
+			Quota:                     getEnv("WORKSPACE_QUOTA", ""),
 			MaxArtifactStorageMB:      func() int64 { n, _ := strconv.ParseInt(getEnv("MAX_ARTIFACT_STORAGE_MB", "0"), 10, 64); return n }(),
 			ArtifactS3Bucket:          getEnv("ARTIFACT_S3_BUCKET", ""),
 			ArtifactS3Region:          getEnv("ARTIFACT_S3_REGION", "us-east-1"),

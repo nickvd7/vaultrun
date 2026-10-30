@@ -36,7 +36,17 @@ These need action on your side:
 - **Database TLS.** Set `DB_SSL_MODE=verify-full` with `DB_SSL_ROOT_CERT`.
 - **Network exposure.** Bind to a private interface or put the API behind a firewall; only expose 443 to trusted callers. The compose file already binds to `127.0.0.1`.
 - **Webhooks.** Set `WEBHOOK_SECRET` for async callbacks.
-- **Workspace size.** Set `MAX_WORKSPACE_MB` (e.g. `2048`). With `0` a sandbox can fill the host's disk, and Postgres with it. Sandboxes over the cap are paused; for a hard limit, put the workspace directory on XFS with project quotas.
+- **Workspace size.** Set `MAX_WORKSPACE_MB` (e.g. `2048`). With `0` a sandbox can fill the host's disk, and Postgres with it. By default a sandbox over the cap is paused within seconds; for a hard limit with no overshoot, use XFS project quotas:
+  ```bash
+  # once, on a dedicated disk or partition for the workspaces
+  mkfs.xfs /dev/sdX
+  echo '/dev/sdX /var/lib/vaultrun/workspaces xfs defaults,prjquota 0 0' >> /etc/fstab
+  mount /var/lib/vaultrun/workspaces
+  # .env
+  WORKSPACE_QUOTA=xfs
+  ```
+  Every new session directory then gets a project of its own limited to `MAX_WORKSPACE_MB`; a write past it fails in the sandbox with "Disk quota exceeded". The API sets it from a one-shot container with `CAP_SYS_ADMIN` (it has the Docker socket anyway) and refuses to start when the directory has no project quotas. Sessions created before keep the paused-when-over behaviour.
+- **Run timeouts.** A command that runs past its `timeout_seconds` is stopped, with the processes it started, by a supervisor the API mounts read-only into every sandbox (`/.vaultrun/vr-exec`). Background processes of a command that finishes in time keep running; a process that detaches on purpose (`setsid`) is not stopped and stays bounded by the sandbox's CPU, memory and process limits until the session ends. Sandboxes created before this version run commands without it until they are recreated.
 - **Sandbox egress.** Sandboxes with `network_enabled` cannot reach private ranges, cloud metadata or the host. Keep `SANDBOX_ALLOW_PRIVATE_NETWORKS` unset unless sandboxes must reach internal services, and then prefer `allowed_hosts`. This needs iptables (the Compose `netpolicy` helper); the API logs a warning per session when it cannot filter.
 - **Request size.** Bodies are capped at 10 MB, uploads at `MAX_FILE_MB` + 1 MB. Put a reverse proxy with its own limits and timeouts in front as well.
 

@@ -37,6 +37,7 @@ type Hub struct {
 	ws             *workspace.Manager
 	runner         *runner.Runner
 	quota          *quota.Enforcer // nil when MAX_WORKSPACE_MB is 0
+	xfsQuota       *quota.XFS      // nil unless WORKSPACE_QUOTA=xfs
 	audit          *audit.Logger
 	cfg            *config.Config
 	policy         policy.Hook
@@ -106,6 +107,9 @@ func NewHub(
 
 // SetEvidenceSigner enables session evidence export.
 func (h *Hub) SetEvidenceSigner(s *evidence.Signer) { h.evidenceSigner = s }
+
+// SetXFSQuota makes every new workspace get a hard XFS project quota.
+func (h *Hub) SetXFSQuota(x *quota.XFS) { h.xfsQuota = x }
 
 // SetQuota makes runs check the workspace size cap first.
 func (h *Hub) SetQuota(q *quota.Enforcer) { h.quota = q }

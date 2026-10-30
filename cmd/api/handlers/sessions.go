@@ -239,6 +239,16 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace init failed"})
 		return
 	}
+	// The hard quota goes on before anything (a restored snapshot) is written:
+	// only files created afterwards count against it. Fail closed.
+	if sh.h.xfsQuota != nil {
+		if err := sh.h.xfsQuota.Apply(c.Request.Context(), sessionID); err != nil {
+			_ = sh.h.ws.Delete(sessionID)
+			slog.Error("workspace quota failed", "session_id", sessionID, "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace quota could not be set"})
+			return
+		}
+	}
 
 	if req.SnapshotID != nil && *req.SnapshotID != "" {
 		snapUUID, err := uuid.Parse(*req.SnapshotID)

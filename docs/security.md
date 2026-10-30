@@ -56,7 +56,11 @@ The sandbox controls its workspace and can replace any file or directory with a 
 
 ### Workspace size
 
-`MAX_WORKSPACE_MB` caps each session's workspace. Uploads over the cap are refused; what the sandbox writes itself is measured every 5 seconds, and a sandbox over its cap is **paused** (all its processes frozen, background ones included) with a `session.quota_exceeded` audit entry. Runs are refused with `507` until files are deleted through the API; the next run then resumes the sandbox. The overshoot is bounded by what a sandbox can write in those seconds; a hard limit needs filesystem quotas (XFS project quotas) on the workspace directory.
+`MAX_WORKSPACE_MB` caps each session's workspace. Uploads over the cap are refused; what the sandbox writes itself is measured every 5 seconds, and a sandbox over its cap is **paused** (all its processes frozen, background ones included) with a `session.quota_exceeded` audit entry. Runs are refused with `507` until files are deleted through the API; the next run then resumes the sandbox. The overshoot is bounded by what a sandbox can write in those seconds. With `WORKSPACE_QUOTA=xfs` (workspaces on XFS mounted with `prjquota`) each session directory gets an XFS project quota instead: a hard limit enforced by the kernel, with no overshoot. See [production-hardening.md](production-hardening.md).
+
+### Run timeouts
+
+Docker cannot kill a process started with `docker exec`, so before v0.4.13 a timed-out run only stopped being waited for and kept running. Every sandbox now has a supervisor mounted read-only at `/.vaultrun/vr-exec` (the API's static binary); each command runs under it in a process group of its own, and at the deadline the supervisor kills that group. The run is recorded as `timeout` with exit status 124 and keeps the output it produced.
 
 ### Image Signature Verification (cosign)
 

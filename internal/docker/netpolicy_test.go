@@ -145,6 +145,25 @@ func TestApplyEgressPolicyValidIPPassesValidation(t *testing.T) {
 	}
 }
 
+func TestParseResolvNameservers(t *testing.T) {
+	text := "# generated\nnameserver 127.0.0.53\nnameserver 10.0.0.2\nnameserver 10.0.0.2\nnameserver 2001:db8::1\noptions edns0\n"
+	got := upstreamResolvers(parseResolvNameservers(text))
+	if len(got) != 1 || got[0] != "10.0.0.2" {
+		t.Fatalf("got %v", got)
+	}
+	if got := upstreamResolvers(parseResolvNameservers("nameserver 127.0.0.53\n")); len(got) != 0 {
+		t.Fatalf("loopback stub should be skipped, got %v", got)
+	}
+}
+
+func TestDNSAllowList(t *testing.T) {
+	got := dedupIPv4([]string{"172.17.0.1", "127.0.0.11", "10.0.0.2", "10.0.0.2", "not-an-ip", "2001:db8::1"})
+	want := []string{"172.17.0.1", "127.0.0.11", "10.0.0.2"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v", got)
+	}
+}
+
 func TestEgressPolicyAvailableWithHelper(t *testing.T) {
 	netpolicyMu.Lock()
 	prevC, prevN := netpolicyClient, netpolicyCtr

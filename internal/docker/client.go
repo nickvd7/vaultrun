@@ -130,8 +130,33 @@ func (c *Client) CheckRuntime(ctx context.Context) error {
 	if err := checkRuntimeRegistered(c.runtime, names); err != nil {
 		return err
 	}
-	c.gpuErr = gpuSupport(c.runtime, info.Runtimes[c.runtime].Runtime)
+	rt := info.Runtimes[c.runtime].Runtime
+	c.gpuErr = gpuSupport(c.runtime, rt)
+	if msg := gvisorNetworkWarning(c.runtime, rt); msg != "" {
+		slog.Warn(msg)
+	}
 	return nil
+}
+
+// gvisorNetworkWarning is set when runsc was registered without
+// --network=host. That flag is what lets a sandbox see Docker's DNS at
+// 127.0.0.11; without it, open internet resolves no hostnames. A containerd
+// shim keeps its flags in runsc.toml, which the daemon does not report, so
+// it is not warned about. The API still starts: runc and an old registration
+// must boot.
+func gvisorNetworkWarning(name string, rt system.Runtime) string {
+	gvisor := name == "runsc" || filepath.Base(rt.Path) == "runsc" || strings.Contains(rt.Type, "runsc")
+	if !gvisor || (rt.Path == "" && rt.Type != "") {
+		return ""
+	}
+	for _, arg := range rt.Args {
+		if arg == "--network=host" || strings.HasPrefix(arg, "--network=host=") {
+			return ""
+		}
+	}
+	return "gVisor runtime " + name + " is registered without --network=host; " +
+		"a sandbox with open internet cannot resolve hostnames. Re-run make gvisor " +
+		"(runsc install -- --network=host)."
 }
 
 // ErrGPUUnsupported means the configured runtime cannot give sandboxes GPU

@@ -178,6 +178,12 @@ func newRouter(
 	// ── SSO / auth routes (enterprise, no API key required) ─────────────────
 	if ent.registerAuthRoutes != nil {
 		ent.registerAuthRoutes(r)
+	} else {
+		// Community has no SSO. The dashboard asks anyway; 404 shows up as a
+		// failed request in the browser console. "Neither" is the quiet answer.
+		r.GET("/auth/providers", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"oidc": false, "saml": false})
+		})
 	}
 
 	api := r.Group("/api/v1")

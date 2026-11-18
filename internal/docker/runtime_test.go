@@ -92,7 +92,7 @@ func TestGPUSupport(t *testing.T) {
 				if !errors.Is(err, ErrGPUUnsupported) {
 					t.Fatalf("want ErrGPUUnsupported, got %v", err)
 				}
-				if !strings.Contains(err.Error(), "--runtime="+tc.runtime+" -- --nvproxy") {
+				if !strings.Contains(err.Error(), "--runtime="+tc.runtime+" -- --network=host --nvproxy") {
 					t.Errorf("error does not say how to fix it: %v", err)
 				}
 			} else if err != nil {

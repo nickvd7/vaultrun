@@ -202,6 +202,29 @@ func ListFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID) ([]*models
 	return files, err
 }
 
+// ReplaceSessionFiles replaces every file row for a session with files.
+// Used after a snapshot or checkpoint restore, which writes the workspace
+// on disk and would otherwise leave the files table empty or stale.
+func ReplaceSessionFiles(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, files []*models.File) error {
+	tx, err := db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM files WHERE session_id = $1`, sessionID); err != nil {
+		return err
+	}
+	if len(files) > 0 {
+		if _, err := tx.NamedExecContext(ctx, `
+			INSERT INTO files (id, session_id, path, size_bytes, content_type, created_at, updated_at)
+			VALUES (:id, :session_id, :path, :size_bytes, :content_type, :created_at, :updated_at)
+		`, files); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func DeleteFile(ctx context.Context, db *sqlx.DB, sessionID uuid.UUID, path string) error {
 	res, err := db.ExecContext(ctx, `DELETE FROM files WHERE session_id = $1 AND path = $2`, sessionID, path)
 	if err != nil {

@@ -163,7 +163,7 @@ func gpuSupport(name string, rt system.Runtime) error {
 		}
 	}
 	return fmt.Errorf("%w: gVisor runtime %q is not registered with --nvproxy "+
-		"(re-register it with: runsc install --runtime=%s -- --nvproxy)", ErrGPUUnsupported, name, name)
+		"(re-register it with: runsc install --runtime=%s -- --network=host --nvproxy)", ErrGPUUnsupported, name, name)
 }
 
 // checkRuntimeRegistered reports ErrRuntimeUnavailable, listing the runtimes
@@ -292,8 +292,10 @@ type containerStatsJSON struct {
 		OnlineCPUs  uint32 `json:"online_cpus"`
 	} `json:"cpu_stats"`
 	PreCPUStats struct {
-		CPUUsage    struct{ TotalUsage uint64 `json:"total_usage"` } `json:"cpu_usage"`
-		SystemUsage uint64                                           `json:"system_cpu_usage"`
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemUsage uint64 `json:"system_cpu_usage"`
 	} `json:"precpu_stats"`
 	MemoryStats struct {
 		Usage uint64 `json:"usage"`

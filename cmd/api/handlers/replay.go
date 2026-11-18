@@ -369,6 +369,11 @@ func (rh *ReplayHandler) RestoreCheckpoint(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to restore checkpoint"})
 		return
 	}
+	if err := indexWorkspaceFiles(c.Request.Context(), rh.h.db, rh.h.ws, sessionID); err != nil {
+		slog.Error("index restored files failed", "session_id", sessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "restored files could not be indexed"})
+		return
+	}
 
 	// Audit log
 	rh.h.audit.Log(c.Request.Context(), audit.Event{
@@ -527,6 +532,15 @@ func (rh *ReplayHandler) ForkCheckpoint(c *gin.Context) {
 	if err != nil {
 		slog.Error("fork checkpoint", "err", err, "checkpoint_id", checkpointID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fork checkpoint"})
+		return
+	}
+	if newSessionID == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fork checkpoint"})
+		return
+	}
+	if err := indexWorkspaceFiles(c.Request.Context(), rh.h.db, rh.h.ws, *newSessionID); err != nil {
+		slog.Error("index forked files failed", "session_id", *newSessionID, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "restored files could not be indexed"})
 		return
 	}
 

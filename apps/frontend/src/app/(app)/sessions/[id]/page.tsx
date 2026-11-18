@@ -69,6 +69,11 @@ export default function SessionDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadSession = useCallback(() => {
+    // A non-UUID never exists. Asking the API returns 400, which the browser logs.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      setLoadState("notfound");
+      return;
+    }
     setLoadState("loading");
     api.sessions
       .get(id)
@@ -97,6 +102,10 @@ export default function SessionDetailPage() {
     api.checkpoints.list(id).then(setCheckpoints).catch(console.error);
   }, [id]);
 
+  const loadFiles = useCallback(() => {
+    api.files.list(id).then(setFiles).catch(console.error);
+  }, [id]);
+
   useEffect(() => {
     loadSession();
   }, [id, loadSession]);
@@ -107,8 +116,8 @@ export default function SessionDetailPage() {
     if (loadState !== "ready" || session?.id !== id) return;
     loadRuns();
     loadCheckpoints();
-    api.files.list(id).then(setFiles).catch(console.error);
-  }, [id, loadState, session?.id, loadRuns, loadCheckpoints]);
+    loadFiles();
+  }, [id, loadState, session?.id, loadRuns, loadCheckpoints, loadFiles]);
 
   // Preselect a command that exists in the session's image (python is not in alpine).
   useEffect(() => {
@@ -155,6 +164,7 @@ export default function SessionDetailPage() {
       setRuns((prev) => [result, ...prev]);
       setSelectedRun(result);
       setTab("runs");
+      loadFiles();
     } catch (e: unknown) {
       setRunError(e instanceof Error ? e.message : "Run failed");
     } finally {
@@ -213,6 +223,7 @@ export default function SessionDetailPage() {
               setStreamOutput((p) => [...p, { kind: "err", text: ev.data! }]);
             } else if (ev.type === "done") {
               loadRuns(); // refresh run list to pick up the new record
+              loadFiles();
             }
           } catch { /* ignore malformed events */ }
         }
@@ -244,6 +255,7 @@ export default function SessionDetailPage() {
       setRuns((prev) => [result, ...prev]);
       setSelectedRun(result);
       setTab("runs");
+      loadFiles();
     } catch (e: unknown) {
       setRunError(e instanceof Error ? e.message : "Async run failed");
     } finally {
@@ -709,6 +721,7 @@ export default function SessionDetailPage() {
             sessionId={id}
             checkpoints={checkpoints}
             onReload={loadCheckpoints}
+            onRestored={loadFiles}
           />
         )}
         {tab === "audit" && <AuditTab sessionId={id} />}
@@ -729,7 +742,7 @@ function RunsTab({
 }) {
   return (
     <div className="space-y-4">
-      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-hidden">
+      <div className="bg-[#0f0f1a] border border-slate-800 rounded-lg overflow-x-auto">
         {runs.length === 0 ? (
           <div className="p-6 text-center text-slate-300 text-sm">No runs yet.</div>
         ) : (
@@ -764,7 +777,7 @@ function RunsTab({
                   <td className="px-4 py-2.5 font-mono text-xs text-indigo-300">
                     {r.id.slice(0, 8)}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200 max-w-md break-all">
                     {formatCommand(r.command, r.args)}
                   </td>
                   <td className="px-4 py-2.5">
@@ -789,7 +802,7 @@ function RunsTab({
       {selectedRun && (
         <div className="bg-[#060609] border border-slate-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-200 font-mono">
+            <span className="text-xs text-slate-200 font-mono break-all">
               {formatCommand(selectedRun.command, selectedRun.args)}
             </span>
             <StatusBadge status={selectedRun.status} />
@@ -872,7 +885,7 @@ function FilesTab({
                   <td className="px-4 py-2.5 font-mono text-xs text-slate-200">
                     {f.path}
                     {f.symlink && (
-                      <span className="ml-2 rounded border border-amber-800/60 bg-amber-950/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+                      <span className="ml-2 inline-block whitespace-nowrap align-middle rounded border border-amber-800/60 bg-amber-950/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
                         symlink
                       </span>
                     )}
@@ -907,10 +920,12 @@ function CheckpointsTab({
   sessionId,
   checkpoints,
   onReload,
+  onRestored,
 }: {
   sessionId: string;
   checkpoints: Checkpoint[];
   onReload: () => void;
+  onRestored: () => void;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -927,6 +942,7 @@ function CheckpointsTab({
       await api.checkpoints.restore(sessionId, checkpointId, false);
       toast.success("Checkpoint restored");
       onReload();
+      onRestored();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Restore failed");
     } finally {
@@ -983,7 +999,7 @@ function CheckpointsTab({
           <History className="w-12 h-12 mx-auto mb-3 text-slate-300" />
           <p className="text-slate-300 text-sm mb-2">No checkpoints yet</p>
           <p className="text-slate-200 text-xs">
-            Checkpoints are automatically created after each command execution when replay is enabled.
+            Checkpoints are created after each command when this session was started with &quot;Enable session replay checkpoints&quot; ticked on New Session. Restore and fork show up here once a checkpoint exists.
           </p>
         </div>
       )}

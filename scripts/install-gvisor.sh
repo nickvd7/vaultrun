@@ -29,8 +29,12 @@ sudo tar xjf "$TMP/gvisor.tar.bz2" -C /usr/local/bin
 # --network=host uses the host kernel's network stack inside Docker's
 # container network namespace. gVisor's own netstack never sees Docker's
 # embedded DNS at 127.0.0.11, so a sandbox with open internet could reach
-# IP addresses but not hostnames. The host's egress rules still apply.
+# IP addresses but not hostnames. Docker then forwards that query to the
+# host's resolver; VaultRun's egress rules allow port 53 to that resolver
+# and to 127.0.0.11, and still drop DNS to every other address.
 # Re-run this script on an existing install; daemon.json only changes here.
+# runsc prints "Overwriting runtime runsc not found: adding" when the
+# runtime is already registered. That line is normal; the flags are updated.
 sudo /usr/local/bin/runsc install -- --network=host
 # Runtimes are reloadable: no restart, running containers keep running.
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet docker 2>/dev/null; then

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -58,6 +59,11 @@ func EgressPolicyAvailable() bool {
 
 // runInHelper executes bin+args inside the netpolicy container.
 func runInHelper(c *Client, name, bin string, args []string) error {
+	_, err := runInHelperOutput(c, name, bin, args)
+	return err
+}
+
+func runInHelperOutput(c *Client, name, bin string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	created, err := c.inner.ContainerExecCreate(ctx, name, types.ExecConfig{
@@ -66,25 +72,25 @@ func runInHelper(c *Client, name, bin string, args []string) error {
 		AttachStderr: true,
 	})
 	if err != nil {
-		return fmt.Errorf("netpolicy helper %q: %w", name, err)
+		return "", fmt.Errorf("netpolicy helper %q: %w", name, err)
 	}
 	resp, err := c.inner.ContainerExecAttach(ctx, created.ID, types.ExecStartCheck{})
 	if err != nil {
-		return fmt.Errorf("netpolicy helper attach: %w", err)
+		return "", fmt.Errorf("netpolicy helper attach: %w", err)
 	}
 	defer resp.Close()
 	var out bytes.Buffer
 	if err := demuxDockerStream(resp.Reader, &out, &out); err != nil {
-		return fmt.Errorf("netpolicy helper output: %w", err)
+		return "", fmt.Errorf("netpolicy helper output: %w", err)
 	}
 	info, err := c.inner.ContainerExecInspect(ctx, created.ID)
 	if err != nil {
-		return fmt.Errorf("netpolicy helper inspect: %w", err)
+		return "", fmt.Errorf("netpolicy helper inspect: %w", err)
 	}
 	if info.ExitCode != 0 {
-		return fmt.Errorf("exit status %d: %s", info.ExitCode, strings.TrimSpace(out.String()))
+		return "", fmt.Errorf("exit status %d: %s", info.ExitCode, strings.TrimSpace(out.String()))
 	}
-	return nil
+	return out.String(), nil
 }
 
 func runIptables(bin string, args ...string) error {
@@ -131,7 +137,7 @@ func bridgeIface(networkID string) string {
 //
 // IPv4 rules (custom chain per container):
 //  1. ACCEPT ESTABLISHED,RELATED
-//  2. ACCEPT DNS (UDP + TCP :53) to dnsServer only — the bridge gateway IP
+//  2. ACCEPT DNS (UDP + TCP :53) to the bridge gateway, 127.0.0.11 and the host's upstream resolvers
 //  3. ACCEPT for each IP in allowedIPs
 //  4. DROP everything else
 //
@@ -140,9 +146,13 @@ func bridgeIface(networkID string) string {
 // ip6tables is not installed a warning is logged but the error is not fatal
 // (the host may have IPv6 disabled at the kernel level).
 //
-// dnsServer must be the IPv4 gateway of the session network. Restricting DNS
-// to this address prevents a container from tunnelling data to an
-// attacker-controlled nameserver via arbitrary port-53 queries.
+// dnsServer must be the IPv4 gateway of the session network. Port 53 is also
+// allowed to Docker's embedded resolver (127.0.0.11) and to the upstream
+// resolvers Docker forwards to (the host's nameservers). gVisor with
+// --network=host sends the query to 127.0.0.11, and Docker then forwards it
+// to those upstreams, which are almost always private addresses. Without
+// that allow, the private-range drop below answers the sandbox with
+// SERVFAIL. DNS to any other address stays blocked.
 //
 // openInternet selects the policy for a sandbox with network but no
 // allowed_hosts: instead of allowing only allowedIPs it drops every private,
@@ -175,12 +185,11 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, open
 	if err := ipt("-A", chain, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
 		return fmt.Errorf("add conntrack rule: %w", err)
 	}
-	// DNS restricted to bridge gateway only.
-	if err := ipt("-A", chain, "-p", "udp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("add DNS/UDP rule: %w", err)
-	}
-	if err := ipt("-A", chain, "-p", "tcp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("add DNS/TCP rule: %w", err)
+	// DNS to the bridge gateway, Docker's stub, and the host's upstream
+	// resolvers. These accepts sit above the private-range drop.
+	dnsTargets := dnsAllowList(dnsServer)
+	if err := addDNSAllows(chain, dnsTargets); err != nil {
+		return err
 	}
 	if openInternet {
 		for _, n := range blockedNets {
@@ -214,7 +223,7 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, open
 		return fmt.Errorf("insert FORWARD jump (iface=%s, chain=%s): %w", iface, chain, err)
 	}
 
-	// Traffic to the host itself: only DNS to the gateway.
+	// Traffic to the host itself: only DNS, to the same resolvers as above.
 	in := inputChain(chain)
 	if err := ipt("-N", in); err != nil && !isIPTExistsErr(err) {
 		return fmt.Errorf("create chain %q: %w", in, err)
@@ -222,15 +231,14 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, open
 	if err := ipt("-F", in); err != nil {
 		return fmt.Errorf("flush chain %q: %w", in, err)
 	}
-	for _, rule := range [][]string{
-		{"-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"},
-		{"-p", "udp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"},
-		{"-p", "tcp", "--dport", "53", "-d", dnsServer, "-j", "ACCEPT"},
-		{"-j", "DROP"},
-	} {
-		if err := ipt(append([]string{"-A", in}, rule...)...); err != nil {
-			return fmt.Errorf("add host-input rule: %w", err)
-		}
+	if err := ipt("-A", in, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("add host-input rule: %w", err)
+	}
+	if err := addDNSAllows(in, dnsTargets); err != nil {
+		return err
+	}
+	if err := ipt("-A", in, "-j", "DROP"); err != nil {
+		return fmt.Errorf("add host-input rule: %w", err)
 	}
 	if err := ipt("-I", "INPUT", "-i", iface, "-j", in); err != nil && !isIPTExistsErr(err) {
 		return fmt.Errorf("insert INPUT jump (iface=%s, chain=%s): %w", iface, in, err)
@@ -254,8 +262,111 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, open
 	}
 
 	slog.Info("netpolicy: egress policy applied",
-		"chain", chain, "iface", iface, "dns_server", dnsServer, "allowed_ips", len(allowedIPs))
+		"chain", chain, "iface", iface, "dns_server", dnsServer, "dns_targets", dnsTargets, "allowed_ips", len(allowedIPs))
 	return nil
+}
+
+// dockerEmbeddedDNS is the address Docker puts in a container's resolv.conf.
+// With gVisor's host network stack the query leaves the sandbox for this
+// address and is then forwarded to the daemon's upstream resolvers.
+const dockerEmbeddedDNS = "127.0.0.11"
+
+// dnsAllowList is the only addresses a sandbox may send port 53 to: the
+// session bridge gateway, Docker's embedded resolver, and the host's
+// upstream nameservers.
+func dnsAllowList(gateway string) []string {
+	out := []string{gateway, dockerEmbeddedDNS}
+	out = append(out, hostResolvers()...)
+	return dedupIPv4(out)
+}
+
+func addDNSAllows(chain string, targets []string) error {
+	for _, ip := range targets {
+		if err := ipt("-A", chain, "-p", "udp", "--dport", "53", "-d", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add DNS/UDP rule for %s: %w", ip, err)
+		}
+		if err := ipt("-A", chain, "-p", "tcp", "--dport", "53", "-d", ip, "-j", "ACCEPT"); err != nil {
+			return fmt.Errorf("add DNS/TCP rule for %s: %w", ip, err)
+		}
+	}
+	return nil
+}
+
+// hostResolvers reads the nameservers Docker forwards to. The netpolicy
+// helper shares the host network namespace, so its resolv.conf is the
+// host's; a bare-metal API reads the file directly. Loopback stubs are
+// skipped (Docker does too) and the systemd-resolved upstream file is used
+// when the stub is the only nameserver.
+func hostResolvers() []string {
+	got := upstreamResolvers(parseResolvNameservers(readResolv("/etc/resolv.conf")))
+	if len(got) == 0 {
+		got = upstreamResolvers(parseResolvNameservers(readResolv("/run/systemd/resolve/resolv.conf")))
+	}
+	return got
+}
+
+func readResolv(path string) string {
+	if c, name := netpolicyHelper(); c != nil && name != "" {
+		out, err := runInHelperOutput(c, name, "cat", []string{path})
+		if err != nil {
+			return ""
+		}
+		return out
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func parseResolvNameservers(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "nameserver") {
+			continue
+		}
+		out = append(out, fields[1])
+	}
+	return out
+}
+
+// upstreamResolvers keeps public and private IPv4 nameservers and drops
+// loopback. Docker ignores a 127.0.0.0/8 stub and forwards to the rest;
+// those private upstreams are exactly what the egress drop would block.
+func upstreamResolvers(servers []string) []string {
+	var out []string
+	for _, s := range servers {
+		ip := net.ParseIP(s)
+		if ip == nil || ip.To4() == nil || ip.IsLoopback() {
+			continue
+		}
+		out = append(out, ip.String())
+	}
+	return dedupIPv4(out)
+}
+
+func dedupIPv4(ips []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range ips {
+		ip := net.ParseIP(s)
+		if ip == nil || ip.To4() == nil {
+			continue
+		}
+		s = ip.String()
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // removeEgressPolicy removes the iptables/ip6tables rules created by applyEgressPolicy.

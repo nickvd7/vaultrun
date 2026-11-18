@@ -274,7 +274,15 @@ OIDC discovery, the token exchange, JWKS fetches and a SAML metadata URL
 are HTTPS only. Redirects are not followed, the body stops at 1 MiB, the
 request stops at 15 seconds, and a private, link-local or metadata address
 is refused when the connection is made (so a DNS answer that changes
-between lookup and connect does not get through). A signing-key set that
+between lookup and connect does not get through). The
+`authorization_endpoint` is different: only the browser opens it, so it
+must be HTTPS and is not checked for a public address. An internal IdP
+(HTTP, or a private address such as Keycloak on `10.x`) needs
+`SSO_ALLOW_PRIVATE_IDP=true`. That is a separate opt-in;
+`VAULTRUN_INSECURE_DEV` does not turn it on. With it set, the API fetches
+those URLs over HTTP and on private addresses, and the startup log says so.
+Link-local and cloud-metadata addresses stay refused. Without it the API
+exits at startup and names the variable in the error. A signing-key set that
 cannot be refreshed is used for at most `SSO_JWKS_MAX_STALE_HOURS` (default
 24) and then sign-in fails. `SSO_REQUIRE_LICENSE=true` refuses to start SSO
 without a current Enterprise license; the default is off so evaluation

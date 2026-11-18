@@ -136,17 +136,24 @@ and does not depend on external files or the daemon's default filter.
 `make gvisor` installs a pinned gVisor release (checksum verified) and registers
 it with Docker without a restart; `make up` then sets `DOCKER_RUNTIME=runsc` in
 `.env` when it is empty. By hand: `runsc install -- --network=host` adds it to
-`/etc/docker/daemon.json`; reload or restart Docker afterwards. `--network=host`
-uses the host kernel's network stack inside Docker's container network
-namespace, so Docker's embedded DNS (`127.0.0.11`) works. gVisor's own netstack
-never sees that address: a sandbox with open internet can then reach IP
-addresses but not hostnames. `allowed_hosts` already worked, because those
-names are written into the container's `/etc/hosts` on the host. Re-run
-`make gvisor` on an install that registered `runsc` without `--network=host`.
-The API checks the runtime at startup and refuses to start if the daemon does
-not know it, rather than silently running sandboxes under `runc`. Each
-`session.created` audit entry records the runtime in its signed metadata
-(`"runtime": "runsc"`).
+`/etc/docker/daemon.json`; reload or restart Docker afterwards. Re-running it
+on a runtime that is already registered prints `Overwriting runtime runsc not
+found: adding`; that line comes from `runsc` and the install still succeeds.
+`--network=host` uses the host kernel's network stack inside Docker's
+container network namespace, so the sandbox can see Docker's embedded DNS
+(`127.0.0.11`). gVisor's own netstack never sees that address. Docker then
+forwards the query to the host's resolver, which is usually a private
+address. The egress rules allow UDP and TCP port 53 to `127.0.0.11`, to the
+bridge gateway and to those upstream resolvers, and drop DNS to every other
+address. 0.5.1 only did the `runsc` half; name lookup still failed until the
+egress rules allowed the forwarded query. `allowed_hosts` already worked,
+because those names are written into the container's `/etc/hosts` on the
+host. Re-run `make gvisor` on an install that registered `runsc` without
+`--network=host`. The API checks the runtime at startup and refuses to start
+if the daemon does not know it, rather than silently running sandboxes under
+`runc`. When `runsc` is registered without `--network=host` it logs a warning
+and still starts. Each `session.created` audit entry records the runtime in
+its signed metadata (`"runtime": "runsc"`).
 
 `allowed_hosts` works unchanged under gVisor: the egress rules sit on the
 host, on the session's bridge, and the sandbox's traffic goes through that
@@ -339,6 +346,7 @@ See [SSO setup: who may sign in](sso-setup.md#who-may-sign-in-and-with-what-acce
 | `SSO_JWKS_MAX_STALE_HOURS` | `24` | How long a previously fetched OIDC signing-key set may be used when the IdP cannot be reached. `0` refuses sign-in until a fresh set arrives |
 | `SSO_REQUIRE_LICENSE` | `false` | Refuse to start SSO without a current VaultRun Enterprise license. Leave false so evaluation keeps working; set `true` in production |
 | `SSO_LICENSE_GRACE_HOURS` | `0` | How long SSO may keep running after that license expires, when `SSO_REQUIRE_LICENSE` is set |
+| `SSO_ALLOW_PRIVATE_IDP` | `false` | Let the API fetch an identity provider over HTTP or on a private address (an internal Keycloak). `VAULTRUN_INSECURE_DEV` does not turn this on. Link-local and cloud-metadata addresses stay refused |
 
 **Additional SSO routes:**
 | Route | Description |

@@ -171,6 +171,12 @@ type SSOConfig struct {
 	// license. The default is false so evaluation still works.
 	RequireLicense bool          // SSO_REQUIRE_LICENSE (default: false)
 	LicenseGrace   time.Duration // SSO_LICENSE_GRACE_HOURS (default: 0) — how long SSO may run after that license expires
+
+	// SSO_ALLOW_PRIVATE_IDP lets the API fetch an identity provider on HTTP
+	// or a private address (an internal Keycloak). Default false. It is not
+	// implied by VAULTRUN_INSECURE_DEV. Link-local and metadata addresses
+	// stay refused.
+	AllowPrivateIDP bool // SSO_ALLOW_PRIVATE_IDP (default: false)
 }
 
 // MultiRegionConfig holds settings for multi-region deployments.
@@ -336,6 +342,7 @@ func Load() (*Config, error) {
 				JWKSMaxStale:         time.Duration(jwksStaleHours) * time.Hour,
 				RequireLicense:       envBool("SSO_REQUIRE_LICENSE"),
 				LicenseGrace:         time.Duration(graceHours) * time.Hour,
+				AllowPrivateIDP:      envBool("SSO_ALLOW_PRIVATE_IDP"),
 			}
 		}(),
 		Production: ProductionConfig{

@@ -106,3 +106,20 @@ func TestGPUSupport(t *testing.T) {
 		t.Errorf("nil client GPUSupported() = %v, want nil", err)
 	}
 }
+
+func TestGvisorNetworkWarning(t *testing.T) {
+	if msg := gvisorNetworkWarning("runsc", system.Runtime{Path: "/usr/local/bin/runsc", Args: []string{"--network=host"}}); msg != "" {
+		t.Fatalf("flag present: %q", msg)
+	}
+	msg := gvisorNetworkWarning("runsc", system.Runtime{Path: "/usr/local/bin/runsc"})
+	if !strings.Contains(msg, "--network=host") || !strings.Contains(msg, "make gvisor") {
+		t.Fatalf("missing flag: %q", msg)
+	}
+	if msg := gvisorNetworkWarning("runc", system.Runtime{Path: "runc"}); msg != "" {
+		t.Fatalf("runc: %q", msg)
+	}
+	// A containerd shim does not report its flags.
+	if msg := gvisorNetworkWarning("runsc", system.Runtime{Type: "io.containerd.runsc.v1"}); msg != "" {
+		t.Fatalf("shim: %q", msg)
+	}
+}

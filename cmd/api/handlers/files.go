@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/nickvd7/vaultrun/cmd/api/middleware"
 	"github.com/nickvd7/vaultrun/internal/audit"
@@ -33,6 +35,36 @@ type FileHandler struct {
 }
 
 func NewFileHandler(h *Hub) *FileHandler { return &FileHandler{h: h} }
+
+// indexWorkspaceFiles rebuilds the files table from what is actually in the
+// workspace. Snapshot and checkpoint restore write the disk only; without
+// this, GET /files stays empty while the files are there.
+func indexWorkspaceFiles(ctx context.Context, db *sqlx.DB, ws *workspace.Manager, sessionID uuid.UUID) error {
+	entries, err := ws.ListEntries(sessionID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	files := make([]*models.File, 0, len(entries))
+	for _, e := range entries {
+		ct := "application/octet-stream"
+		if e.Symlink {
+			ct = "inode/symlink"
+		} else if t := mime.TypeByExtension(filepath.Ext(e.Path)); t != "" {
+			ct = t
+		}
+		files = append(files, &models.File{
+			ID:          uuid.New(),
+			SessionID:   sessionID,
+			Path:        e.Path,
+			SizeBytes:   e.Size,
+			ContentType: ct,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+	}
+	return dbpkg.ReplaceSessionFiles(ctx, db, sessionID, files)
+}
 
 // POST /api/v1/sessions/:id/files
 func (fh *FileHandler) Upload(c *gin.Context) {

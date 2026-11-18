@@ -594,6 +594,23 @@ def test_download_workspace(client: Client) -> None:
     assert len(rsps.calls) == 1
 
 
+def test_download_workspace_timeout_is_none(client: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """urllib3 rejects timeout <= 0. None means no timeout."""
+    seen: dict[str, object] = {}
+
+    class Resp:
+        content = b"PK"
+        status_code = 200
+
+    def fake_get(url: str, timeout: object = None, **kwargs: object) -> Resp:
+        seen["timeout"] = timeout
+        return Resp()
+
+    monkeypatch.setattr(client._session, "get", fake_get)
+    assert client.download_workspace(SESSION_ID) == b"PK"
+    assert seen["timeout"] is None
+
+
 # ---------------------------------------------------------------------------
 # test_verify_webhook_signature_valid
 # ---------------------------------------------------------------------------

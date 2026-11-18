@@ -135,24 +135,31 @@ and does not depend on external files or the daemon's default filter.
 
 `make gvisor` installs a pinned gVisor release (checksum verified) and registers
 it with Docker without a restart; `make up` then sets `DOCKER_RUNTIME=runsc` in
-`.env` when it is empty. By hand: `runsc install` adds it to
-`/etc/docker/daemon.json`; reload or restart Docker afterwards. The API checks this at
-startup and refuses to start if the daemon does not know the runtime, rather
-than silently running sandboxes under `runc`. Each `session.created` audit entry
-records the runtime in its signed metadata (`"runtime": "runsc"`).
+`.env` when it is empty. By hand: `runsc install -- --network=host` adds it to
+`/etc/docker/daemon.json`; reload or restart Docker afterwards. `--network=host`
+uses the host kernel's network stack inside Docker's container network
+namespace, so Docker's embedded DNS (`127.0.0.11`) works. gVisor's own netstack
+never sees that address: a sandbox with open internet can then reach IP
+addresses but not hostnames. `allowed_hosts` already worked, because those
+names are written into the container's `/etc/hosts` on the host. Re-run
+`make gvisor` on an install that registered `runsc` without `--network=host`.
+The API checks the runtime at startup and refuses to start if the daemon does
+not know it, rather than silently running sandboxes under `runc`. Each
+`session.created` audit entry records the runtime in its signed metadata
+(`"runtime": "runsc"`).
 
 `allowed_hosts` works unchanged under gVisor: the egress rules sit on the
-host, on the session's bridge, and gVisor's network stack sends traffic through
-that bridge. The Playwright browser image runs under gVisor as well. CI checks
+host, on the session's bridge, and the sandbox's traffic goes through that
+bridge. The Playwright browser image runs under gVisor as well. CI checks
 both under `runc` and `runsc`.
 
 GPU sessions (`DOCKER_GPU_DEVICES`) need gVisor's NVIDIA proxy. Register the
-runtime with it: `runsc install --runtime=runsc -- --nvproxy`, then reload
-Docker. When `runsc` is registered without `--nvproxy`, the API logs a warning
-at startup and answers `gpu_enabled` sessions with `501` and that instruction,
-instead of failing container creation. (A runtime registered as a containerd
-shim keeps its flags in `runsc.toml`, which Docker does not report; it is not
-checked.)
+runtime with it: `runsc install --runtime=runsc -- --network=host --nvproxy`,
+then reload Docker. When `runsc` is registered without `--nvproxy`, the API
+logs a warning at startup and answers `gpu_enabled` sessions with `501` and
+that instruction, instead of failing container creation. (A runtime registered
+as a containerd shim keeps its flags in `runsc.toml`, which Docker does not
+report; it is not checked.)
 
 Syscall-heavy workloads run slower under gVisor, and a few rarely used syscalls
 are not implemented; test your own images before switching.
@@ -329,6 +336,9 @@ See [SSO setup: who may sign in](sso-setup.md#who-may-sign-in-and-with-what-acce
 | `SSO_ROLE_MAPPING` | | `group=org-slug:role,…` (viewer, executor, admin); synced at every sign-in for the orgs it names |
 | `SSO_ALLOWED_SECRETS` | *(none)* | Secrets SSO users may inject into runs; `*` = all |
 | `SSO_ALLOW_UNVERIFIED_EMAIL` | `false` | Accept `email_verified=false` from an OIDC IdP |
+| `SSO_JWKS_MAX_STALE_HOURS` | `24` | How long a previously fetched OIDC signing-key set may be used when the IdP cannot be reached. `0` refuses sign-in until a fresh set arrives |
+| `SSO_REQUIRE_LICENSE` | `false` | Refuse to start SSO without a current VaultRun Enterprise license. Leave false so evaluation keeps working; set `true` in production |
+| `SSO_LICENSE_GRACE_HOURS` | `0` | How long SSO may keep running after that license expires, when `SSO_REQUIRE_LICENSE` is set |
 
 **Additional SSO routes:**
 | Route | Description |

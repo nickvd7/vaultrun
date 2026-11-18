@@ -136,6 +136,48 @@ func (m *Manager) openRoot(sessionID uuid.UUID) (*os.Root, error) {
 // read it themselves. The caller closes it.
 func (m *Manager) Root(sessionID uuid.UUID) (*os.Root, error) { return m.openRoot(sessionID) }
 
+// Entry is one non-directory file in a workspace, as the files table stores it.
+type Entry struct {
+	Path    string // "/rel" with forward slashes
+	Size    int64
+	Symlink bool
+}
+
+// ListEntries walks the workspace through os.Root and returns every regular
+// file and symlink. A missing workspace is an empty list. Symlinks are not
+// followed, so a link out of the workspace is listed and not entered.
+func (m *Manager) ListEntries(sessionID uuid.UUID) ([]Entry, error) {
+	root, err := m.openRoot(sessionID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer root.Close()
+	var out []Entry
+	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil || rel == "." || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		mode := info.Mode()
+		if !mode.IsRegular() && mode&os.ModeSymlink == 0 {
+			return nil
+		}
+		out = append(out, Entry{
+			Path:    "/" + filepath.ToSlash(rel),
+			Size:    info.Size(),
+			Symlink: mode&os.ModeSymlink != 0,
+		})
+		return nil
+	})
+	return out, err
+}
+
 // relPath turns a user path into a path relative to the workspace root, or
 // "." for the root itself, after the same checks as SafePath.
 func relPath(userPath string) (string, error) {
@@ -277,7 +319,8 @@ func (m *Manager) WriteFile(sessionID uuid.UUID, userPath string, r io.Reader, m
 
 // blocked reports whether err means something the sandbox put in the
 // workspace (a symlink, or a file where a directory belongs) is in the way of
-// a restore; that entry is skipped instead of written through.
+// a restore. The caller removes that symlink without following it and writes
+// the archive entry inside the workspace.
 func blocked(err error) bool {
 	return isEscape(err) || errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.EEXIST) || errors.Is(err, syscall.ENOTDIR)
 }
@@ -561,48 +604,103 @@ func (m *Manager) RestoreSnapshot(sessionID uuid.UUID, archivePath string) error
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := root.MkdirAll(dest, sandboxuser.DirMode()); err != nil {
-				if blocked(err) {
-					continue // a symlink or file is in the way
-				}
+			if err := mkdirInWorkspace(root, dest); err != nil {
 				return fmt.Errorf("mkdir %s: %w", hdr.Name, err)
 			}
-			_ = root.Chmod(dest, sandboxuser.DirMode())
 		case tar.TypeReg, tar.TypeRegA:
-			if parent := filepath.Dir(dest); parent != "." {
-				if err := root.MkdirAll(parent, sandboxuser.DirMode()); err != nil {
-					if blocked(err) {
-						continue
-					}
-					return fmt.Errorf("mkdir parent of %s: %w", hdr.Name, err)
-				}
-			}
-			out, err := root.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+			n, err := writeRegInWorkspace(root, dest, tr, maxExtractFileBytes, maxExtractTotalBytes-totalExtracted)
 			if err != nil {
-				if blocked(err) {
-					continue // a symlink is in the way; never write through it
-				}
-				return fmt.Errorf("create %s: %w", hdr.Name, err)
-			}
-			remaining := maxExtractTotalBytes - totalExtracted
-			if remaining <= 0 {
-				_ = out.Close()
-				return fmt.Errorf("archive extraction limit exceeded (%d GB total)", maxExtractTotalBytes/1024/1024/1024)
-			}
-			perFileCap := maxExtractFileBytes
-			if remaining < perFileCap {
-				perFileCap = remaining
-			}
-			n, copyErr := io.Copy(out, io.LimitReader(tr, perFileCap+1))
-			_ = out.Chmod(0o644)
-			_ = out.Close()
-			if copyErr != nil {
-				return fmt.Errorf("write %s: %w", hdr.Name, copyErr)
-			}
-			if n > perFileCap {
-				return fmt.Errorf("file %s exceeds extraction size limit", hdr.Name)
+				return err
 			}
 			totalExtracted += n
+		}
+	}
+	return nil
+}
+
+// mkdirInWorkspace creates dest inside the workspace. A symlink the sandbox
+// planted on the way is removed without following it, then the directory is
+// created in the workspace. The symlink is never used as the destination.
+func mkdirInWorkspace(root *os.Root, dest string) error {
+	if dest == "" || dest == "." {
+		return nil
+	}
+	if err := root.MkdirAll(dest, sandboxuser.DirMode()); err != nil {
+		if !blocked(err) {
+			return err
+		}
+		if err := clearBlockingSymlink(root, dest); err != nil {
+			return err
+		}
+		if err := root.MkdirAll(dest, sandboxuser.DirMode()); err != nil {
+			return err
+		}
+	}
+	_ = chmodDirs(root, dest, sandboxuser.DirMode())
+	return nil
+}
+
+// writeRegInWorkspace writes r to dest inside the workspace. A symlink in the
+// way is unlinked (not followed) and the file is created in the workspace.
+func writeRegInWorkspace(root *os.Root, dest string, r io.Reader, perFile, remaining int64) (int64, error) {
+	if remaining <= 0 {
+		return 0, fmt.Errorf("archive extraction limit exceeded")
+	}
+	if parent := filepath.Dir(dest); parent != "." {
+		if err := mkdirInWorkspace(root, parent); err != nil {
+			return 0, fmt.Errorf("mkdir parent of %s: %w", dest, err)
+		}
+	}
+	out, err := root.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+	if err != nil && blocked(err) {
+		if err := clearBlockingSymlink(root, dest); err != nil {
+			return 0, err
+		}
+		if parent := filepath.Dir(dest); parent != "." {
+			if err := mkdirInWorkspace(root, parent); err != nil {
+				return 0, err
+			}
+		}
+		out, err = root.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("create %s: %w", dest, err)
+	}
+	capBytes := perFile
+	if remaining < capBytes {
+		capBytes = remaining
+	}
+	n, copyErr := io.Copy(out, io.LimitReader(r, capBytes+1))
+	_ = out.Chmod(0o644)
+	_ = out.Close()
+	if copyErr != nil {
+		return 0, fmt.Errorf("write %s: %w", dest, copyErr)
+	}
+	if n > capBytes {
+		return 0, fmt.Errorf("file %s exceeds extraction size limit", dest)
+	}
+	return n, nil
+}
+
+// clearBlockingSymlink unlinks the first symlink on rel. os.Root.Remove does
+// not follow the final component, so a link to a path outside the workspace
+// is removed and nothing is written through it.
+func clearBlockingSymlink(root *os.Root, rel string) error {
+	cur := ""
+	for _, p := range strings.Split(rel, string(os.PathSeparator)) {
+		if p == "" || p == "." {
+			continue
+		}
+		cur = filepath.Join(cur, p)
+		info, err := root.Lstat(cur)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return root.Remove(cur)
 		}
 	}
 	return nil

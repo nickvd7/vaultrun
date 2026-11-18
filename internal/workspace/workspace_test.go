@@ -414,4 +414,15 @@ func TestRestoreSnapshotDoesNotWriteThroughSymlinks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(victim, "f")); err == nil {
 		t.Fatal("restore wrote a file outside the workspace through a symlink")
 	}
+	got, err := os.ReadFile(filepath.Join(sp, "x", "f"))
+	if err != nil {
+		t.Fatalf("file not restored inside the workspace: %v", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("restored content = %q, want payload", got)
+	}
+	info, err := os.Lstat(filepath.Join(sp, "x"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("x should be a directory inside the workspace, err=%v info=%v", err, info)
+	}
 }

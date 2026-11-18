@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **OIDC sign-in from a real browser (Enterprise).** The pre-auth cookies `oidc_state`, `oidc_verifier` and `oidc_nonce` were `SameSite=Strict`. A browser does not send those on the top-level return from an external identity provider, so the callback failed with `invalid state`. They are `SameSite=Lax`, the same as the session cookie. `saml_request_id` stays Strict: the SAML assertion comes back as a cross-site POST, which neither Strict nor Lax sends, and `SameSite=None` requires `Secure`.
+- **Hostnames under gVisor.** `make gvisor` registers `runsc` with `--network=host`, so a sandbox with open internet uses Docker's DNS (`127.0.0.11`). gVisor's own netstack never sees that resolver, so only IP addresses worked. `allowed_hosts` already did, because those names are written into `/etc/hosts`. Re-run `make gvisor` on an existing install.
+- **File list after a restore.** Restoring a snapshot or checkpoint wrote the files and left `GET /files` empty. The list is rebuilt from the workspace afterwards, and the dashboard reloads it after a run, a stream, an async run and a checkpoint restore.
+- **Checkpoint restore over a symlink.** A symlink planted where the archive has a file or directory made the restore report success and skip the entry. The symlink is removed without being followed, and the entry is written inside the workspace.
+- **Python SDK `download_workspace`.** `timeout=0` makes urllib3 raise. The download now has no timeout (`timeout=None`).
+- Community `GET /auth/providers` answers `200` with both providers off, so the dashboard no longer logs a 404 on every page. A session URL that is not a UUID shows "not found" without calling the API. The runs table scrolls sideways instead of clipping the status columns. The empty checkpoints tab says to tick "Enable session replay checkpoints" on New Session.
+- The README no longer says `make up` detects the Docker GID.
+
+### Security
+- **SSO requests to the identity provider (Enterprise).** OIDC discovery, the token exchange, JWKS fetches and SAML metadata URLs are HTTPS only, do not follow redirects, stop at 1 MiB and 15 seconds, and refuse private, link-local and metadata addresses at connect time.
+- **Stale OIDC signing keys (Enterprise).** A JWKS that cannot be refreshed is used for at most 24 hours (`SSO_JWKS_MAX_STALE_HOURS`, `0` refuses it) and then sign-in fails.
+- **SSO can require a license (Enterprise).** `SSO_REQUIRE_LICENSE=true` refuses to start SSO without a current Enterprise license. The default stays off so evaluation still works. `SSO_LICENSE_GRACE_HOURS` is how long SSO may continue after that license expires.
+
 ---
 
 ## [0.5.0] — 2026-11-18

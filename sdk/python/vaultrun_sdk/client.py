@@ -477,7 +477,7 @@ class Client:
         """Download the entire session workspace as a ZIP archive."""
         resp = self._session.get(
             self.base_url + f"/api/v1/sessions/{session_id}/workspace.zip",
-            timeout=0,  # no timeout — workspace may be large
+            timeout=None,  # no timeout — a large workspace must not be cut off. 0 makes urllib3 raise.
         )
         self._raise_for_status(resp)
         return resp.content

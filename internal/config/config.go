@@ -162,6 +162,15 @@ type SSOConfig struct {
 	RoleMapping          string   // SSO_ROLE_MAPPING — "group=org-slug:role,…", synced on every sign-in
 	AllowedSecrets       []string // SSO_ALLOWED_SECRETS — secrets SSO users may inject ("*" = all; empty: none)
 	AllowUnverifiedEmail bool     // SSO_ALLOW_UNVERIFIED_EMAIL — accept email_verified=false (default: refuse)
+
+	// How long a previously fetched OIDC signing-key set may be used when the
+	// IdP cannot be reached. Zero refuses sign-in until a fresh set is fetched.
+	JWKSMaxStale time.Duration // SSO_JWKS_MAX_STALE_HOURS (default: 24)
+
+	// SSO_REQUIRE_LICENSE refuses to start SSO without a current Enterprise
+	// license. The default is false so evaluation still works.
+	RequireLicense bool          // SSO_REQUIRE_LICENSE (default: false)
+	LicenseGrace   time.Duration // SSO_LICENSE_GRACE_HOURS (default: 0) — how long SSO may run after that license expires
 }
 
 // MultiRegionConfig holds settings for multi-region deployments.
@@ -296,6 +305,8 @@ func Load() (*Config, error) {
 			tlsActive := tlsCert != "" || acmeDomain != ""
 			sessionSecure, _ := strconv.ParseBool(getEnv("SSO_SESSION_SECURE", fmt.Sprintf("%v", tlsActive)))
 			maxAge, _ := strconv.Atoi(getEnv("SSO_SESSION_MAX_AGE_HOURS", "24"))
+			jwksStaleHours := envNonNegInt("SSO_JWKS_MAX_STALE_HOURS", 24)
+			graceHours := envNonNegInt("SSO_LICENSE_GRACE_HOURS", 0)
 			scopes := splitAndTrim(getEnv("OIDC_SCOPES", "openid,email,profile"))
 			samlMetaConfigured := (samlMeta != "" || samlMetaFile != "") && samlCert != "" && samlKey != ""
 			return SSOConfig{
@@ -322,6 +333,9 @@ func Load() (*Config, error) {
 				RoleMapping:          getEnv("SSO_ROLE_MAPPING", ""),
 				AllowedSecrets:       splitAndTrim(getEnv("SSO_ALLOWED_SECRETS", "")),
 				AllowUnverifiedEmail: envBool("SSO_ALLOW_UNVERIFIED_EMAIL"),
+				JWKSMaxStale:         time.Duration(jwksStaleHours) * time.Hour,
+				RequireLicense:       envBool("SSO_REQUIRE_LICENSE"),
+				LicenseGrace:         time.Duration(graceHours) * time.Hour,
 			}
 		}(),
 		Production: ProductionConfig{
@@ -371,6 +385,20 @@ func ValidateDBSSLMode(mode string) error {
 func envBool(key string) bool {
 	v, _ := strconv.ParseBool(getEnv(key, "false"))
 	return v
+}
+
+// envNonNegInt reads key as a non-negative integer. A missing or invalid
+// value returns def.
+func envNonNegInt(key string, def int) int {
+	raw := getEnv(key, "")
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
 }
 
 // ProductionProblems lists settings that are acceptable for a local quickstart

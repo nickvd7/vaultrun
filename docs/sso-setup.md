@@ -136,7 +136,7 @@ start.
 
 ```
 GET  /auth/oidc/login     → sets oidc_state / oidc_verifier / oidc_nonce
-                             cookies (SameSite=Strict, 10 min TTL),
+                             cookies (SameSite=Lax, 10 min TTL),
                              redirects to the IdP's authorization endpoint
                              with PKCE challenge + state + nonce
 GET  /auth/oidc/callback  → validates state (CSRF), exchanges code for an
@@ -261,6 +261,23 @@ POST /auth/saml/acs    → requires Content-Type: application/x-www-form-urlenco
                           sso_users row, issues the session cookie
 ```
 
+`saml_request_id` stays `SameSite=Strict`. The assertion comes back as a
+cross-site POST, which neither Strict nor Lax attaches a cookie to.
+`SameSite=None` would, and it requires `Secure`, so it breaks evaluation
+over plain HTTP. A live SAML login from a browser is not covered by the
+OIDC cookie change.
+
+OIDC discovery, the token exchange, JWKS fetches and a SAML metadata URL
+are HTTPS only. Redirects are not followed, the body stops at 1 MiB, the
+request stops at 15 seconds, and a private, link-local or metadata address
+is refused when the connection is made (so a DNS answer that changes
+between lookup and connect does not get through). A signing-key set that
+cannot be refreshed is used for at most `SSO_JWKS_MAX_STALE_HOURS` (default
+24) and then sign-in fails. `SSO_REQUIRE_LICENSE=true` refuses to start SSO
+without a current Enterprise license; the default is off so evaluation
+still works, and `SSO_LICENSE_GRACE_HOURS` is how long it may continue
+after that license expires.
+
 ---
 
 ## Who may sign in, and with what access
@@ -334,7 +351,7 @@ header too.
 | Server refuses to start with `oidc discover` / `saml: load IdP metadata` errors | Issuer URL unreachable, metadata URL/file invalid, or the discovery document is missing `jwks_uri` |
 | Server refuses to start: "session secret too short" | `SSO_SESSION_SECRET` is shorter than 32 bytes — regenerate with `openssl rand -hex 32` |
 | `redirect_uri_mismatch` / `invalid_redirect_uri` from the IdP | `OIDC_REDIRECT_URL` doesn't *exactly* match what's registered with the IdP (scheme, host, trailing slash) |
-| `400 invalid state` on OIDC callback | The `oidc_state`/`oidc_verifier`/`oidc_nonce` cookies expired (>10 min between login and callback) or were blocked by a browser privacy setting / proxy that strips cookies |
+| `400 invalid state` on OIDC callback | The `oidc_state`/`oidc_verifier`/`oidc_nonce` cookies expired (>10 min between login and callback), were blocked by a browser privacy setting / proxy that strips cookies, or an older build set them `SameSite=Strict` (a browser does not send Strict cookies on the return from an external IdP; they are Lax) |
 | `400 invalid SAML response` on ACS | Clock skew between VaultRun's host and the IdP (SAML assertions have tight `NotBefore`/`NotOnOrAfter` windows — keep both NTP-synced), wrong IdP metadata (stale signing certificate), or `InResponseTo` mismatch (assertion replay or a stale `saml_request_id` cookie) |
 | `415 Unsupported Media Type` on ACS | The IdP is posting the assertion with a Content-Type other than `application/x-www-form-urlencoded` — check that the IdP is configured for the **HTTP-POST** binding |
 | Session cookie not present after a successful-looking redirect | Running over plain HTTP while `SSO_SESSION_SECURE=true` (the default under TLS) — browsers silently drop `Secure` cookies sent over HTTP. Either terminate TLS in front of VaultRun, or explicitly set `SSO_SESSION_SECURE=false` for local development only |

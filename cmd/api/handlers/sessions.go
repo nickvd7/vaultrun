@@ -250,6 +250,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		}
 	}
 
+	var restoredSnapshot bool
 	if req.SnapshotID != nil && *req.SnapshotID != "" {
 		snapUUID, err := uuid.Parse(*req.SnapshotID)
 		if err != nil {
@@ -282,6 +283,7 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "restore snapshot failed"})
 			return
 		}
+		restoredSnapshot = true
 	}
 
 	now := time.Now().UTC()
@@ -402,6 +404,16 @@ func (sh *SessionHandler) Create(c *gin.Context) {
 		slog.Error("update session status failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "update session status failed"})
 		return
+	}
+	if restoredSnapshot {
+		if err := indexWorkspaceFiles(c.Request.Context(), sh.h.db, sh.h.ws, sessionID); err != nil {
+			_ = sh.h.docker.StopSandbox(context.Background(), containerID)
+			_ = sh.h.ws.Delete(sessionID)
+			_ = dbpkg.FailSession(c.Request.Context(), sh.h.db, sessionID)
+			slog.Error("index restored files failed", "session_id", sessionID, "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "restored files could not be indexed"})
+			return
+		}
 	}
 	session.ContainerID = &containerID
 	session.Status = models.SessionStatusRunning

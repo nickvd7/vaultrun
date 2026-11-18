@@ -1,6 +1,6 @@
 # VaultRun Roadmap
 
-Status as of **v0.4.12** (2026-10-19).
+Status as of **v0.5.0** (2026-11-18).
 
 ## Shipped
 
@@ -79,6 +79,16 @@ Security follow-up: [security-testing-report.md](security-testing-report.md). Ov
 - [x] Acquisition paths — [vaultrun.dev/#enterprise](https://vaultrun.dev/#enterprise) · [one-pager](https://vaultrun.dev/enterprise.html)
 
 Get Enterprise: evaluate (free for dev/test), production license, or sales — requests to **mail@030.dev**.
+
+### Release v0.5.0 (2026-11-18)
+
+- [x] The API no longer has the Docker socket; `docker-guard` is the only container that does
+- [x] gVisor by default in production (`make gvisor`, or `DOCKER_RUNTIME=runc` to keep the host kernel)
+- [x] Run timeouts kill the command; XFS project quotas; a hard cap on workspace size
+- [x] Race-free workspace file I/O, and filtered sandbox egress (no host, metadata or private ranges)
+- [x] Signed evidence packs, RFC 3161 timestamps and bulk export
+- [x] `make backup` / `make restore`, `make harden` and `make purge`
+- [x] Dashboard sign-in with SSO for VaultRun Enterprise
 
 ## Future / deferred
 

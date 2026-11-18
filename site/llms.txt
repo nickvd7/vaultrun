@@ -12,7 +12,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 - [Use cases](https://vaultrun.dev/use-cases.html): Reference deployment patterns
 - [GitHub repository](https://github.com/nickvd7/vaultrun): Source, issues, releases
 - [README](https://github.com/nickvd7/vaultrun/blob/main/README.md): Install, architecture, components
-- [Changelog](https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md): Release history (latest: v0.2.1)
+- [Changelog](https://github.com/nickvd7/vaultrun/blob/main/CHANGELOG.md): Release history (latest: v0.5.0)
 - [Python SDK on PyPI](https://pypi.org/project/vaultrun-sdk/): `pip install vaultrun-sdk`
 
 ## Docs

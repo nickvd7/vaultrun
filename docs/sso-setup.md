@@ -250,22 +250,25 @@ can't be parsed.
 ### How the flow works (for troubleshooting)
 
 ```
-GET  /auth/saml/login  → generates a signed AuthnRequest, stores its ID in
-                          a saml_request_id cookie (SameSite=Strict, 10 min),
-                          redirects to the IdP's SSO endpoint
+GET  /auth/saml/login  → generates a signed AuthnRequest, remembers its ID
+                          on the server for 10 minutes (Redis when
+                          configured), and also sets a saml_request_id
+                          cookie (SameSite=None; Secure on HTTPS, Lax
+                          otherwise), then redirects to the IdP
 POST /auth/saml/acs    → requires Content-Type: application/x-www-form-urlencoded;
-                          validates the assertion's signature and
-                          InResponseTo against the stored request ID,
-                          extracts NameID/email/name/group attributes,
-                          applies the sign-in policy, upserts the
-                          sso_users row, issues the session cookie
+                          reads InResponseTo, checks this server issued that
+                          ID and has not used it yet, validates the
+                          assertion's signature, extracts
+                          NameID/email/name/group attributes, applies the
+                          sign-in policy, upserts the sso_users row, issues
+                          the session cookie
 ```
 
-`saml_request_id` stays `SameSite=Strict`. The assertion comes back as a
-cross-site POST, which neither Strict nor Lax attaches a cookie to.
-`SameSite=None` would, and it requires `Secure`, so it breaks evaluation
-over plain HTTP. A live SAML login from a browser is not covered by the
-OIDC cookie change.
+The ACS is a cross-site POST. A browser does not send a `Strict` or `Lax`
+cookie on that request, so the login does not depend on `saml_request_id`
+arriving. On HTTPS the cookie is `SameSite=None; Secure` as well. `None`
+without `Secure` is discarded, which is why plain HTTP uses Lax and the
+server-side record.
 
 OIDC discovery, the token exchange, JWKS fetches and a SAML metadata URL
 are HTTPS only. Redirects are not followed, the body stops at 1 MiB, the

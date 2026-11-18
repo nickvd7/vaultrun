@@ -7,8 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.5.1] — 2026-11-18
+
+**Upgrade notes:**
+
+- Enterprise: rebuild the overlay. v0.5.0 cannot finish an SSO login in a real browser.
+- Re-run `make gvisor` if a sandbox with open internet cannot resolve hostnames.
+
 ### Fixed
-- **OIDC sign-in from a real browser (Enterprise).** The pre-auth cookies `oidc_state`, `oidc_verifier` and `oidc_nonce` were `SameSite=Strict`. A browser does not send those on the top-level return from an external identity provider, so the callback failed with `invalid state`. They are `SameSite=Lax`, the same as the session cookie. `saml_request_id` stays Strict: the SAML assertion comes back as a cross-site POST, which neither Strict nor Lax sends, and `SameSite=None` requires `Secure`.
+- **OIDC sign-in from a real browser (Enterprise).** The pre-auth cookies `oidc_state`, `oidc_verifier` and `oidc_nonce` were `SameSite=Strict`. A browser does not send those on the top-level return from an external identity provider, so the callback failed with `invalid state`. They are `SameSite=Lax`, the same as the session cookie. Confirmed in a browser: v0.5.0 stays on the sign-in screen, this build lands on the dashboard.
+- **SAML sign-in does not depend on the cookie (Enterprise).** `saml_request_id` was `SameSite=Strict`, and the assertion comes back as a cross-site POST, which neither Strict nor Lax attaches a cookie to. The AuthnRequest ID is remembered on the server (Redis when it is configured, this process otherwise) and checked against `InResponseTo`. On HTTPS the cookie is also `SameSite=None; Secure`, which a browser does send on that POST. Plain HTTP cannot set `None` without `Secure`; the server-side check covers it.
 - **Hostnames under gVisor.** `make gvisor` registers `runsc` with `--network=host`, so a sandbox with open internet uses Docker's DNS (`127.0.0.11`). gVisor's own netstack never sees that resolver, so only IP addresses worked. `allowed_hosts` already did, because those names are written into `/etc/hosts`. Re-run `make gvisor` on an existing install.
 - **File list after a restore.** Restoring a snapshot or checkpoint wrote the files and left `GET /files` empty. The list is rebuilt from the workspace afterwards, and the dashboard reloads it after a run, a stream, an async run and a checkpoint restore.
 - **Checkpoint restore over a symlink.** A symlink planted where the archive has a file or directory made the restore report success and skip the entry. The symlink is removed without being followed, and the entry is written inside the workspace.
@@ -911,6 +921,7 @@ and enterprise SSO.
 - OpenAPI spec at `docs/openapi.yaml`
 - Architecture, security, configuration, and secrets documentation in `docs/`
 
+[0.5.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.1
 [0.5.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.0
 [0.2.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.0

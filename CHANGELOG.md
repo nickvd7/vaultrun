@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] — 2026-11-18
+
+**Upgrade notes:**
+
+- Rotate `MASTER_API_KEY`, `AUDIT_HMAC_KEY`, `EVIDENCE_SIGNING_KEY`, `SSO_SESSION_SECRET` and the database password if untrusted users had API keys.
+- Run `make gvisor`, or set `DOCKER_RUNTIME=runc` to keep sandboxes on the host kernel.
+- Remove `DOCKER_GID` from `.env`.
+
 ### Security
 - **The API no longer has the Docker socket.** Access to it is root on the host, so a bug in the API was a bug that could hand over the host. Under Compose a new `docker-guard` service (`vaultrun-api docker-guard`, `internal/dockerguard`) is the only container with the socket. It serves the Docker API to the API and forwards only what running sandboxes needs: containers with VaultRun's label, `no-new-privileges`, seccomp profile and runtime; no privileges, capabilities, host namespaces, devices or ports; bind mounts of a session directory only; exec, logs and file copies only in VaultRun's containers; iptables only on VaultRun's chains in the netpolicy helper. Everything else gets `403` and a log line. The workspace base directory now belongs to root (`0750`, group 65532): the guard creates and removes session directories and runs the XFS quota tool, so the API cannot swap a session directory for a symlink to a host path. The guard has no network, a read-only filesystem and three capabilities. `DOCKER_GID` and `scripts/detect-docker-gid.sh` are gone; the API logs a warning when it talks to Docker directly.
 - **gVisor by default.** Production starts (without `VAULTRUN_INSECURE_DEV`) refuse to run sandboxes on the shared host kernel unless `DOCKER_RUNTIME=runc` is set explicitly. `make gvisor` installs a pinned, checksum-verified gVisor release and registers it with Docker; `make up` sets `DOCKER_RUNTIME=runsc` when Docker has it.
@@ -887,6 +897,7 @@ and enterprise SSO.
 - OpenAPI spec at `docs/openapi.yaml`
 - Architecture, security, configuration, and secrets documentation in `docs/`
 
+[0.5.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.0
 [0.2.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.1
 [0.2.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.2.0
 [0.1.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.1.1

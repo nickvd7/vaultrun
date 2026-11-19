@@ -34,8 +34,18 @@ sudo tar xjf "$TMP/gvisor.tar.bz2" -C /usr/local/bin
 # and to 127.0.0.11, and still drop DNS to every other address.
 # Re-run this script on an existing install; daemon.json only changes here.
 # runsc prints "Overwriting runtime runsc not found: adding" when the
-# runtime is already registered. That line is normal; the flags are updated.
-sudo /usr/local/bin/runsc install -- --network=host
+# runtime is already registered. That line is normal; hide it. Any other
+# output, and a non-zero exit, still show.
+set +e
+install_out=$(sudo /usr/local/bin/runsc install -- --network=host 2>&1)
+install_rc=$?
+set -e
+if [ -n "$install_out" ]; then
+  printf '%s\n' "$install_out" | grep -v 'Overwriting runtime runsc not found: adding' || true
+fi
+if [ "$install_rc" -ne 0 ]; then
+  exit "$install_rc"
+fi
 # Runtimes are reloadable: no restart, running containers keep running.
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet docker 2>/dev/null; then
   sudo systemctl reload docker

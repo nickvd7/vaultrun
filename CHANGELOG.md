@@ -9,6 +9,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.4] — 2026-11-19
+
+**Upgrade notes:**
+
+- Enterprise: rebuild the overlay. A failed OIDC discovery or SAML setup no longer stops the API.
+
+### Fixed
+- **A failed OIDC discovery no longer restart-loops the API (Enterprise).** Discovery used to exit, and Compose started the process again forever. The error is still logged, OIDC stays off, and the rest of the API keeps running. The same applies when SAML metadata or its certificate cannot be loaded. A missing `SSO_SESSION_SECRET`, a bad `SSO_ROLE_MAPPING`, or `SSO_REQUIRE_LICENSE` without a license still refuses to start. Restart after fixing the issuer to turn SSO back on.
+- **`make gvisor` no longer prints `Overwriting runtime runsc not found: adding`.** That line is `runsc` saying the runtime was already registered. Other output, and a failed install, still show.
+- The README says a plain `docker compose up -d` returns before the dashboard is listening. `make up` waits; `--wait` does the same for Compose.
+
+---
+
 ## [0.5.3] — 2026-11-19
 
 **Upgrade notes:**
@@ -953,6 +966,7 @@ and enterprise SSO.
 - OpenAPI spec at `docs/openapi.yaml`
 - Architecture, security, configuration, and secrets documentation in `docs/`
 
+[0.5.4]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.4
 [0.5.3]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.3
 [0.5.2]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.2
 [0.5.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.1

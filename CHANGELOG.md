@@ -9,6 +9,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.3] — 2026-11-19
+
+**Upgrade notes:**
+
+- Rebuild and restart the stack (`make up`). The DNS fix is in the API and in docker-guard; `make gvisor` does not need to be run again if `runsc` already has `--network=host`.
+
+### Fixed
+- **DNS under gVisor still failed after 0.5.2.** The allow for Docker's upstream resolvers was in the API, but it never reached iptables. `hostResolvers` reads `resolv.conf` with `cat` in the netpolicy helper, and docker-guard only permitted `iptables` and `ip6tables`, so the read failed and was ignored. `10.0.0.2` was therefore missing from the rules. The guard now allows `cat` of exactly `/etc/resolv.conf` and `/run/systemd/resolve/resolv.conf`, and a failed read is logged.
+- **Open internet still allowed DNS to any public resolver.** The chain ended in an accept for every other address, so a sandbox could query `8.8.8.8` or `1.1.1.1` on port 53. Port 53 is now dropped except to the allowed resolvers, before that accept. `allowed_hosts` already ended in a drop.
+- **A saved API key looked signed in.** The dashboard rendered before the key was checked, and the rejection only appeared on the next page. A saved key is checked before the dashboard is shown. Sign out always removes the key from this browser, even when the server cannot be reached.
+- **`make up` returned while the dashboard still refused connections.** It now waits until the dashboard port accepts a connection, and the frontend container has a health check.
+- The MCP curl examples omitted `Accept: application/json, text/event-stream`, which the streamable HTTP handler answers with `400`.
+
+---
+
 ## [0.5.2] — 2026-11-18
 
 **Upgrade notes:**
@@ -17,7 +32,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - DNS in a gVisor sandbox needs both halves. 0.5.1's `make gvisor` (`--network=host`) was only the first. This release allows the query Docker forwards to the host resolver. Re-run `make gvisor` if `runsc` was registered without `--network=host`; the API warns at startup when that flag is missing.
 
 ### Fixed
-- **DNS in a gVisor sandbox with open internet.** `make gvisor` makes Docker's resolver at `127.0.0.11` visible, and Docker forwards that query to the host's nameserver. That nameserver is almost always a private address (`10.0.0.2` in the report), and the egress rules dropped `10.0.0.0/8`, so the sandbox got `SERVFAIL`. Port 53 (UDP and TCP) is now allowed to `127.0.0.11`, to the bridge gateway and to those upstream resolvers. DNS to any other address stays blocked. `allowed_hosts` was already fine, because those names go in `/etc/hosts`.
+- **DNS in a gVisor sandbox with open internet.** `make gvisor` makes Docker's resolver at `127.0.0.11` visible, and Docker forwards that query to the host's nameserver. That nameserver is almost always a private address (`10.0.0.2` in the report), and the egress rules dropped `10.0.0.0/8`, so the sandbox got `SERVFAIL`. Port 53 (UDP and TCP) is now allowed to `127.0.0.11`, to the bridge gateway and to those upstream resolvers. `allowed_hosts` was already fine, because those names go in `/etc/hosts`. Two gaps remained, fixed in 0.5.3: docker-guard refused the `cat` that reads the upstream address, so the allow was never installed, and the open-internet accept still let a sandbox query any public resolver on port 53.
 - **Internal identity provider (Enterprise).** The SSRF guard refused `http://` and every private address, including with `VAULTRUN_INSECURE_DEV=true`, and OIDC discovery then exited so the API restart-looped. `SSO_ALLOW_PRIVATE_IDP=true` is an explicit opt-in for the URLs the API fetches (discovery, token, JWKS, SAML metadata). Link-local and cloud-metadata addresses stay refused, redirects stay off, and the body and time limits stay. The startup log warns when the opt-in is on.
 - **`authorization_endpoint` is not fetched (Enterprise).** Discovery required that URL to be a public address. The API never connects to it; the browser does. It now has to be HTTPS, and the public-address check is skipped. The token and JWKS URLs stay fully checked unless the opt-in above is set.
 
@@ -938,6 +953,7 @@ and enterprise SSO.
 - OpenAPI spec at `docs/openapi.yaml`
 - Architecture, security, configuration, and secrets documentation in `docs/`
 
+[0.5.3]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.3
 [0.5.2]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.2
 [0.5.1]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.1
 [0.5.0]: https://github.com/nickvd7/vaultrun/releases/tag/v0.5.0

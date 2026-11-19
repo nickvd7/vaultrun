@@ -11,6 +11,17 @@ function getApiKey(): string {
 // Keep a named export for components that need the raw key (e.g. streaming fetch)
 export function getStoredApiKey(): string { return getApiKey(); }
 
+/** Removes the dashboard's saved API key or SSO marker. Sign-out calls this
+ * even when the server cannot be reached, so a rejected key cannot linger. */
+export function clearStoredSignIn(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("vaultrun_api_key");
+  } catch {
+    // Private mode can throw. The in-memory session is still cleared by the caller.
+  }
+}
+
 /**
  * Stored in place of an API key when the user signed in with single sign-on
  * (VaultRun Enterprise). Requests then carry the HttpOnly session cookie the

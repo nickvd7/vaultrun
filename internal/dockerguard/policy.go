@@ -24,8 +24,17 @@ type Policy struct {
 	// Seccomp is the seccomp option sandboxes carry: the profile JSON,
 	// "default", or "" for none.
 	Seccomp string
-	// Netpolicy names the container the API may run iptables in.
+	// Netpolicy names the container the API may run iptables in, and from
+	// which it may read the two resolver files below.
 	Netpolicy string
+}
+
+// resolvConfPaths are the only files the API may cat inside the netpolicy
+// helper. Docker forwards a sandbox's DNS query to the nameservers in them;
+// the egress rules have to name those addresses or name lookup fails.
+var resolvConfPaths = map[string]bool{
+	"/etc/resolv.conf":                 true,
+	"/run/systemd/resolve/resolv.conf": true,
 }
 
 const (
@@ -197,8 +206,19 @@ func (p *Policy) CheckExec(opts *container.ExecOptions, netpolicy bool) error {
 	if opts.User != "" || len(opts.Env) > 0 || opts.WorkingDir != "" || opts.AttachStdin || opts.Tty {
 		return denied("netpolicy: only plain iptables commands are allowed")
 	}
-	if len(opts.Cmd) == 0 || (opts.Cmd[0] != "iptables" && opts.Cmd[0] != "ip6tables") {
-		return denied("netpolicy: only iptables and ip6tables may run")
+	if len(opts.Cmd) == 0 {
+		return denied("netpolicy: only iptables, ip6tables and reading resolver config are allowed")
+	}
+	if opts.Cmd[0] == "cat" {
+		// Exactly one of the two resolver files, no flags. Anything else
+		// (a shell, another path, extra arguments) stays refused.
+		if len(opts.Cmd) != 2 || !resolvConfPaths[opts.Cmd[1]] {
+			return denied("netpolicy: cat is only allowed for resolver configuration")
+		}
+		return nil
+	}
+	if opts.Cmd[0] != "iptables" && opts.Cmd[0] != "ip6tables" {
+		return denied("netpolicy: only iptables, ip6tables and reading resolver config are allowed")
 	}
 	return CheckIptables(opts.Cmd[1:])
 }

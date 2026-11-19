@@ -10,7 +10,8 @@
 // one the API makes, with the settings the API uses: sandboxes without
 // privileges, capabilities, host namespaces or devices, under the configured
 // runtime and seccomp profile, mounting only a session directory; commands
-// only in VaultRun's own containers; iptables only on VaultRun's own chains.
+// only in VaultRun's own containers; iptables only on VaultRun's own chains;
+// reading only the host resolver files inside the netpolicy helper.
 // Everything else gets 403. The few things that do need privileges (creating
 // and removing workspace directories, XFS quotas) are done by the guard
 // itself, on its own terms, through /vaultrun/* endpoints.

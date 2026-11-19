@@ -200,6 +200,14 @@ func applyEgressPolicy(chain, iface, dnsServer string, allowedIPs []string, open
 				return fmt.Errorf("add private-range drop rule for %s: %w", n, err)
 			}
 		}
+		// The accept below is every other address. Without this drop a
+		// sandbox can query 8.8.8.8 or 1.1.1.1 on port 53 directly. The
+		// allows above already matched the resolvers we do permit.
+		for _, proto := range []string{"udp", "tcp"} {
+			if err := ipt("-A", chain, "-p", proto, "--dport", "53", "-j", "DROP"); err != nil {
+				return fmt.Errorf("add DNS drop rule: %w", err)
+			}
+		}
 		allowedIPs = []string{"0.0.0.0/0"}
 	}
 	for _, ip := range allowedIPs {
@@ -298,26 +306,34 @@ func addDNSAllows(chain string, targets []string) error {
 // skipped (Docker does too) and the systemd-resolved upstream file is used
 // when the stub is the only nameserver.
 func hostResolvers() []string {
-	got := upstreamResolvers(parseResolvNameservers(readResolv("/etc/resolv.conf")))
-	if len(got) == 0 {
-		got = upstreamResolvers(parseResolvNameservers(readResolv("/run/systemd/resolve/resolv.conf")))
+	text, err := readResolv("/etc/resolv.conf")
+	if err != nil {
+		slog.Warn("netpolicy: could not read /etc/resolv.conf; DNS to Docker's upstream resolvers will not be allowed", "err", err)
 	}
-	return got
+	got := upstreamResolvers(parseResolvNameservers(text))
+	if len(got) > 0 {
+		return got
+	}
+	text, err = readResolv("/run/systemd/resolve/resolv.conf")
+	if err != nil {
+		slog.Warn("netpolicy: could not read systemd resolver config; DNS to Docker's upstream resolvers will not be allowed", "err", err)
+	}
+	return upstreamResolvers(parseResolvNameservers(text))
 }
 
-func readResolv(path string) string {
+func readResolv(path string) (string, error) {
 	if c, name := netpolicyHelper(); c != nil && name != "" {
 		out, err := runInHelperOutput(c, name, "cat", []string{path})
 		if err != nil {
-			return ""
+			return "", err
 		}
-		return out
+		return out, nil
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(b)
+	return string(b), nil
 }
 
 func parseResolvNameservers(text string) []string {

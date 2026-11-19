@@ -144,9 +144,13 @@ container network namespace, so the sandbox can see Docker's embedded DNS
 (`127.0.0.11`). gVisor's own netstack never sees that address. Docker then
 forwards the query to the host's resolver, which is usually a private
 address. The egress rules allow UDP and TCP port 53 to `127.0.0.11`, to the
-bridge gateway and to those upstream resolvers, and drop DNS to every other
-address. 0.5.1 only did the `runsc` half; name lookup still failed until the
-egress rules allowed the forwarded query. `allowed_hosts` already worked,
+bridge gateway and to those upstream resolvers, and drop port 53 to every
+other address, including before the rule that accepts the rest of the
+internet. The upstream addresses are read from the host's `resolv.conf`
+through the netpolicy helper; docker-guard allows `cat` of that file and of
+systemd-resolved's file, and nothing else. 0.5.2 allowed the read in the API
+but the guard refused it, so the rule was never installed. `allowed_hosts`
+already worked,
 because those names are written into the container's `/etc/hosts` on the
 host. Re-run `make gvisor` on an install that registered `runsc` without
 `--network=host`. The API checks the runtime at startup and refuses to start
@@ -203,8 +207,9 @@ entirely; hostnames are resolved once at session creation.
 
 Without `allowed_hosts`, a session with `network_enabled: true` gets the same
 kind of network with rules that allow the internet but drop private,
-loopback, link-local (cloud metadata) and CGNAT ranges. In both modes traffic
-to the host itself is dropped, except DNS to the gateway. Set
+loopback, link-local (cloud metadata) and CGNAT ranges, and drop port 53
+except to the gateway, `127.0.0.11` and the host's resolvers. In both modes
+traffic to the host itself is dropped, except DNS to those same addresses. Set
 `SANDBOX_ALLOW_PRIVATE_NETWORKS=true` to let sessions without `allowed_hosts`
 reach private ranges.
 

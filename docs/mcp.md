@@ -236,6 +236,7 @@ working (HTTP `200` + JSON-RPC body as before).
 curl -s -X POST http://localhost:8090/mcp \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | jq '.result.tools | length'
 # → 71 (77 with MCP_FLOWD_ENABLED=true)
@@ -244,6 +245,7 @@ curl -s -X POST http://localhost:8090/mcp \
 curl -s -X POST http://localhost:8090/mcp \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -H "MCP-Protocol-Version: 2026-07-28" \
   -H "Mcp-Method: server/discover" \
   -d '{
@@ -259,6 +261,7 @@ curl -s -X POST http://localhost:8090/mcp \
 curl -s -X POST http://localhost:8090/mcp \
   -H "Authorization: Bearer your-secret-token" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -H "MCP-Protocol-Version: 2026-07-28" \
   -H "Mcp-Method: tools/call" \
   -H "Mcp-Name: list_sessions" \

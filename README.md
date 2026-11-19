@@ -53,12 +53,12 @@ cd vaultrun
 cp .env.example .env        # set MASTER_API_KEY (openssl rand -hex 32); make up generates the Postgres, Redis and audit secrets
 make gvisor                 # optional, Linux: install gVisor; make up then runs sandboxes under it
                             # production host: make harden (gVisor + hard workspace quota on XFS)
-make up                     # starts API + Postgres + Redis + dashboard
+make up                     # starts API + Postgres + Redis + dashboard, and waits until both answer
 make bootstrap-key          # prints your first vr_... API key
 curl http://localhost:8080/health
 ```
 
-Open `http://localhost:3000` for the dashboard. The API is secure by default; the quickstart `.env` sets `VAULTRUN_INSECURE_DEV=true` for local use, which you remove in production ([production hardening](docs/production-hardening.md)). VaultRun runs on one host: back it up with `make backup` ([operations](docs/operations.md)).
+Open `http://localhost:3000` for the dashboard. `make up` waits until that port accepts connections. A plain `docker compose up -d` does not, so the dashboard can refuse connections for a few seconds; add `--wait`, or use `make up`. The API is secure by default; the quickstart `.env` sets `VAULTRUN_INSECURE_DEV=true` for local use, which you remove in production ([production hardening](docs/production-hardening.md)). VaultRun runs on one host: back it up with `make backup` ([operations](docs/operations.md)).
 
 On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermod -aG docker $USER`, then **log out and in again** (or run `newgrp docker`) before `make up`; the new group is not picked up by shells that are already open. Running `make up` through `sudo` works too, but then `.env` and the workspace files belong to root.
 

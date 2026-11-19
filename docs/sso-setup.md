@@ -115,8 +115,9 @@ SSO_SESSION_SECRET=<output of `openssl rand -hex 32`>
 ```
 
 Restart the server. On startup VaultRun performs OIDC discovery against
-`OIDC_ISSUER_URL`; check the logs for `oidc discover` errors if it fails to
-start.
+`OIDC_ISSUER_URL`. If that fails, the log says so, OIDC stays off and the
+API keeps running; fix the issuer and restart to turn it on. A missing
+`SSO_SESSION_SECRET` or a bad `SSO_ROLE_MAPPING` still refuses to start.
 
 ### 3. Test the login flow
 
@@ -359,7 +360,7 @@ header too.
 
 | Symptom | Likely cause |
 |---|---|
-| Server refuses to start with `oidc discover` / `saml: load IdP metadata` errors | Issuer URL unreachable, metadata URL/file invalid, or the discovery document is missing `jwks_uri` |
+| Log says OIDC discovery failed and the sign-in button is missing | The issuer was unreachable or refused at startup. OIDC stays off and the API keeps running; fix the issuer and restart. A metadata or certificate error does the same for SAML |
 | Server refuses to start: "session secret too short" | `SSO_SESSION_SECRET` is shorter than 32 bytes — regenerate with `openssl rand -hex 32` |
 | `redirect_uri_mismatch` / `invalid_redirect_uri` from the IdP | `OIDC_REDIRECT_URL` doesn't *exactly* match what's registered with the IdP (scheme, host, trailing slash) |
 | `400 invalid state` on OIDC callback | The `oidc_state`/`oidc_verifier`/`oidc_nonce` cookies expired (>10 min between login and callback), were blocked by a browser privacy setting / proxy that strips cookies, or an older build set them `SameSite=Strict` (a browser does not send Strict cookies on the return from an external IdP; they are Lax) |

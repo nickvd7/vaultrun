@@ -245,12 +245,21 @@ func TestCheckExec(t *testing.T) {
 	if err := p.CheckExec(ok, true); err != nil {
 		t.Fatal(err)
 	}
+	for _, path := range []string{"/etc/resolv.conf", "/run/systemd/resolve/resolv.conf"} {
+		if err := p.CheckExec(&container.ExecOptions{Cmd: []string{"cat", path}}, true); err != nil {
+			t.Errorf("cat %s refused: %v", path, err)
+		}
+	}
 	for name, o := range map[string]*container.ExecOptions{
 		"shell":      {Cmd: []string{"sh", "-c", "iptables -F"}},
 		"env":        {Cmd: ok.Cmd, Env: []string{"XTABLES_LIBDIR=/tmp"}},
 		"user":       {Cmd: ok.Cmd, User: "0"},
 		"privileged": {Cmd: ok.Cmd, Privileged: true},
 		"bad rule":   {Cmd: []string{"iptables", "-F", "INPUT"}},
+		"cat shadow": {Cmd: []string{"cat", "/etc/shadow"}},
+		"cat flags":  {Cmd: []string{"cat", "-A", "/etc/resolv.conf"}},
+		"cat two":    {Cmd: []string{"cat", "/etc/resolv.conf", "/etc/shadow"}},
+		"cat none":   {Cmd: []string{"cat"}},
 	} {
 		if err := p.CheckExec(o, true); err == nil {
 			t.Errorf("netpolicy %s allowed", name)

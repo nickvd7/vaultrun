@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { Shield, Eye, EyeOff, LogIn } from "lucide-react";
-import { UNAUTHORIZED_EVENT, SSO_SESSION, authHeaders, sso } from "@/lib/api";
+import { UNAUTHORIZED_EVENT, SSO_SESSION, authHeaders, clearStoredSignIn, sso } from "@/lib/api";
 
 interface ApiKeyContextValue {
   apiKey: string;
@@ -45,10 +45,17 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const [roleReady, setRoleReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [providers, setProviders] = useState<{ oidc: boolean; saml: boolean } | null>(null);
+  // True only after the API has accepted the saved key. Until then the
+  // dashboard is not shown, so a key from an older install cannot look signed in.
+  const [keyAccepted, setKeyAccepted] = useState(false);
+  // Bumped on sign-out so an in-flight check cannot write the key back.
+  const generation = useRef(0);
 
   const rejectKey = useCallback(() => {
+    generation.current += 1;
     const wasSSO = localStorage.getItem(STORAGE_KEY) === SSO_SESSION;
-    localStorage.removeItem(STORAGE_KEY);
+    clearStoredSignIn();
+    setKeyAccepted(false);
     setNotice(
       wasSSO
         ? "Your single sign-on session ended (expired, signed out or revoked). Sign in again."
@@ -66,20 +73,20 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   // whether the server offers single sign-on and whether the browser already
   // holds a session (it does right after the IdP redirected back).
   useEffect(() => {
+    const gen = generation.current;
     const stored = localStorage.getItem(STORAGE_KEY) || "";
     let cancelled = false;
     (async () => {
       const offered = await sso.providers();
-      if (cancelled) return;
+      if (cancelled || generation.current !== gen) return;
       setProviders(offered);
       if (!stored && offered && (await sso.hasSession())) {
-        if (cancelled) return;
+        if (cancelled || generation.current !== gen) return;
         localStorage.setItem(STORAGE_KEY, SSO_SESSION);
         setApiKeyState(SSO_SESSION);
         return;
       }
-      if (!cancelled && stored) return;
-      if (!cancelled) setApiKeyState("");
+      if (!cancelled && generation.current === gen && !stored) setApiKeyState("");
     })();
     if (stored) setApiKeyState(stored);
     return () => {
@@ -97,17 +104,20 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
       setKeyName(null);
       return;
     }
+    const gen = generation.current;
     let cancelled = false;
     const headers = authHeaders(apiKey);
+    setKeyAccepted(false);
     (async () => {
       try {
         const who = await fetch("/api/v1/whoami", { headers });
-        if (cancelled) return;
+        if (cancelled || generation.current !== gen) return;
         if (who.ok) {
           const body = (await who.json()) as { master?: boolean; actor?: string };
-          if (cancelled) return;
+          if (cancelled || generation.current !== gen) return;
           setIsMaster(Boolean(body.master));
           setKeyName(body.actor ?? null);
+          setKeyAccepted(true);
           return;
         }
         if (who.status === 401) {
@@ -116,16 +126,25 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
         }
         if (who.status !== 404) {
           setIsMaster(null);
+          setKeyAccepted(true);
           return;
         }
         const probe = await fetch("/api/v1/keys?limit=1", { headers });
-        if (cancelled) return;
+        if (cancelled || generation.current !== gen) return;
+        if (probe.status === 401) {
+          rejectKey();
+          return;
+        }
         setIsMaster(probe.ok ? true : probe.status === 403 ? false : null);
         setKeyName(null);
+        setKeyAccepted(true);
       } catch {
-        if (!cancelled) setIsMaster(null);
+        if (cancelled || generation.current !== gen) return;
+        setIsMaster(null);
+        setNotice("Cannot reach the API to check the saved sign-in. It is still stored; reload to try again.");
+        setApiKeyState("");
       } finally {
-        if (!cancelled) setRoleReady(true);
+        if (!cancelled && generation.current === gen) setRoleReady(true);
       }
     })();
     return () => {
@@ -136,13 +155,17 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
   const setApiKey = useCallback((key: string) => {
     localStorage.setItem(STORAGE_KEY, key);
     setNotice("");
+    setKeyAccepted(false);
     setApiKeyState(key);
   }, []);
 
   const clearApiKey = useCallback(() => {
+    generation.current += 1;
     const wasSSO = localStorage.getItem(STORAGE_KEY) === SSO_SESSION;
-    localStorage.removeItem(STORAGE_KEY);
+    clearStoredSignIn();
     setNotice("");
+    setKeyAccepted(false);
+    setRoleReady(true);
     setApiKeyState("");
     if (wasSSO) {
       sso.logout().catch(() =>
@@ -185,6 +208,15 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
 
   // Still reading from localStorage
   if (apiKey === null) return null;
+
+  // Saved key not confirmed yet. Do not render the dashboard as signed in.
+  if (apiKey && !keyAccepted) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0a0a0f]">
+        <p className="text-sm text-slate-300">Checking your saved sign-in…</p>
+      </div>
+    );
+  }
 
   // No key set — show connect screen
   if (!apiKey) {

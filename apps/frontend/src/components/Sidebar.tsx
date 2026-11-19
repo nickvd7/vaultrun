@@ -99,6 +99,7 @@ export function Sidebar({ mobileOpen = false, onNavigate }: SidebarProps) {
           </div>
         )}
         <button
+          type="button"
           onClick={() => {
             clearApiKey();
             onNavigate?.();

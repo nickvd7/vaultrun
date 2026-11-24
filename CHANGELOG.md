@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **`make restore` no longer restores into Postgres while it is still initialising.** On an empty data directory the image starts a temporary server and then shuts it down. The first successful readiness check could fall in that window, and the restore failed with "the database system is shutting down".
+
 ### Added
 - **Vault AppRole.** When `VAULT_TOKEN` is empty and `VAULT_ROLE_ID` plus `VAULT_SECRET_ID` are set, the API logs in, caches the client token, and refreshes it before the lease ends. A set token still skips the login. Optional `VAULT_NAMESPACE`, `VAULT_FIELD`, and `VAULT_VERSION` select the namespace, the KV field, and a KV v2 version.
 - **AWS instance role.** With `AWS_ACCESS_KEY_ID` unset, Secrets Manager uses IMDSv2. Environment keys still win. The region falls back to instance metadata. Only the API process may call the metadata address; sandbox egress does not.

@@ -33,10 +33,30 @@ WS=${WS:-/var/lib/vaultrun/workspaces}
 
 echo "Starting the database..."
 "${COMPOSE[@]}" up -d postgres
-for _ in $(seq 1 60); do
-  "${COMPOSE[@]}" exec -T postgres pg_isready -U vaultrun -d vaultrun >/dev/null 2>&1 && break
+# A new data directory makes the Postgres image start a temporary server, shut
+# it down, and only then start the real one. The first pg_isready can land in
+# that window, and pg_restore then fails with "the database system is shutting
+# down". Wait until this container start has logged that the real server is
+# accepting connections.
+cid=$("${COMPOSE[@]}" ps -q postgres)
+started=$(docker inspect -f '{{.State.StartedAt}}' "$cid")
+ready=0
+for _ in $(seq 1 90); do
+  if docker logs --since "$started" "$cid" 2>&1 | awk '
+    /The files belonging to this database system will be owned by/ { fresh=1; ready=0 }
+    /PostgreSQL init process complete/ { inited=1; ready=0 }
+    /database system is ready to accept connections/ { ready=1 }
+    END {
+      if (fresh) exit (inited && ready) ? 0 : 1
+      exit ready ? 0 : 1
+    }
+  ' && "${COMPOSE[@]}" exec -T postgres pg_isready -U vaultrun -d vaultrun >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
   sleep 1
 done
+[ "$ready" = 1 ] || die "postgres did not become ready"
 echo "Restoring the database..."
 "${COMPOSE[@]}" exec -T postgres pg_restore -U vaultrun -d vaultrun --clean --if-exists \
   --no-owner --no-privileges --no-comments --single-transaction < "$B/postgres.dump"

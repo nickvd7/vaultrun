@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -67,17 +66,16 @@ func isUnreserved(c byte) bool {
 }
 
 // signAWS signs an HTTP request using AWS Signature Version 4.
-// Credentials are read from standard AWS env vars:
-//
-//	AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+// Credentials come from the environment when set, otherwise from the
+// instance role through IMDSv2.
 func signAWS(req *http.Request, region, service string, body []byte) error {
-	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
-	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
-	sessionToken := os.Getenv("AWS_SESSION_TOKEN")
-
-	if accessKey == "" || secretKey == "" {
-		return fmt.Errorf("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set")
+	creds, err := awsCredentials(req.Context())
+	if err != nil {
+		return err
 	}
+	accessKey := creds.AccessKeyID
+	secretKey := creds.SecretAccessKey
+	sessionToken := creds.SessionToken
 
 	now := time.Now().UTC()
 	dateStamp := now.Format("20060102")

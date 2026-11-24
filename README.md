@@ -17,7 +17,7 @@
 - **Yours.** Self-hosted. No SaaS, no telemetry. Code, data and prompts stay in your network.
 - **Provable.** Every session exports as a [signed evidence pack](docs/features/evidence-packs.md) (commands, outputs, files, audit log) with an independent RFC 3161 timestamp. Anyone with the public key verifies it offline; change one byte and it fails.
 
-Agents connect through the REST API, the Python and Go SDKs, or the [MCP server](#mcp-server-71-tools) (Claude, OpenAI, local models).
+Agents connect through the REST API, the Python and Go SDKs, or the [MCP server](#mcp-server-72-tools) (Claude, OpenAI, local models).
 
 ## See it in 60 seconds
 
@@ -68,7 +68,7 @@ On Linux, your user must be allowed to run `docker` without `sudo`: `sudo usermo
 |---|---|
 | **API server** (`cmd/api`) | Gin-based REST API — sessions, runs, files, audit |
 | **CLI** (`cmd/cli`) | `vaultrun` command-line tool |
-| **MCP server** (`sdk/mcp`) | 71-tool MCP server (stdio + HTTP, +6 Flowd when enabled) |
+| **MCP server** (`sdk/mcp`) | 72-tool MCP server (stdio + HTTP, +6 Flowd when enabled) |
 | **CI runner** (`cmd/ci-runner`) | GitHub webhook → sandbox CI + Slack/Teams notify |
 | **Local gateway** (`cmd/local`) | OpenAI-compat action plane for Ollama / LM Studio / vLLM → VaultRun tools ([docs](docs/local-gateway.md) · [recipes](examples/local-gateway/)) |
 | **Dashboard** (`apps/frontend`) | Next.js management UI |
@@ -157,7 +157,7 @@ vaultrun/
 └── examples/         Usage examples
 ```
 
-## MCP Server (71 tools)
+## MCP Server (72 tools)
 
 The MCP server exposes every VaultRun capability as a Model Context Protocol tool, including browser automation, memory, verification, task control, and optional Flowd integration (+6 tools).
 Add it to Claude Desktop, Claude Code, or any MCP-compatible platform in seconds.

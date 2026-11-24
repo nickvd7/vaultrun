@@ -98,6 +98,16 @@ type Session struct {
 	TimeoutSeconds int               `json:"timeout_seconds"`
 	Labels         map[string]string `json:"labels,omitempty"`
 	CreatedAt      time.Time         `json:"created_at"`
+	AllowedHosts   []string          `json:"allowed_hosts,omitempty"`
+}
+
+type whoamiResponse struct {
+	Actor   string `json:"actor"`
+	Master  bool   `json:"master"`
+	Secrets struct {
+		Unrestricted bool     `json:"unrestricted"`
+		Allowed      []string `json:"allowed"`
+	} `json:"secrets"`
 }
 
 type Run struct {
@@ -140,6 +150,14 @@ func (c *vaultRunClient) CreateSession(ctx context.Context, req CreateSessionReq
 		return nil, err
 	}
 	return &s, nil
+}
+
+func (c *vaultRunClient) Whoami(ctx context.Context) (*whoamiResponse, error) {
+	var w whoamiResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/whoami", nil, &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
 }
 
 func (c *vaultRunClient) GetSession(ctx context.Context, id string) (*Session, error) {

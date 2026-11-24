@@ -122,6 +122,25 @@ func (c *Client) CreateSession(ctx context.Context, opts CreateSessionOptions) (
 	return &s, nil
 }
 
+// Whoami is what the current API key may do. Secrets lists names, never values.
+type Whoami struct {
+	Actor   string `json:"actor"`
+	Master  bool   `json:"master"`
+	Secrets struct {
+		Unrestricted bool     `json:"unrestricted"`
+		Allowed      []string `json:"allowed"`
+	} `json:"secrets"`
+}
+
+// Whoami reports the caller's identity and secret allowlist.
+func (c *Client) Whoami(ctx context.Context) (*Whoami, error) {
+	var w Whoami
+	if err := c.do(ctx, "GET", "/api/v1/whoami", nil, &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
 // GetSession retrieves a session by ID.
 func (c *Client) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	var s Session

@@ -1,6 +1,6 @@
 # Secrets Broker
 
-VaultRun supports three secrets backends, selected via `SECRETS_PROVIDER`.
+VaultRun supports four secrets backends, selected via `SECRETS_PROVIDER`.
 Secrets are resolved at run-time and injected as environment variables into
 container exec calls. The secret values themselves are not stored in the
 database or logged, and their exact values are redacted from command output
@@ -95,12 +95,19 @@ the API container's environment; keep the file out of version control.
 ```
 SECRETS_PROVIDER=vault
 VAULT_ADDR=https://vault.internal:8200
-VAULT_TOKEN=s.xxxxxx          # or use VAULT_ROLE_ID + VAULT_SECRET_ID for AppRole
+VAULT_TOKEN=                  # static token; leave empty to use AppRole below
+VAULT_ROLE_ID=
+VAULT_SECRET_ID=
+VAULT_NAMESPACE=              # optional X-Vault-Namespace on login and reads
 VAULT_MOUNT=secret            # KV v2 mount (default: secret)
 VAULT_PATH=vaultrun           # path prefix under the mount
+VAULT_FIELD=                  # optional; default is "value", then the secret name
+VAULT_VERSION=                # optional KV v2 version (digits only)
 ```
 
 Secrets are read from `{VAULT_ADDR}/v1/{VAULT_MOUNT}/data/{VAULT_PATH}/{name}`.
+`VAULT_VERSION` is sent as `?version=`. `VAULT_FIELD` selects one field and
+does not fall back to another name.
 
 Example — store the secret:
 ```
@@ -118,10 +125,11 @@ Request it with `"secrets": ["DB_PASSWORD"]`.
      token_policies=vaultrun-policy \
      token_ttl=1h token_max_ttl=4h
    ```
-   Then set `VAULT_ROLE_ID` / `VAULT_SECRET_ID` (the provider reads these
-   automatically when `VAULT_TOKEN` is empty — _future work: add AppRole
-   login to the provider_; for now, exchange credentials for a token in your
-   init container or startup script).
+   Then set `VAULT_ROLE_ID` and `VAULT_SECRET_ID` and leave `VAULT_TOKEN`
+   empty. The API logs in with AppRole, caches the client token, and
+   refreshes it before the lease ends. A set `VAULT_TOKEN` is used as-is
+   and skips the login. The role id, secret id, and client token are not
+   logged.
 
 2. **Namespace isolation:** use a dedicated KV mount per environment
    (`secret-prod/`, `secret-staging/`).
@@ -158,11 +166,13 @@ Uses SigV4-signed HTTP — **no AWS SDK dependency**.
 
 1. **IAM role instead of access keys:** attach an IAM role with
    `secretsmanager:GetSecretValue` on `arn:aws:secretsmanager:REGION:ACCOUNT:secret:vaultrun/*`
-   to the EC2 instance / ECS task / EKS service account. Leave
-   `AWS_ACCESS_KEY_ID` unset — the provider will use the instance metadata
-   credentials automatically (_note: the current provider reads
-   `AWS_ACCESS_KEY_ID` from env; for IMDSv2 support, use an init container
-   that exports credentials into env vars_).
+   to the EC2 instance or ECS task. Leave `AWS_ACCESS_KEY_ID` and
+   `AWS_SECRET_ACCESS_KEY` unset. The API process then uses IMDSv2: it
+   requests a metadata token and reads the role credentials. Environment
+   keys win when they are set. If `AWS_REGION` and `AWS_DEFAULT_REGION`
+   are also unset, the region comes from instance metadata. Sandbox
+   egress still cannot reach the metadata address; only the API process
+   talks to it.
 
 2. **KMS encryption:** enable automatic KMS rotation on the secrets.
 
@@ -171,11 +181,52 @@ Uses SigV4-signed HTTP — **no AWS SDK dependency**.
 
 ---
 
+## Provider: `azure` (Azure Key Vault)
+
+```
+SECRETS_PROVIDER=azure
+AZURE_KEYVAULT_URL=https://myvault.vault.azure.net
+# Service principal. Leave the secret empty to use the instance managed identity.
+AZURE_TENANT_ID=
+AZURE_CLIENT_ID=
+AZURE_CLIENT_SECRET=
+```
+
+Secret name `"DB_PASSWORD"` is the latest version of that secret in the
+vault (`GET /secrets/DB_PASSWORD?api-version=7.4`). The value is not stored.
+
+A service principal uses client credentials against Entra, scope
+`https://vault.azure.net/.default`. Without `AZURE_CLIENT_SECRET`, the API
+process asks the instance metadata service for a token
+(`resource=https://vault.azure.net`). `AZURE_CLIENT_ID` then selects a
+user-assigned identity. The same rule as AWS applies: the sandbox cannot
+reach the metadata address.
+
+---
+
+## What a key may request
+
+`GET /api/v1/whoami` returns the caller's secret allowlist by name, never
+the values, and never whether a name exists in the backend:
+
+```json
+{"actor":"ci","master":false,"secrets":{"unrestricted":false,"allowed":["DB_PASSWORD"]}}
+```
+
+`unrestricted` is true for the master key and for a key whose allowlist
+was left unset. An empty `allowed` list means the key may not inject any
+secret. The MCP tool `whoami` prints the same information. A session's
+`allowed_hosts` (the destinations that session may reach) is on the
+session, and `get_session` includes it.
+
+---
+
 ## Rotating secrets
 
 No restart is required — the provider fetches secrets on every run request.
-Rotation in the backend (Vault lease renewal, AWS secret version rotation)
-is transparent to VaultRun.
+Rotation in the backend (Vault lease renewal, a new AWS or Azure secret
+version) is transparent to VaultRun. The AppRole client token is refreshed
+on its own; that is separate from the secret value.
 
 ---
 

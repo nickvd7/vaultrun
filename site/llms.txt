@@ -1,6 +1,6 @@
 # VaultRun
 
-> Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 71-tool MCP server (stdio + HTTP), HMAC-signed audit trail. Verify checkpoints + sealed evidence. Local-first: workflows stay assets on your infra. No SaaS, no telemetry.
+> Self-hosted secure runtime for AI agents. Isolated Docker sandboxes, 72-tool MCP server (stdio + HTTP), HMAC-signed audit trail. Verify checkpoints + sealed evidence. Local-first: workflows stay assets on your infra. No SaaS, no telemetry.
 
 VaultRun lets AI agents safely execute code, query databases, call cloud APIs, and manage files inside isolated Docker containers on your own infrastructure. Successful tool sequences can be saved as missions (verify checkpoints + sealed evidence export, sandbox memory, swarm graph, cost attribution on replay). Apache 2.0 open core, including signed and timestamped evidence packs. VaultRun Team adds a compliance report built from those packs; VaultRun Enterprise adds SSO (OIDC + SAML) and support.
 
@@ -19,7 +19,7 @@ VaultRun lets AI agents safely execute code, query databases, call cloud APIs, a
 
 - [Architecture](https://github.com/nickvd7/vaultrun/blob/main/docs/architecture.md): System design and components
 - [Security model](https://github.com/nickvd7/vaultrun/blob/main/docs/security.md): Isolation, auth, audit, hardening
-- [MCP server](https://github.com/nickvd7/vaultrun/blob/main/docs/mcp.md): 71 tools (53 core + 8 browser + 4 memory + 3 verify + 3 task control), stdio and HTTP transports
+- [MCP server](https://github.com/nickvd7/vaultrun/blob/main/docs/mcp.md): 72 tools (54 core + 8 browser + 4 memory + 3 verify + 3 task control), stdio and HTTP transports
 - [Configuration](https://github.com/nickvd7/vaultrun/blob/main/docs/configuration.md): Environment variables and options
 - [SSO setup](https://github.com/nickvd7/vaultrun/blob/main/docs/sso-setup.md): OIDC and SAML (Enterprise)
 - [CI runner](https://github.com/nickvd7/vaultrun/blob/main/docs/ci-runner.md): GitHub webhook → sandboxed CI

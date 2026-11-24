@@ -883,3 +883,20 @@ def test_create_key_sends_allowed_secrets(client: Client) -> None:
     )
     client.create_key("restricted", allowed_secrets=[])
     assert _json.loads(rsps.calls[0].request.body)["allowed_secrets"] == []
+
+
+@rsps.activate
+def test_whoami_returns_secret_names_only(client: Client) -> None:
+    rsps.add(
+        rsps.GET,
+        f"{BASE_URL}/api/v1/whoami",
+        json={
+            "actor": "ci",
+            "master": False,
+            "secrets": {"unrestricted": False, "allowed": ["DB_PASSWORD"]},
+        },
+        status=200,
+    )
+    info = client.whoami()
+    assert info["secrets"]["allowed"] == ["DB_PASSWORD"]
+    assert "value" not in info["secrets"]

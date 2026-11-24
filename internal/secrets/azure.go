@@ -76,7 +76,7 @@ func (p *AzureProvider) GetSecret(ctx context.Context, name string) (string, err
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("azure: secret %q not found", name)
+		return "", &NotFoundError{Name: name}
 	}
 	if resp.StatusCode != http.StatusOK {
 		slog.Debug("azure: key vault error", "secret", name, "status", resp.StatusCode, "body_len", len(body))

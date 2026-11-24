@@ -24,8 +24,16 @@ func TestEnvProviderMissing(t *testing.T) {
 	os.Unsetenv("VAULTRUN_SECRET_MISSING_KEY_XYZ")
 	p := &secrets.EnvProvider{}
 	_, err := p.GetSecret(context.Background(), "MISSING_KEY_XYZ")
-	if err == nil {
-		t.Fatal("expected error for missing secret")
+	if !secrets.IsNotFound(err) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestInvalidSecretName(t *testing.T) {
+	p := &secrets.EnvProvider{}
+	_, err := p.GetSecret(context.Background(), "../etc")
+	if !secrets.IsInvalidName(err) || secrets.IsNotFound(err) {
+		t.Fatalf("expected invalid name, got %v", err)
 	}
 }
 

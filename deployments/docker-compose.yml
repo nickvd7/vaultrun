@@ -197,6 +197,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # start.sh binds Next on 0.0.0.0. Without that, Docker's HOSTNAME makes
+    # Next listen only on the container IP and this check of 127.0.0.1 stays failed.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
       interval: 2s

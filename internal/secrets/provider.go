@@ -14,6 +14,7 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,15 +44,15 @@ type Provider interface {
 // and hyphen characters are allowed; max 128 characters.
 func validateSecretName(name string) error {
 	if name == "" {
-		return fmt.Errorf("secret name must not be empty")
+		return &nameError{fmt.Errorf("secret name must not be empty")}
 	}
 	if len(name) > 128 {
-		return fmt.Errorf("secret name exceeds maximum length of 128 characters")
+		return &nameError{fmt.Errorf("secret name exceeds maximum length of 128 characters")}
 	}
 	for _, r := range name {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 			(r >= '0' && r <= '9') || r == '_' || r == '-') {
-			return fmt.Errorf("secret name %q contains disallowed character %q (only [a-zA-Z0-9_-] permitted)", name, r)
+			return &nameError{fmt.Errorf("secret name %q contains disallowed character %q (only [a-zA-Z0-9_-] permitted)", name, r)}
 		}
 	}
 	return nil
@@ -71,7 +72,7 @@ func (p *EnvProvider) GetSecret(_ context.Context, name string) (string, error) 
 	key := "VAULTRUN_SECRET_" + strings.ToUpper(name)
 	v := os.Getenv(key)
 	if v == "" {
-		return "", fmt.Errorf("secret %q not found (env var %s is unset)", name, key)
+		return "", &NotFoundError{Name: name}
 	}
 	return v, nil
 }
@@ -181,7 +182,7 @@ func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, err
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("vault: secret %q not found", name)
+		return "", &NotFoundError{Name: name}
 	}
 	if resp.StatusCode != http.StatusOK {
 		// Log full details server-side only — the raw Vault error body must not
@@ -305,8 +306,8 @@ func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error
 	if resp.StatusCode != http.StatusOK {
 		// Log full details at debug level only — don't expose the secret ID or
 		// AWS error body in the returned error (it may reach the API response).
-		slog.Debug("aws: secrets manager error", "secret_id", secretID, "status", resp.StatusCode, "body", string(respBody))
-		return "", fmt.Errorf("aws: get secret failed (status %d)", resp.StatusCode)
+		slog.Debug("aws: secrets manager error", "secret_id", secretID, "status", resp.StatusCode, "body_len", len(respBody))
+		return "", awsSecretError(name, resp.StatusCode, respBody)
 	}
 
 	var result struct {
@@ -319,6 +320,13 @@ func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error
 		return "", fmt.Errorf("aws: secret %q has no SecretString (binary secrets not supported)", secretID)
 	}
 	return result.SecretString, nil
+}
+
+func awsSecretError(name string, status int, body []byte) error {
+	if bytes.Contains(body, []byte("ResourceNotFoundException")) {
+		return &NotFoundError{Name: name}
+	}
+	return fmt.Errorf("aws: get secret failed (status %d)", status)
 }
 
 // New returns the configured Provider based on the SECRETS_PROVIDER env var.

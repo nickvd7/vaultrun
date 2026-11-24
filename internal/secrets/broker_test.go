@@ -256,6 +256,17 @@ func TestAzureManagedIdentity(t *testing.T) {
 	}
 }
 
+func TestAWSNotFoundIsDistinctFromOtherFailures(t *testing.T) {
+	err := awsSecretError("DB", 400, []byte(`{"__type":"ResourceNotFoundException"}`))
+	if !IsNotFound(err) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+	err = awsSecretError("DB", 403, []byte(`{"__type":"AccessDeniedException"}`))
+	if err == nil || IsNotFound(err) || IsInvalidName(err) {
+		t.Fatalf("expected a backend error, got %v", err)
+	}
+}
+
 func resetIMDSCache() {
 	imdsCredMu.Lock()
 	imdsCached = awsCreds{}

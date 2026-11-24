@@ -3,7 +3,7 @@
 Model Context Protocol server that exposes all VaultRun capabilities as tools.
 Works with Claude Desktop, Claude Code, OpenAI, OpenRouter, and any MCP-compatible platform.
 
-**71 tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
+**72 tools · stdio + HTTP transports · AWS · databases · GitHub CI · Flowd (opt-in)**
 
 ## Build
 
@@ -117,15 +117,16 @@ VAULTRUN_API_KEY=vr_yourkeyhere \
 
 ## All tools
 
-Core: **53 tools**. With `MCP_FLOWD_ENABLED=true`: **59 tools**.
+Core: **72 tools**. With `MCP_FLOWD_ENABLED=true`: **78 tools**.
 
-### Sandbox (13 tools)
+### Sandbox (14 tools)
 
 | Tool | Required params | Description |
 |---|---|---|
+| `whoami` | — | Secret names this API key may inject, and whether it is the master key. No values. |
 | `create_session` | — | Create an isolated Docker sandbox. Returns `session_id`. |
 | `list_sessions` | — | List all active sessions. |
-| `get_session` | `session_id` | Get session details (status, image, resource limits). |
+| `get_session` | `session_id` | Get session details, including `allowed_hosts`. |
 | `delete_session` | `session_id` | Delete session, container, and workspace. |
 | `run_command` | `session_id`, `command` | Execute a command inside the sandbox. |
 | `upload_file` | `session_id`, `path`, `content` | Write a file into the sandbox workspace. |

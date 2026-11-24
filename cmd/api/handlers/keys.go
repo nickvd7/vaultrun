@@ -221,12 +221,35 @@ func (kh *KeyHandler) purge(c *gin.Context, id uuid.UUID) {
 
 // GET /api/v1/whoami
 // Tells a caller what its own key may do, so a client can adapt its UI without
-// probing endpoints that answer 403.
+// probing endpoints that answer 403. secrets lists names this key may inject
+// into a run. It never includes values, and it does not reveal whether a
+// name exists in the backend. A nil allowlist (and the master key) is
+// unrestricted. A session's allowed_hosts are on the session itself.
 func (kh *KeyHandler) Whoami(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
+	actor := middleware.Actor(c)
+	body := gin.H{
 		"actor":  middleware.ActorName(c),
-		"master": middleware.Actor(c) == "master",
-	})
+		"master": actor == "master",
+	}
+	secrets := gin.H{"unrestricted": true}
+	if actor != "master" {
+		id, err := uuid.Parse(actor)
+		if err != nil {
+			c.JSON(http.StatusOK, body)
+			return
+		}
+		allowed, err := dbpkg.GetAPIKeyAllowedSecrets(c.Request.Context(), kh.h.db, id)
+		if err != nil {
+			slog.Error("whoami: allowed secrets", "err", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read key"})
+			return
+		}
+		if allowed != nil {
+			secrets = gin.H{"unrestricted": false, "allowed": allowed}
+		}
+	}
+	body["secrets"] = secrets
+	c.JSON(http.StatusOK, body)
 }
 
 // GET /api/v1/keys

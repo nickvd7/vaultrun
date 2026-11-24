@@ -338,7 +338,7 @@ rows: 48,211   revenue: €1.92M   top region: NL
   }
   if (toolTotal) {
     // Core always-on count for headline; opt-in groups listed separately
-    toolTotal.textContent = "71";
+    toolTotal.textContent = "72";
   }
 
   // ---------- contact form (FormSubmit + progressive fields) ----------

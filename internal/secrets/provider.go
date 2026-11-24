@@ -10,6 +10,7 @@
 //   - "env"   — read VAULTRUN_SECRET_<NAME> from the server process environment (default)
 //   - "vault" — HashiCorp Vault KV v2 via HTTP API
 //   - "aws"   — AWS Secrets Manager via HTTP API (SigV4 signed)
+//   - "azure" — Azure Key Vault via HTTP API
 package secrets
 
 import (
@@ -79,10 +80,14 @@ func (p *EnvProvider) GetSecret(_ context.Context, name string) (string, error) 
 //
 // Configuration env vars:
 //
-//	VAULT_ADDR   — e.g. "https://vault.example.com"
-//	VAULT_TOKEN  — Vault token (service account / app role)
-//	VAULT_MOUNT  — KV v2 mount path (default: "secret")
-//	VAULT_PATH   — base path inside the mount (default: "vaultrun")
+//	VAULT_ADDR      — e.g. "https://vault.example.com"
+//	VAULT_TOKEN     — Vault token. When empty, VAULT_ROLE_ID and
+//	                  VAULT_SECRET_ID log in with AppRole.
+//	VAULT_MOUNT     — KV v2 mount path (default: "secret")
+//	VAULT_PATH      — base path inside the mount (default: "vaultrun")
+//	VAULT_NAMESPACE — optional X-Vault-Namespace header
+//	VAULT_FIELD     — field inside the secret (default: "value", then the secret name)
+//	VAULT_VERSION   — optional KV v2 version (digits only)
 //
 // The secret "DB_PASSWORD" is fetched from:
 //
@@ -90,27 +95,59 @@ func (p *EnvProvider) GetSecret(_ context.Context, name string) (string, error) 
 //
 // and the value at data.data.value is returned.
 type VaultProvider struct {
-	addr   string
-	token  string
-	mount  string
-	path   string
-	client *http.Client
+	addr      string
+	mount     string
+	path      string
+	namespace string
+	field     string
+	version   string
+	token     func(context.Context) (string, error)
+	client    *http.Client
 }
 
-func NewVaultProvider(addr, token, mount, path string) *VaultProvider {
-	if mount == "" {
-		mount = "secret"
+// VaultConfig is how the API process reaches a KV v2 mount.
+type VaultConfig struct {
+	Addr, Token, Mount, Path, Namespace, Field, Version string
+	RoleID, SecretID                                    string
+}
+
+func NewVaultProvider(cfg VaultConfig) (*VaultProvider, error) {
+	if cfg.Mount == "" {
+		cfg.Mount = "secret"
 	}
-	if path == "" {
-		path = "vaultrun"
+	if cfg.Path == "" {
+		cfg.Path = "vaultrun"
 	}
-	return &VaultProvider{
-		addr:   strings.TrimRight(addr, "/"),
-		token:  token,
-		mount:  mount,
-		path:   path,
-		client: httputil.NoRedirectClient(10 * time.Second),
+	if cfg.Version != "" {
+		for _, r := range cfg.Version {
+			if r < '0' || r > '9' {
+				return nil, fmt.Errorf("vault: VAULT_VERSION must be digits")
+			}
+		}
 	}
+	p := &VaultProvider{
+		addr:      strings.TrimRight(cfg.Addr, "/"),
+		mount:     cfg.Mount,
+		path:      cfg.Path,
+		namespace: cfg.Namespace,
+		field:     cfg.Field,
+		version:   cfg.Version,
+		client:    httputil.NoRedirectClient(10 * time.Second),
+	}
+	switch {
+	case cfg.Token != "":
+		p.token = staticVaultToken(cfg.Token)
+	case cfg.RoleID != "" && cfg.SecretID != "":
+		src := newAppRoleToken(p.addr, cfg.Namespace, cfg.RoleID, cfg.SecretID)
+		p.token = func(ctx context.Context) (string, error) {
+			return src.token(ctx, p.client)
+		}
+	default:
+		p.token = func(context.Context) (string, error) {
+			return "", fmt.Errorf("vault: set VAULT_TOKEN, or VAULT_ROLE_ID and VAULT_SECRET_ID")
+		}
+	}
+	return p, nil
 }
 
 func (p *VaultProvider) Name() string { return "vault" }
@@ -119,12 +156,22 @@ func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, err
 	if err := validateSecretName(name); err != nil {
 		return "", err
 	}
+	token, err := p.token(ctx)
+	if err != nil {
+		return "", err
+	}
 	url := fmt.Sprintf("%s/v1/%s/data/%s/%s", p.addr, p.mount, p.path, neturl.PathEscape(name))
+	if p.version != "" {
+		url += "?version=" + p.version
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("vault: build request: %w", err)
 	}
-	req.Header.Set("X-Vault-Token", p.token)
+	req.Header.Set("X-Vault-Token", token)
+	if p.namespace != "" {
+		req.Header.Set("X-Vault-Namespace", p.namespace)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -152,13 +199,17 @@ func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, err
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", fmt.Errorf("vault: decode response: %w", err)
 	}
-	v, ok := result.Data.Data["value"]
-	if !ok {
+	field := p.field
+	if field == "" {
+		field = "value"
+	}
+	v, ok := result.Data.Data[field]
+	if !ok && p.field == "" {
 		// Fall back to the key name itself as the field name inside the KV secret.
 		v, ok = result.Data.Data[name]
-		if !ok {
-			return "", fmt.Errorf("vault: secret %q exists but has no 'value' or %q field", name, name)
-		}
+	}
+	if !ok {
+		return "", fmt.Errorf("vault: secret %q exists but has no %q field", name, field)
 	}
 	return v, nil
 }
@@ -167,9 +218,9 @@ func (p *VaultProvider) GetSecret(ctx context.Context, name string) (string, err
 //
 // Configuration env vars (standard AWS SDK env vars are honoured):
 //
-//	AWS_REGION             — AWS region (required if not in instance metadata)
-//	AWS_ACCESS_KEY_ID      — AWS access key (or use instance IAM role)
-//	AWS_SECRET_ACCESS_KEY  — AWS secret key (or use instance IAM role)
+//	AWS_REGION             — AWS region (instance metadata is used when unset)
+//	AWS_ACCESS_KEY_ID      — AWS access key (or the instance IAM role via IMDSv2)
+//	AWS_SECRET_ACCESS_KEY  — AWS secret key (or the instance IAM role via IMDSv2)
 //	AWS_SESSION_TOKEN      — optional session token
 //	SECRETS_AWS_PREFIX     — optional prefix prepended to secret names (default: "vaultrun/")
 //
@@ -203,14 +254,33 @@ func NewAWSProvider(region, prefix string) *AWSProvider {
 
 func (p *AWSProvider) Name() string { return "aws" }
 
+// regionName uses the configured region, then the standard env vars, then
+// the instance identity document from IMDSv2.
+func (p *AWSProvider) regionName(ctx context.Context) (string, error) {
+	if p.region != "" {
+		return p.region, nil
+	}
+	if r := os.Getenv("AWS_REGION"); r != "" {
+		return r, nil
+	}
+	if r := os.Getenv("AWS_DEFAULT_REGION"); r != "" {
+		return r, nil
+	}
+	return imdsRegion(ctx)
+}
+
 func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error) {
 	if err := validateSecretName(name); err != nil {
 		return "", err
 	}
 	// Use the AWS Secrets Manager endpoint directly.
 	// We implement a minimal SigV4 signing flow so we don't need the full AWS SDK.
+	region, err := p.regionName(ctx)
+	if err != nil {
+		return "", err
+	}
 	secretID := p.prefix + name
-	endpoint := fmt.Sprintf("https://secretsmanager.%s.amazonaws.com", p.region)
+	endpoint := fmt.Sprintf("https://secretsmanager.%s.amazonaws.com", region)
 
 	body := fmt.Sprintf(`{"SecretId":%q}`, secretID)
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(body))
@@ -221,7 +291,7 @@ func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error
 	req.Header.Set("X-Amz-Target", "secretsmanager.GetSecretValue")
 
 	// Sign using AWS SigV4
-	if err := signAWS(req, p.region, "secretsmanager", []byte(body)); err != nil {
+	if err := signAWS(req, region, "secretsmanager", []byte(body)); err != nil {
 		return "", fmt.Errorf("aws: sign request: %w", err)
 	}
 
@@ -252,24 +322,52 @@ func (p *AWSProvider) GetSecret(ctx context.Context, name string) (string, error
 }
 
 // New returns the configured Provider based on the SECRETS_PROVIDER env var.
-//   - "vault" → VaultProvider (requires VAULT_ADDR + VAULT_TOKEN)
-//   - "aws"   → AWSProvider (requires AWS_REGION + credentials)
+//   - "vault" → VaultProvider (VAULT_ADDR plus a token or AppRole)
+//   - "aws"   → AWSProvider (access keys, or the instance role via IMDSv2)
+//   - "azure" → AzureProvider (Key Vault; service principal or managed identity)
 //   - ""/"env"→ EnvProvider (default; no external dependencies)
 func New() Provider {
 	switch strings.ToLower(os.Getenv("SECRETS_PROVIDER")) {
 	case "vault":
-		return NewVaultProvider(
-			os.Getenv("VAULT_ADDR"),
-			os.Getenv("VAULT_TOKEN"),
-			os.Getenv("VAULT_MOUNT"),
-			os.Getenv("VAULT_PATH"),
-		)
+		p, err := NewVaultProvider(VaultConfig{
+			Addr:      os.Getenv("VAULT_ADDR"),
+			Token:     os.Getenv("VAULT_TOKEN"),
+			Mount:     os.Getenv("VAULT_MOUNT"),
+			Path:      os.Getenv("VAULT_PATH"),
+			Namespace: os.Getenv("VAULT_NAMESPACE"),
+			Field:     os.Getenv("VAULT_FIELD"),
+			Version:   os.Getenv("VAULT_VERSION"),
+			RoleID:    os.Getenv("VAULT_ROLE_ID"),
+			SecretID:  os.Getenv("VAULT_SECRET_ID"),
+		})
+		if err != nil {
+			return errorProvider{name: "vault", err: err}
+		}
+		return p
 	case "aws":
 		return NewAWSProvider(
 			os.Getenv("AWS_REGION"),
 			os.Getenv("SECRETS_AWS_PREFIX"),
 		)
+	case "azure":
+		return NewAzureProvider(AzureConfig{
+			VaultURL:     os.Getenv("AZURE_KEYVAULT_URL"),
+			TenantID:     os.Getenv("AZURE_TENANT_ID"),
+			ClientID:     os.Getenv("AZURE_CLIENT_ID"),
+			ClientSecret: os.Getenv("AZURE_CLIENT_SECRET"),
+		})
 	default:
 		return &EnvProvider{}
 	}
 }
+
+// errorProvider keeps the API up when the broker is misconfigured. The
+// failure is reported when a run asks for a secret, not at process start.
+type errorProvider struct {
+	name string
+	err  error
+}
+
+func (p errorProvider) Name() string { return p.name }
+
+func (p errorProvider) GetSecret(context.Context, string) (string, error) { return "", p.err }

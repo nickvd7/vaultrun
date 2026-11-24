@@ -54,8 +54,13 @@ func toolDefinitions() []mcpTool {
 			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
 		},
 		{
+			Name:        "whoami",
+			Description: "Show what this API key may do: whether it is the master key, and which secret names it may inject into a run. Does not return secret values. A session's allowed destinations are on get_session as allowed_hosts.",
+			InputSchema: inputSchema{Type: "object", Properties: map[string]schemaProp{}},
+		},
+		{
 			Name:        "get_session",
-			Description: "Get details about a specific session including its status.",
+			Description: "Get details about a specific session including its status and allowed_hosts (the destinations its network may reach). Empty allowed_hosts with network on means the open internet, with private networks still blocked.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]schemaProp{
@@ -746,6 +751,8 @@ func (s *server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 		return s.toolCreateSession(ctx, args)
 	case "list_sessions":
 		return s.toolListSessions(ctx)
+	case "whoami":
+		return s.toolWhoami(ctx)
 	case "get_session":
 		return s.toolGetSession(ctx, args)
 	case "delete_session":
@@ -979,7 +986,34 @@ func (s *server) toolGetSession(ctx context.Context, args map[string]string) (mc
 	text := fmt.Sprintf("session_id: %s\nimage: %s\nstatus: %s\ncpu_limit: %.1f\nmemory_limit_mb: %d\ncreated: %s",
 		session.ID, session.Image, session.Status,
 		session.CPULimit, session.MemoryLimitMB, session.CreatedAt.Format("2006-01-02 15:04:05"))
+	switch {
+	case len(session.AllowedHosts) > 0:
+		text += "\nallowed_hosts: " + strings.Join(session.AllowedHosts, ", ")
+	case session.NetworkEnabled:
+		text += "\nallowed_hosts: (open internet; private networks blocked)"
+	default:
+		text += "\nallowed_hosts: (no network)"
+	}
 	return textResult(text), nil
+}
+
+func (s *server) toolWhoami(ctx context.Context) (mcpToolResult, error) {
+	info, err := s.client.Whoami(ctx)
+	if err != nil {
+		return mcpToolResult{}, err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "actor: %s\nmaster: %t\n", info.Actor, info.Master)
+	switch {
+	case info.Secrets.Unrestricted:
+		b.WriteString("secrets: unrestricted (any name this server can resolve)\n")
+	case len(info.Secrets.Allowed) == 0:
+		b.WriteString("secrets: none (this key may not inject secrets)\n")
+	default:
+		b.WriteString("secrets: " + strings.Join(info.Secrets.Allowed, ", ") + "\n")
+	}
+	b.WriteString("Secret values are not listed. A session's allowed_hosts are on get_session.")
+	return textResult(b.String()), nil
 }
 
 func (s *server) toolDeleteSession(ctx context.Context, args map[string]string) (mcpToolResult, error) {

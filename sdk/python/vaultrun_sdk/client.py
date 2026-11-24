@@ -815,6 +815,15 @@ class Client:
         computed = mac.hexdigest()
         return hmac.compare_digest(computed, expected)
 
+    def whoami(self) -> dict:
+        """What this API key may do.
+
+        ``secrets.unrestricted`` is true for the master key and for a key
+        with no allowlist. ``secrets.allowed`` is the list of secret names
+        the key may inject. Values are never returned.
+        """
+        return self._get("/api/v1/whoami")
+
     # --- Internal helpers ---
 
     def _get(self, path: str) -> dict:

@@ -239,7 +239,7 @@ curl -s -X POST http://localhost:8090/mcp \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
   | jq '.result.tools | length'
-# → 71 (77 with MCP_FLOWD_ENABLED=true)
+# → 72 (78 with MCP_FLOWD_ENABLED=true)
 
 # Modern server/discover
 curl -s -X POST http://localhost:8090/mcp \

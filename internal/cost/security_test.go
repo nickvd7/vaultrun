@@ -54,6 +54,21 @@ func TestVerifyMetricAcceptsUntampered(t *testing.T) {
 	}
 }
 
+func TestVerifyMetricAcceptsPreviousKey(t *testing.T) {
+	old := &Tracker{signingKey: []byte("old-key")}
+	m := signed(old, validMetric())
+
+	cur := &Tracker{signingKey: []byte("new-key")}
+	cur.SetPreviousKeys([]string{"old-key"})
+	if !cur.VerifyMetric(m) {
+		t.Fatal("metric signed with a previous key must still verify")
+	}
+	m.Signature = cur.sign(m)
+	if old.VerifyMetric(m) {
+		t.Fatal("metric signed with the current key must not verify under only the previous key")
+	}
+}
+
 // TestChecksumCoversUsageCounters is the regression test for the original
 // scheme, which hashed only SessionID, the period and three of the four cost
 // figures. The raw usage counters and the rate card were unprotected, so the

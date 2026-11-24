@@ -7,6 +7,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Production profile.** `make prod-env` writes `.env.production` and an API certificate. `make prod-up` starts a second stack (ports 18080, 13000, 18443, 15432, 16379, its own workspace) so a quickstart on 3000 and 8080 keeps running. The API starts with the production checks on: `policy/production.rego`, TLS, a metrics token, a Redis password, an image allowlist and `MAX_WORKSPACE_MB`. `DOCKER_RUNTIME` is `runsc` when gVisor is installed, otherwise `runc`. Caddy serves the dashboard over HTTPS for SSO cookies. Postgres in this profile stays on the compose network without TLS. `deployments/vaultrun-backup.timer` is a nightly `make backup`. gVisor and an XFS workspace disk are still host steps (`make gvisor`, `make xfs-workspace`).
+- **Audit key rotation.** `AUDIT_HMAC_PREVIOUS_KEYS` (comma-separated) still verifies audit entries, checkpoints, cost metrics and the chain head signed with a previous key. New entries are signed with `AUDIT_HMAC_KEY`. On startup the chain head is re-signed with the current key when it matches a previous one.
+
 ---
 
 ## [0.5.5] — 2026-11-24

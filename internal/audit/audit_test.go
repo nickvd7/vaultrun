@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	dbpkg "github.com/nickvd7/vaultrun/internal/db"
 	"github.com/nickvd7/vaultrun/internal/models"
 )
 
@@ -153,5 +154,40 @@ func TestChainedSignatureCoversSequenceAndPredecessor(t *testing.T) {
 		if l.VerifyAuditSig(got) {
 			t.Fatalf("changing the %s must fail verification", name)
 		}
+	}
+}
+
+func TestPreviousKeyVerifiesOldEntryAndHead(t *testing.T) {
+	old := New(nil, "old-key")
+	e := newEntry()
+	e.Sig = old.sign(e)
+
+	cur := New(nil, "new-key")
+	cur.SetPreviousKeys([]string{" old-key ", "new-key", ""})
+	if !cur.VerifyAuditSig(roundTrip(t, e)) {
+		t.Fatal("an entry signed with a previous key must still verify")
+	}
+	fresh := newEntry()
+	fresh.Sig = cur.sign(fresh)
+	if old.VerifyAuditSig(roundTrip(t, fresh)) {
+		t.Fatal("a new signature must not verify with only the previous key")
+	}
+	if !cur.VerifyAuditSig(roundTrip(t, fresh)) {
+		t.Fatal("a new signature must verify with the current key")
+	}
+
+	started := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
+	head := &dbpkg.AuditChainHead{Seq: 4, LastSig: e.Sig, PrunedThrough: 0, StartedAt: started}
+	head.MAC = old.headMAC(head)
+	if !cur.headValid(head) {
+		t.Fatal("chain head signed with a previous key must still verify")
+	}
+	head.MAC = cur.headMAC(head)
+	if !cur.headValid(head) {
+		t.Fatal("chain head signed with the current key must verify")
+	}
+	head.MAC = "not-a-mac"
+	if cur.headValid(head) {
+		t.Fatal("a head that matches neither key must not verify")
 	}
 }

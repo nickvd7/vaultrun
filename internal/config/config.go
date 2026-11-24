@@ -187,14 +187,15 @@ type MultiRegionConfig struct {
 
 // ObservabilityConfig groups logging and metrics knobs.
 type ObservabilityConfig struct {
-	LogLevel                 string // LOG_LEVEL: debug|info|warn|error (default: info)
-	StopContainersOnShutdown bool   // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
-	WebhookSecret            string // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
-	AuditLogRetentionDays    int    // AUDIT_LOG_RETENTION_DAYS: delete audit logs older than N days (0 = keep forever)
-	AuditHMACKey             string // AUDIT_HMAC_KEY: HMAC-SHA256 key for audit log integrity signatures; empty = disabled
-	EvidenceSigningKey       string // EVIDENCE_SIGNING_KEY: Ed25519 key for session evidence packs (64 hex seed or PEM file path); empty = export disabled
-	EvidenceTSAURL           string // EVIDENCE_TSA_URL: RFC 3161 time stamping authority every pack is stamped by; empty = no timestamps
-	EvidenceTSACAFile        string // EVIDENCE_TSA_CA_FILE: PEM roots the TSA must chain to; empty = system roots
+	LogLevel                 string   // LOG_LEVEL: debug|info|warn|error (default: info)
+	StopContainersOnShutdown bool     // STOP_CONTAINERS_ON_SHUTDOWN: gracefully stop all running containers on SIGTERM
+	WebhookSecret            string   // WEBHOOK_SECRET: HMAC-SHA256 key for signing async-run callback payloads
+	AuditLogRetentionDays    int      // AUDIT_LOG_RETENTION_DAYS: delete audit logs older than N days (0 = keep forever)
+	AuditHMACKey             string   // AUDIT_HMAC_KEY: HMAC-SHA256 key for audit log integrity signatures; empty = disabled
+	AuditHMACPreviousKeys    []string // AUDIT_HMAC_PREVIOUS_KEYS: comma-separated keys that still verify old signatures; not used to sign
+	EvidenceSigningKey       string   // EVIDENCE_SIGNING_KEY: Ed25519 key for session evidence packs (64 hex seed or PEM file path); empty = export disabled
+	EvidenceTSAURL           string   // EVIDENCE_TSA_URL: RFC 3161 time stamping authority every pack is stamped by; empty = no timestamps
+	EvidenceTSACAFile        string   // EVIDENCE_TSA_CA_FILE: PEM roots the TSA must chain to; empty = system roots
 }
 
 // Limits caps applied to session creation requests.
@@ -361,6 +362,7 @@ func Load() (*Config, error) {
 			WebhookSecret:            getEnv("WEBHOOK_SECRET", ""),
 			AuditLogRetentionDays:    func() int { n, _ := strconv.Atoi(getEnv("AUDIT_LOG_RETENTION_DAYS", "90")); return n }(),
 			AuditHMACKey:             getEnv("AUDIT_HMAC_KEY", ""),
+			AuditHMACPreviousKeys:    splitAndTrim(getEnv("AUDIT_HMAC_PREVIOUS_KEYS", "")),
 			EvidenceSigningKey:       getEnv("EVIDENCE_SIGNING_KEY", ""),
 			EvidenceTSAURL:           getEnv("EVIDENCE_TSA_URL", ""),
 			EvidenceTSACAFile:        getEnv("EVIDENCE_TSA_CA_FILE", ""),

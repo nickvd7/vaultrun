@@ -15,7 +15,9 @@ services:
     # (SECRETS_PROVIDER, VAULT_*, AWS_*, VAULTRUN_SECRET_*, SSO, ...) are not
     # silently ignored. Entries in `environment:` take precedence over .env.
     env_file:
-      - ../.env
+      # Path is relative to this file. make prod-up sets VAULTRUN_ENV_FILE
+      # so the API reads .env.production instead of the quickstart .env.
+      - ${VAULTRUN_ENV_FILE:-../.env}
     environment:
       - PORT=8080
       - DATABASE_URL=postgres://vaultrun:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/vaultrun?sslmode=disable
@@ -73,7 +75,7 @@ services:
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
       - DOCKER_RUNTIME=${DOCKER_RUNTIME:-}
       - COSIGN_PUBLIC_KEY=${COSIGN_PUBLIC_KEY:-}
-      - NETPOLICY_CONTAINER=vaultrun-netpolicy
+      - NETPOLICY_CONTAINER=${NETPOLICY_CONTAINER:-vaultrun-netpolicy}
       # Database TLS (set to require or verify-full in production)
       - DB_SSL_MODE=${DB_SSL_MODE:-}
       - DB_SSL_ROOT_CERT=${DB_SSL_ROOT_CERT:-}
@@ -86,6 +88,10 @@ services:
       - docker_guard:/run/vaultrun-docker
       - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - acme_cache:/data/acme-cache
+      # Present for a production policy and TLS certificate. The quickstart
+      # leaves OPA_POLICY_FILE and TLS_CERT_FILE empty, so these files are unused.
+      - ../policy/production.rego:/etc/vaultrun/policy.rego:ro
+      - ../deployments/prod:/etc/vaultrun/tls:ro
     depends_on:
       workspace-init:
         condition: service_completed_successfully
@@ -99,7 +105,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || curl -fsSk https://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -131,7 +137,7 @@ services:
       - WORKSPACE_HOST_DIR=${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
       - DOCKER_RUNTIME=${DOCKER_RUNTIME:-}
       - DOCKER_SECCOMP_PROFILE=${DOCKER_SECCOMP_PROFILE:-}
-      - NETPOLICY_CONTAINER=vaultrun-netpolicy
+      - NETPOLICY_CONTAINER=${NETPOLICY_CONTAINER:-vaultrun-netpolicy}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}:${WORKSPACE_HOST_DIR:-/var/lib/vaultrun/workspaces}
@@ -171,7 +177,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.netpolicy
-    container_name: vaultrun-netpolicy
+    container_name: ${NETPOLICY_CONTAINER:-vaultrun-netpolicy}
     network_mode: host
     cap_drop:
       - ALL

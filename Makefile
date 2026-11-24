@@ -34,14 +34,32 @@ run-api: build-api
 	$(BINARY_API)
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
+# ENV_FILE is .env for the quickstart. make prod-up uses .env.production.
+ENV_FILE ?= .env
+COMPOSE_EXTRA ?=
+
 up:
-	@if [ ! -f .env ]; then echo "Error: .env not found. Run: cp .env.example .env" >&2; exit 1; fi
-	@./scripts/ensure-audit-key.sh .env
-	@./scripts/ensure-secrets.sh .env
-	@./scripts/ensure-runtime.sh .env
-	@./scripts/check-env.sh .env
-	@docker compose -f deployments/docker-compose.yml --env-file .env up -d --build; rc=$$?; \
-	  if [ $$rc -eq 0 ]; then ./scripts/wait-healthy.sh .env 90 || exit 1; else ./scripts/wait-healthy.sh .env 15 compose-failed || true; fi; exit $$rc
+	@if [ ! -f $(ENV_FILE) ]; then echo "Error: $(ENV_FILE) not found. Run: cp .env.example .env" >&2; exit 1; fi
+	@./scripts/ensure-audit-key.sh $(ENV_FILE)
+	@./scripts/ensure-secrets.sh $(ENV_FILE)
+	@./scripts/ensure-runtime.sh $(ENV_FILE)
+	@./scripts/check-env.sh $(ENV_FILE)
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" docker compose -f deployments/docker-compose.yml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA),) --env-file $(ENV_FILE) up -d --build; rc=$$?; \
+	  if [ $$rc -eq 0 ]; then COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/wait-healthy.sh $(ENV_FILE) 90 || exit 1; else COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/wait-healthy.sh $(ENV_FILE) 15 compose-failed || true; fi; exit $$rc
+
+# Production profile: its own ports, project and workspace, so it can run
+# beside a quickstart on 3000/8080. Does not install gVisor or format a disk.
+prod-env:
+	@./scripts/prod-env.sh
+
+prod-up: prod-env
+	@$(MAKE) up ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
+
+prod-down:
+	@$(MAKE) down ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
+
+prod-logs:
+	@$(MAKE) logs ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
 
 # Local development only: opt out of the secure-by-default startup checks.
 dev-env:
@@ -52,26 +70,26 @@ dev-env:
 	else echo "VAULTRUN_INSECURE_DEV=true" >> .env && echo "Added VAULTRUN_INSECURE_DEV=true to .env (local development only)"; fi
 
 down:
-	@./scripts/down.sh .env
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/down.sh $(ENV_FILE)
 
 # Also removes sandbox containers, networks and egress rules: sessions and their files are lost.
 down-all:
-	@./scripts/down.sh --all .env
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/down.sh --all $(ENV_FILE)
 
 purge:
-	@./scripts/down.sh --purge .env
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/down.sh --purge $(ENV_FILE)
 
 gvisor:
 	@./scripts/install-gvisor.sh
 
 # Database, snapshots, artifacts and .env, to BACKUP_DIR (default backups/).
 backup:
-	@./scripts/backup.sh .env
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/backup.sh $(ENV_FILE)
 
 # make restore BACKUP=backups/<time>: with VaultRun stopped, on this or a new host.
 restore:
 	@if [ -z "$(BACKUP)" ]; then echo "Usage: make restore BACKUP=backups/<time>" >&2; exit 1; fi
-	@./scripts/restore.sh "$(BACKUP)" .env
+	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/restore.sh "$(BACKUP)" $(ENV_FILE)
 
 # Hard per-session workspace limit: workspaces on XFS with project quotas.
 # XFS_DEVICE=/dev/sdX formats that disk; otherwise an image file of XFS_SIZE (50G).
@@ -84,10 +102,10 @@ harden: gvisor xfs-workspace
 	@echo "Host hardened. Run make up to (re)start VaultRun with gVisor and the workspace quota."
 
 logs:
-	docker compose -f deployments/docker-compose.yml --env-file .env logs -f api
+	COMPOSE_EXTRA="$(COMPOSE_EXTRA)" docker compose -f deployments/docker-compose.yml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA),) --env-file $(ENV_FILE) logs -f api
 
 ps:
-	docker compose -f deployments/docker-compose.yml --env-file .env ps
+	docker compose -f deployments/docker-compose.yml $(if $(COMPOSE_EXTRA),-f $(COMPOSE_EXTRA),) --env-file $(ENV_FILE) ps
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
@@ -160,6 +178,9 @@ help:
 	@echo "  make build-local     Build OpenAI-compat local inference gateway"
 	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
+	@echo "  make prod-env        Write .env.production (checks on, own ports, not the quickstart)"
+	@echo "  make prod-up         Start that profile beside a stack already on ports 3000 and 8080"
+	@echo "  make prod-down       Stop the production profile"
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
 	@echo "  make down            Stop the stack; sandboxes and their files keep running"
 	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"

@@ -184,7 +184,7 @@ These are known and unaddressed. They are recorded here rather than in a "future
 
 **File synchronisation is last-write-wins.** Concurrent edits by two agents silently discard one side's changes. `file_versions` records what happened but nothing acts on it.
 
-**Signing keys are not rotatable.** Checkpoints and cost metrics are signed with `AUDIT_HMAC_KEY`. Changing it invalidates every existing signature, since no key ID is stored alongside them.
+**Audit HMAC rotation.** Checkpoints, cost metrics and the audit log are signed with `AUDIT_HMAC_KEY`. Set `AUDIT_HMAC_PREVIOUS_KEYS` to the old key before replacing it: those signatures still verify, and the chain head is re-signed with the current key on startup. No key id is stored on each row. Evidence packs use `EVIDENCE_SIGNING_KEY`; keep the old public key to verify packs signed before a rotation.
 
 ## Round two — cross-feature and edge-case testing
 

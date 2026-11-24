@@ -1,0 +1,7 @@
+# Local production profile. The certificate is Caddy's internal one, so a
+# browser warns once. Point a real certificate at this listener on a host
+# that other people reach, or set ACME_DOMAIN on the API and publish that.
+:443 {
+	tls internal
+	reverse_proxy frontend:3000
+}

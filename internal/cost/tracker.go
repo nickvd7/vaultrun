@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,20 @@ var ErrInvalidBudget = errors.New("invalid budget")
 type Tracker struct {
 	db         *sqlx.DB
 	signingKey []byte
+	previous   [][]byte
+}
+
+// SetPreviousKeys adds keys that still verify metrics signed before a rotation.
+// New metrics are signed with the current key only.
+func (t *Tracker) SetPreviousKeys(keys []string) {
+	t.previous = nil
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || k == string(t.signingKey) {
+			continue
+		}
+		t.previous = append(t.previous, []byte(k))
+	}
 }
 
 // New creates a new cost Tracker
@@ -588,7 +603,8 @@ func (t *Tracker) sign(m *CostMetric) string {
 // its contents. Returns false when signing is not configured so that an
 // unkeyed deployment cannot treat every metric as authentic.
 func (t *Tracker) VerifyMetric(m *CostMetric) bool {
-	if len(t.signingKey) == 0 || m.Signature == "" || m.Checksum == "" {
+	keys := t.verifyKeys()
+	if len(keys) == 0 || m.Signature == "" || m.Checksum == "" {
 		return false
 	}
 
@@ -600,10 +616,20 @@ func (t *Tracker) VerifyMetric(m *CostMetric) bool {
 	if err != nil {
 		return false
 	}
-	want, err := hex.DecodeString(t.sign(m))
-	if err != nil {
-		return false
+	for _, key := range keys {
+		h := hmac.New(sha256.New, key)
+		h.Write([]byte(m.Checksum))
+		if hmac.Equal(got, h.Sum(nil)) {
+			return true
+		}
 	}
+	return false
+}
 
-	return hmac.Equal(got, want)
+func (t *Tracker) verifyKeys() [][]byte {
+	var keys [][]byte
+	if len(t.signingKey) > 0 {
+		keys = append(keys, t.signingKey)
+	}
+	return append(keys, t.previous...)
 }

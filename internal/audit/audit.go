@@ -48,8 +48,9 @@ const chainLockKey int64 = 0x76617574 // "vaut"
 // older copy of the head can restore it after truncating the tail; shipping
 // the log to a store they cannot write (the SIEM export) covers that.
 type Logger struct {
-	db      *sqlx.DB
-	hmacKey []byte
+	db       *sqlx.DB
+	hmacKey  []byte
+	previous [][]byte // AUDIT_HMAC_PREVIOUS_KEYS: verify only, never used to sign
 
 	mu            sync.Mutex
 	verifiedSince *time.Time
@@ -176,14 +177,24 @@ func (l *Logger) logChained(ctx context.Context, entry *models.AuditLog) error {
 }
 
 func (l *Logger) headMAC(h *dbpkg.AuditChainHead) string {
-	m := hmac.New(sha256.New, l.hmacKey)
+	return l.headMACWith(l.hmacKey, h)
+}
+
+func (l *Logger) headMACWith(key []byte, h *dbpkg.AuditChainHead) string {
+	m := hmac.New(sha256.New, key)
 	fmt.Fprintf(m, "audit-chain-head\x00%d\x00%s\x00%d\x00%s",
 		h.Seq, h.LastSig, h.PrunedThrough, h.StartedAt.UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano))
 	return hex.EncodeToString(m.Sum(nil))
 }
 
 func (l *Logger) headValid(h *dbpkg.AuditChainHead) bool {
-	return hmac.Equal([]byte(h.MAC), []byte(l.headMAC(h)))
+	mac := []byte(h.MAC)
+	for _, key := range l.verifyKeys() {
+		if hmac.Equal(mac, []byte(l.headMACWith(key, h))) {
+			return true
+		}
+	}
+	return false
 }
 
 // sign computes HMAC-SHA256 over the immutable fields of an audit log entry.
@@ -192,10 +203,14 @@ func (l *Logger) headValid(h *dbpkg.AuditChainHead) bool {
 // run_id, (for chained entries) seq and prev_sig, metadata JSON. Fields are separated by null bytes to prevent
 // boundary-confusion attacks.
 func (l *Logger) sign(entry *models.AuditLog) string {
-	if len(l.hmacKey) == 0 {
+	return l.signWith(l.hmacKey, entry)
+}
+
+func (l *Logger) signWith(key []byte, entry *models.AuditLog) string {
+	if len(key) == 0 {
 		return ""
 	}
-	h := hmac.New(sha256.New, l.hmacKey)
+	h := hmac.New(sha256.New, key)
 	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00",
 		entry.ID.String(),
 		entry.Timestamp.UTC().Format(time.RFC3339Nano),
@@ -239,16 +254,45 @@ func uuidStr(u *uuid.UUID) string {
 	return u.String()
 }
 
+// SetPreviousKeys adds keys that still verify old entries, checkpoints, cost
+// metrics and the chain head. New entries are signed with the current key
+// only. The current key is skipped if it also appears in the list.
+func (l *Logger) SetPreviousKeys(keys []string) {
+	l.previous = nil
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || k == string(l.hmacKey) {
+			continue
+		}
+		l.previous = append(l.previous, []byte(k))
+	}
+}
+
+func (l *Logger) verifyKeys() [][]byte {
+	var keys [][]byte
+	if len(l.hmacKey) > 0 {
+		keys = append(keys, l.hmacKey)
+	}
+	return append(keys, l.previous...)
+}
+
 // Enabled reports whether entries are being signed (AUDIT_HMAC_KEY is set).
 func (l *Logger) Enabled() bool { return len(l.hmacKey) > 0 }
 
 // VerifyAuditSig re-computes the HMAC for entry and returns true when it
-// matches the stored Sig. Returns false when signing is not configured.
+// matches the stored Sig under the current key or a previous one. Returns
+// false when no key is configured.
 func (l *Logger) VerifyAuditSig(entry *models.AuditLog) bool {
-	if len(l.hmacKey) == 0 || entry.Sig == "" {
+	if entry.Sig == "" || len(l.verifyKeys()) == 0 {
 		return false
 	}
-	return hmac.Equal([]byte(trimSigPrefix(entry.Sig)), []byte(trimSigPrefix(l.sign(entry))))
+	got := []byte(trimSigPrefix(entry.Sig))
+	for _, key := range l.verifyKeys() {
+		if hmac.Equal(got, []byte(trimSigPrefix(l.signWith(key, entry)))) {
+			return true
+		}
+	}
+	return false
 }
 
 func trimSigPrefix(s string) string {

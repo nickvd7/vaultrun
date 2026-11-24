@@ -44,6 +44,16 @@ The backup contains every secret of the installation, so **encrypt it and keep i
   rm -rf /var/backups/vaultrun/*
 ```
 
+The same schedule as a systemd timer (the production profile's env file):
+
+```bash
+sudo cp deployments/vaultrun-backup.service deployments/vaultrun-backup.timer /etc/systemd/system/
+# Edit WorkingDirectory in the service if the checkout is not /opt/vaultrun.
+sudo systemctl enable --now vaultrun-backup.timer
+```
+
+`make backup ENV_FILE=.env.production` is what the timer runs. The quickstart stays `make backup`.
+
 **Test a restore** after you set this up, and then every quarter. A backup you have not restored is a hope, not a backup.
 
 ## Restore

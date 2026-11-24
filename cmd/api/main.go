@@ -258,6 +258,13 @@ func main() {
 	_ = os.Remove(probeFile)
 
 	al := audit.New(db, cfg.Observability.AuditHMACKey)
+	al.SetPreviousKeys(cfg.Observability.AuditHMACPreviousKeys)
+	if err := al.AdoptRotatedHead(context.Background()); err != nil {
+		slog.Error("audit: could not re-sign the chain head after a key rotation", "err", err)
+	}
+	if n := len(cfg.Observability.AuditHMACPreviousKeys); n > 0 {
+		slog.Info("audit signatures also verify with previous keys", "count", n)
+	}
 
 	if key := cfg.Observability.EvidenceSigningKey; key != "" {
 		signer, err := evidence.ParseSigningKey(key)
@@ -279,6 +286,7 @@ func main() {
 
 	// Cost tracker for resource usage and billing (uses same key as audit HMAC).
 	costTracker := cost.New(db, []byte(cfg.Observability.AuditHMACKey))
+	costTracker.SetPreviousKeys(cfg.Observability.AuditHMACPreviousKeys)
 
 	// Session templates manager — marketplace and template-based session creation.
 	templatesManager := templates.New(db)
@@ -336,6 +344,7 @@ func main() {
 
 	// Replay manager for session checkpoints (uses same key as audit HMAC).
 	replayMgr := replay.New(db, ws, []byte(cfg.Observability.AuditHMACKey))
+	replayMgr.SetPreviousKeys(cfg.Observability.AuditHMACPreviousKeys)
 
 	// Configure automatic checkpoint creation after command execution.
 	// Only fires for sessions with replay_enabled = true.

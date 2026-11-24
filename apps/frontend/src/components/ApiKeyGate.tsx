@@ -78,8 +78,13 @@ export function ApiKeyGate({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       const offered = await sso.providers();
-      if (cancelled || generation.current !== gen) return;
+      if (cancelled) return;
+      // Keep the provider list even when a saved sign-in is rejected while
+      // this request is in flight. rejectKey() bumps the generation so the
+      // key cannot be written back, and dropping the list here hid
+      // "Sign in with SSO" until a reload.
       setProviders(offered);
+      if (generation.current !== gen) return;
       if (!stored && offered && (await sso.hasSession())) {
         if (cancelled || generation.current !== gen) return;
         localStorage.setItem(STORAGE_KEY, SSO_SESSION);

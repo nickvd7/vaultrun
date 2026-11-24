@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **The dashboard healthcheck can succeed.** Next.js standalone binds `HOSTNAME`, and Docker sets that to the container name, which is the container IP. The check of `127.0.0.1:3000` therefore stayed unhealthy while the published port still worked. The process now binds `0.0.0.0` before Next reads the variable.
+- **A missing secret and a broken secrets backend are different answers.** `400 secret not found` stays the reply when the name has no value. A failed login, a refused address, or a backend that cannot be reached is `502 secret backend unavailable`. The backend's body stays in the API log.
 - **`make restore` no longer restores into Postgres while it is still initialising.** On an empty data directory the image starts a temporary server and then shuts it down. The first successful readiness check could fall in that window, and the restore failed with "the database system is shutting down".
 
 ### Added
@@ -15,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **AWS instance role.** With `AWS_ACCESS_KEY_ID` unset, Secrets Manager uses IMDSv2. Environment keys still win. The region falls back to instance metadata. Only the API process may call the metadata address; sandbox egress does not.
 - **Azure Key Vault** (`SECRETS_PROVIDER=azure`). A service principal (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`) or, without a client secret, the instance managed identity. The latest version of the named secret is fetched per run and not stored.
 - **`GET /api/v1/whoami` lists the secret names this key may inject**, and whether the allowlist is unrestricted. It does not return values. The MCP tool `whoami` prints the same thing, and `get_session` now includes `allowed_hosts`.
+- **Sandbox escape check in the quickstart.** With the network on, a session must not reach the metadata address or the host API, must not see the Docker socket or the host workspace directory, and must not be able to write the image root. The injected secret in that run's output is redacted.
 
 ---
 

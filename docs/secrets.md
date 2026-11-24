@@ -46,6 +46,11 @@ lookup happens, so the response does not reveal whether the secret exists, and
 a `secret.denied` audit entry is written. The master key is never restricted.
 Keys created before migration 022 stay unrestricted until you set a list.
 
+A lookup that finds no value answers `400` with `secret not found: <name>`.
+A login failure, a refused address, or a backend that cannot be reached
+answers `502` with `secret backend unavailable: <name>`. The response does
+not include the backend's body. The API log has the status and the reason.
+
 ### Output redaction
 
 For every run that requests `secrets`, VaultRun replaces the exact value of
@@ -94,7 +99,7 @@ the API container's environment; keep the file out of version control.
 
 ```
 SECRETS_PROVIDER=vault
-VAULT_ADDR=https://vault.internal:8200
+VAULT_ADDR=https://vault.example.com
 VAULT_TOKEN=                  # static token; leave empty to use AppRole below
 VAULT_ROLE_ID=
 VAULT_SECRET_ID=
@@ -106,6 +111,12 @@ VAULT_VERSION=                # optional KV v2 version (digits only)
 ```
 
 Secrets are read from `{VAULT_ADDR}/v1/{VAULT_MOUNT}/data/{VAULT_PATH}/{name}`.
+
+The client does not follow redirects, and it refuses to dial a loopback,
+link-local or private address. `http://127.0.0.1:8200` and a Vault that
+resolves only to a private IP will not connect. Use an address that is
+public from the API.
+
 `VAULT_VERSION` is sent as `?version=`. `VAULT_FIELD` selects one field and
 does not fall back to another name.
 

@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"log/slog"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/nickvd7/vaultrun/internal/jobqueue"
 	"github.com/nickvd7/vaultrun/internal/models"
 	"github.com/nickvd7/vaultrun/internal/runner"
+	"github.com/nickvd7/vaultrun/internal/secrets"
 )
 
 type RunHandler struct {
@@ -76,6 +77,29 @@ func (rh *RunHandler) authorizeSecrets(c *gin.Context, requested []string) bool 
 	})
 	c.JSON(http.StatusForbidden, gin.H{"error": "secret not permitted for this key: " + name})
 	return false
+}
+
+// secretClientError is what a run caller sees when a lookup fails.
+// A missing name stays "secret not found". A login, network or configuration
+// failure is a different message, and the detail stays in the server log:
+// the response never includes the backend body or the secret value.
+func secretClientError(name string, err error) (int, string) {
+	switch {
+	case secrets.IsInvalidName(err):
+		return http.StatusBadRequest, "invalid secret name"
+	case secrets.IsNotFound(err):
+		return http.StatusBadRequest, "secret not found: " + name
+	default:
+		return http.StatusBadGateway, "secret backend unavailable: " + name
+	}
+}
+
+func (rh *RunHandler) failSecret(c *gin.Context, name string, err error) {
+	if !secrets.IsNotFound(err) && !secrets.IsInvalidName(err) {
+		slog.Error("secret backend", "secret", name, "err", err)
+	}
+	code, msg := secretClientError(name, err)
+	c.JSON(code, gin.H{"error": msg})
 }
 
 type createRunRequest struct {
@@ -153,7 +177,7 @@ func (rh *RunHandler) Execute(c *gin.Context) {
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				rh.failSecret(c, name, err)
 				return
 			}
 			secretEnv[name] = val
@@ -240,7 +264,7 @@ func (rh *RunHandler) Stream(c *gin.Context) {
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				rh.failSecret(c, name, err)
 				return
 			}
 			secretEnvStream[name] = val
@@ -412,7 +436,7 @@ func (rh *RunHandler) Async(c *gin.Context) {
 		for _, name := range req.Secrets {
 			val, err := rh.h.secrets.GetSecret(c.Request.Context(), name)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "secret not found: " + name})
+				rh.failSecret(c, name, err)
 				return
 			}
 			secretEnvAsync[name] = val
@@ -457,8 +481,8 @@ func (rh *RunHandler) Async(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"run_id": run.ID,
-		"status": run.Status,
+		"run_id":  run.ID,
+		"status":  run.Status,
 		"message": "run enqueued",
 	})
 }

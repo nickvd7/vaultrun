@@ -169,6 +169,8 @@ jobs:
       - name: Dashboard proxies the API with the user's own key
         run: |
           [ "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:3000/)" = "200" ]
+          FID=$(docker compose -f deployments/docker-compose.yml --env-file .env ps -q frontend)
+          [ "$(docker inspect -f '{{.State.Health.Status}}' "$FID")" = "healthy" ]
           [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/v1/sessions?limit=1')" = "401" ]
           [ "$(curl -sS -o /dev/null -w '%{http_code}' 'http://localhost:3000/api/v1/sessions?limit=1' -H "X-API-Key: $API_KEY")" = "200" ]
           # Browsers send Origin on POST; the dashboard origin must be accepted, others not.
@@ -240,6 +242,30 @@ jobs:
           done
           curl -fsS "http://localhost:8080/api/v1/sessions/$SID/costs" -H "X-API-Key: $API_KEY" | jq -e '.metrics[0].cpu_core_hours > 0'
           jq -e . <<<"$(curl -fsS 'http://localhost:8080/api/v1/costs/breakdown' -H "X-API-Key: $API_KEY")" >/dev/null
+
+      - name: Sandbox cannot reach metadata, the host, or return a secret
+        run: |
+          RESP=$(curl -sS -w '\n%{http_code}' -X POST http://localhost:8080/api/v1/sessions \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"image":"python:3.12-slim","network_enabled":true}')
+          CODE=$(echo "$RESP" | tail -n1); BODY=$(echo "$RESP" | sed '$d')
+          [ "$CODE" = "201" ] || { echo "$BODY" >&2; exit 1; }
+          SID=$(echo "$BODY" | jq -er '.id')
+          curl -fsS -X POST "http://localhost:8080/api/v1/sessions/$SID/files" \
+            -H "X-API-Key: $API_KEY" \
+            -F "file=@scripts/sandbox-escape.py;filename=escape.py" -F "path=escape.py"
+          RESP=$(curl -sS -X POST "http://localhost:8080/api/v1/sessions/$SID/run" \
+            -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' \
+            -d '{"command":"python","args":["escape.py"],"timeout_seconds":25,"secrets":["E2E_TOKEN"]}')
+          echo "$RESP" | jq -c '{status, exit_code, stdout, stderr}'
+          [ "$(echo "$RESP" | jq -r '.exit_code')" = "0" ]
+          OUT=$(echo "$RESP" | jq -r '.stdout')
+          echo "$OUT" | head -n1 | grep -qx 'contained'
+          echo "$OUT" | grep -q 'token=\[REDACTED:E2E_TOKEN\]'
+          if echo "$OUT$RESP" | grep -q 'e2e-secret-value'; then
+            echo "secret value left the sandbox via stdout" >&2; exit 1
+          fi
+          curl -fsS -X DELETE "http://localhost:8080/api/v1/sessions/$SID" -H "X-API-Key: $API_KEY" >/dev/null
 
       - name: Network allowlist (allowed_hosts) is enforced
         run: |

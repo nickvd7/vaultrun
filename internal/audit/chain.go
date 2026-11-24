@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"crypto/hmac"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -32,6 +33,42 @@ type chainHead struct {
 	head   *dbpkg.AuditChainHead
 	exists bool
 	valid  bool
+}
+
+// AdoptRotatedHead re-signs the chain head with the current key when it still
+// verifies under a previous key. Entries keep the signature they were written
+// with. A head that matches neither key is left alone.
+func (l *Logger) AdoptRotatedHead(ctx context.Context) error {
+	if l.db == nil || len(l.hmacKey) == 0 || len(l.previous) == 0 {
+		return nil
+	}
+	h, err := dbpkg.GetAuditChainHead(ctx, l.db, false)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	current := []byte(l.headMACWith(l.hmacKey, h))
+	if hmac.Equal([]byte(h.MAC), current) {
+		return nil
+	}
+	matched := false
+	for _, key := range l.previous {
+		if hmac.Equal([]byte(h.MAC), []byte(l.headMACWith(key, h))) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return nil
+	}
+	h.MAC = string(current)
+	if err := dbpkg.UpdateAuditChainHead(ctx, l.db, h); err != nil {
+		return err
+	}
+	slog.Info("audit: chain head re-signed with the current AUDIT_HMAC_KEY")
+	return nil
 }
 
 func (l *Logger) loadHead(ctx context.Context) (chainHead, error) {

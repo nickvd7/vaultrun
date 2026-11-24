@@ -1,0 +1,10 @@
+[Unit]
+Description=VaultRun backup
+Documentation=https://github.com/nickvd7/vaultrun/blob/main/docs/operations.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vaultrun
+ExecStart=/usr/bin/make backup ENV_FILE=.env.production
+# The backup contains every key of this installation. Encrypt it and copy it
+# off this host before the next run deletes the local copy. See operations.md.

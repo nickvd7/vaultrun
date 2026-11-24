@@ -40,6 +40,22 @@ func validCheckpoint() *Checkpoint {
 	}
 }
 
+func TestVerifyCheckpointAcceptsPreviousKey(t *testing.T) {
+	old := &Manager{signingKey: []byte("old-key")}
+	cp := validCheckpoint()
+	cp.Signature = old.signCheckpoint(cp)
+
+	cur := &Manager{signingKey: []byte("new-key")}
+	cur.SetPreviousKeys([]string{"old-key"})
+	if !cur.verifyCheckpoint(cp) {
+		t.Fatal("checkpoint signed with a previous key must still verify")
+	}
+	cp.Signature = cur.signCheckpoint(cp)
+	if old.verifyCheckpoint(cp) {
+		t.Fatal("checkpoint signed with the current key must not verify under only the previous key")
+	}
+}
+
 func TestVerifyCheckpointAcceptsUntampered(t *testing.T) {
 	m := testManager()
 	cp := validCheckpoint()

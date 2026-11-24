@@ -17,6 +17,9 @@ set -euo pipefail
 ENV_FILE="${1:-.env}"
 [ -f "$ENV_FILE" ] || { echo "backup: $ENV_FILE not found" >&2; exit 1; }
 COMPOSE=(docker compose -f deployments/docker-compose.yml --env-file "$ENV_FILE")
+if [ -n "${COMPOSE_EXTRA:-}" ]; then
+  COMPOSE+=(-f "$COMPOSE_EXTRA")
+fi
 
 if [ -z "$("${COMPOSE[@]}" ps --status running -q postgres 2>/dev/null)" ]; then
   echo "backup: the postgres service is not running; start VaultRun (make up) first." >&2

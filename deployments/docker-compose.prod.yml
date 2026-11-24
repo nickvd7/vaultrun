@@ -1,0 +1,30 @@
+# Added by `make prod-up`. The API speaks TLS (certificate from make prod-env).
+# Caddy is the HTTPS address the browser uses, so SSO cookies (Secure) are
+# stored. The dashboard still proxies to the API; Node trusts the API
+# certificate via NODE_EXTRA_CA_CERTS.
+services:
+  frontend:
+    build:
+      args:
+        DASHBOARD_API_UPSTREAM: https://api:8080
+    environment:
+      NODE_EXTRA_CA_CERTS: /etc/vaultrun/tls/api.crt
+    volumes:
+      - ../deployments/prod/api.crt:/etc/vaultrun/tls/api.crt:ro
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "127.0.0.1:${PROD_HTTPS_PORT:-18443}:443"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

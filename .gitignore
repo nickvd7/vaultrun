@@ -7,6 +7,10 @@
 # Environment
 .env
 .env.local
+.env.production
+deployments/prod/*.crt
+deployments/prod/*.key
+deployments/prod/*.pem
 
 # Go
 *.test

@@ -131,6 +131,20 @@ type Manager struct {
 	db         *sqlx.DB
 	ws         WorkspaceManager
 	signingKey []byte
+	previous   [][]byte
+}
+
+// SetPreviousKeys adds keys that still verify checkpoints signed before a
+// rotation. New checkpoints are signed with the current key only.
+func (m *Manager) SetPreviousKeys(keys []string) {
+	m.previous = nil
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || k == string(m.signingKey) {
+			continue
+		}
+		m.previous = append(m.previous, []byte(k))
+	}
 }
 
 // New creates a new replay Manager
@@ -487,7 +501,11 @@ func (m *Manager) DeleteCheckpoint(ctx context.Context, id uuid.UUID) error {
 // between two adjacent fields changes the digest (boundary confusion), matching
 // the scheme used by the audit logger.
 func (m *Manager) signCheckpoint(cp *Checkpoint) string {
-	h := hmac.New(sha256.New, m.signingKey)
+	return m.signCheckpointKey(m.signingKey, cp)
+}
+
+func (m *Manager) signCheckpointKey(key []byte, cp *Checkpoint) string {
+	h := hmac.New(sha256.New, key)
 
 	writeField := func(s string) {
 		h.Write([]byte(s))
@@ -536,11 +554,10 @@ func (m *Manager) signCheckpoint(cp *Checkpoint) string {
 // freshly computed one. Returns false when signing is not configured, so a
 // deployment without a key cannot silently accept unsigned checkpoints.
 func (m *Manager) verifyCheckpoint(cp *Checkpoint) bool {
-	if len(m.signingKey) == 0 || cp.Signature == "" {
+	keys := m.verifyKeys()
+	if len(keys) == 0 || cp.Signature == "" {
 		return false
 	}
-
-	expected := m.signCheckpoint(cp)
 
 	// Compare the decoded bytes: hmac.Equal on hex strings of differing length
 	// short-circuits, and comparing raw digests is the conventional form.
@@ -548,12 +565,24 @@ func (m *Manager) verifyCheckpoint(cp *Checkpoint) bool {
 	if err != nil {
 		return false
 	}
-	want, err := hex.DecodeString(expected)
-	if err != nil {
-		return false
+	for _, key := range keys {
+		want, err := hex.DecodeString(m.signCheckpointKey(key, cp))
+		if err != nil {
+			continue
+		}
+		if hmac.Equal(got, want) {
+			return true
+		}
 	}
+	return false
+}
 
-	return hmac.Equal(got, want)
+func (m *Manager) verifyKeys() [][]byte {
+	var keys [][]byte
+	if len(m.signingKey) > 0 {
+		keys = append(keys, m.signingKey)
+	}
+	return append(keys, m.previous...)
 }
 
 // redactEnvVars redacts sensitive environment variables

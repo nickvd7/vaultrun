@@ -19,6 +19,9 @@ case "${1:-}" in
 esac
 ENV_FILE="${1:-.env}"
 COMPOSE=(docker compose -f deployments/docker-compose.yml --env-file "$ENV_FILE")
+if [ -n "${COMPOSE_EXTRA:-}" ]; then
+  COMPOSE+=(-f "$COMPOSE_EXTRA")
+fi
 
 sandboxes=$(docker ps -aq --filter label=vaultrun.managed=true)
 if [ "$ALL" -eq 0 ]; then
@@ -36,8 +39,10 @@ if [ -n "$sandboxes" ]; then
 fi
 
 # Per-session egress chains live in the host network namespace (netpolicy helper).
-if [ "$(docker inspect -f '{{.State.Running}}' vaultrun-netpolicy 2>/dev/null)" = "true" ]; then
-  docker exec vaultrun-netpolicy sh -c '
+NP=$(sed -n 's/^[[:space:]]*NETPOLICY_CONTAINER=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d "\"'")
+NP=${NP:-vaultrun-netpolicy}
+if [ "$(docker inspect -f '{{.State.Running}}' "$NP" 2>/dev/null)" = "true" ]; then
+  docker exec "$NP" sh -c '
     for c in $(iptables -S FORWARD 2>/dev/null | sed -n "s/^-A FORWARD -i \([^ ]*\) -j \(vr-[A-Za-z0-9_-]*\)$/\1:\2/p"); do
       iface=${c%%:*}; chain=${c##*:}
       iptables -D FORWARD -i "$iface" -j "$chain"

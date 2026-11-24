@@ -24,6 +24,9 @@ elif ! cmp -s "$B/env" "$ENV_FILE" && [ "${RESTORE_KEEP_ENV:-}" != "1" ]; then
   die "$ENV_FILE differs from the backup's. Its keys (AUDIT_HMAC_KEY, EVIDENCE_SIGNING_KEY, POSTGRES_PASSWORD, ...) must match the database: move $ENV_FILE away to use the backup's, or set RESTORE_KEEP_ENV=1 to keep yours."
 fi
 COMPOSE=(docker compose -f deployments/docker-compose.yml --env-file "$ENV_FILE")
+if [ -n "${COMPOSE_EXTRA:-}" ]; then
+  COMPOSE+=(-f "$COMPOSE_EXTRA")
+fi
 
 if [ -n "$("${COMPOSE[@]}" ps --status running -q api 2>/dev/null)" ]; then
   die "VaultRun is running; stop it first (make down)."

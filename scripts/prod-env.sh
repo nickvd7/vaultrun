@@ -149,7 +149,13 @@ if [ -f "$TLS_DIR/api.crt" ]; then
 fi
 if [ -f "$TLS_DIR/api.key" ]; then
   locked=0
-  if chmod 600 "$TLS_DIR/api.key" 2>/dev/null && command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$TLS_DIR/api.key"; then
+  key_mode="$(stat -c %a "$TLS_DIR/api.key" 2>/dev/null || echo "")"
+  key_owner="$(stat -c %u "$TLS_DIR/api.key" 2>/dev/null || echo "")"
+  # Already private: owned by the API user, or an ACL names that user, and
+  # other users have no permission. stat shows the ACL mask in the group digit.
+  if [ "${key_mode: -1}" = "0" ] && { [ "$key_owner" = "65532" ] || { command -v getfacl >/dev/null 2>&1 && getfacl -c "$TLS_DIR/api.key" 2>/dev/null | grep -q '^user:65532:r'; }; }; then
+    locked=1
+  elif chmod 600 "$TLS_DIR/api.key" 2>/dev/null && command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$TLS_DIR/api.key"; then
     locked=1
   elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     if docker run --rm -v "$TLS_DIR:/tls" alpine:3.21 \
@@ -158,8 +164,10 @@ if [ -f "$TLS_DIR/api.key" ]; then
     fi
   fi
   if [ "$locked" -ne 1 ]; then
-    chmod 644 "$TLS_DIR/api.key" 2>/dev/null || true
-    echo "prod-env: api.key is readable by every local user. Install acl (setfacl) or start Docker so the key can be limited to uid 65532." >&2
+    chmod 600 "$TLS_DIR/api.key" 2>/dev/null || true
+    echo "prod-env: api.key is not readable by the API user (uid 65532), and it was not made world-readable." >&2
+    echo "prod-env: install acl (setfacl), or run this where Docker can chown the key to uid 65532." >&2
+    exit 1
   fi
 fi
 

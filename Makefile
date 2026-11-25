@@ -58,6 +58,13 @@ prod-up: prod-env
 prod-down:
 	@$(MAKE) down ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
 
+# Reload Caddy only. --no-deps is required: a plain `up caddy` follows
+# depends_on and recreates the API and the frontend. That build has no SSO,
+# so a stack with OIDC_* or SAML_* set then exits.
+prod-caddy:
+	@if [ ! -f .env.production ]; then echo "Error: .env.production not found. Run: make prod-env" >&2; exit 1; fi
+	@docker compose -f deployments/docker-compose.yml -f deployments/docker-compose.prod.yml --env-file .env.production up -d --no-build --no-deps caddy
+
 prod-logs:
 	@$(MAKE) logs ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
 
@@ -72,7 +79,8 @@ dev-env:
 down:
 	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/down.sh $(ENV_FILE)
 
-# Also removes sandbox containers, networks and egress rules: sessions and their files are lost.
+# Removes this installation's sandboxes, their networks and egress rules, and
+# the files in its workspace. Another stack's sandboxes stay.
 down-all:
 	@COMPOSE_EXTRA="$(COMPOSE_EXTRA)" ./scripts/down.sh --all $(ENV_FILE)
 
@@ -187,9 +195,10 @@ help:
 	@echo "  make prod-env        Write .env.production (checks on, own ports, not the quickstart)"
 	@echo "  make prod-up         Start that profile beside a stack already on ports 3000 and 8080"
 	@echo "  make prod-down       Stop the production profile"
+	@echo "  make prod-caddy      Reload Caddy only; does not recreate the API or the frontend"
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"
 	@echo "  make down            Stop the stack; sandboxes and their files keep running"
-	@echo "  make down-all        Stop the stack and remove all sandboxes (sessions and files are lost)"
+	@echo "  make down-all        Stop this stack and remove its sandboxes (another stack's sandboxes stay)"
 	@echo "  make purge           down-all, and also delete the database, Redis and certificate volumes"
 	@echo "  make gvisor          Install gVisor (Linux, sudo) so sandboxes get a user-space kernel"
 	@echo "  make xfs-workspace   Put workspaces on XFS with project quotas (hard per-session limit; sudo)"

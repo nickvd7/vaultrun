@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Reloading Caddy does not replace the API.** `make prod-caddy` restarts only Caddy (`--no-build --no-deps`). `docker compose up caddy` also recreates the API and the frontend, and the core image then exits when `OIDC_*` or `SAML_*` is set. `make prod-env` no longer leaves `api.key` mode `644` when it cannot grant uid 65532 access; it stops and says to install `acl` or use Docker. `make help` no longer says `down-all` removes every sandbox.
 - **The production profile starts.** `deployments/prod` is mode `755`, so the API user can read the certificate. `api.key` is not world-readable: uid 65532 gets read access through an ACL or by owning the file. Caddy's site is `127.0.0.1` and `localhost` with `default_sni`, so a client that sends no SNI still gets a certificate. HTTP on port 13443 redirects to `https://127.0.0.1:18443`. The API healthcheck uses HTTPS when TLS is configured. `make bootstrap-key` follows `ENV_FILE` and `PORT`. `make down-all` removes only the sandboxes of the workspace in that env file.
 
 ### Added

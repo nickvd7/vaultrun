@@ -1,7 +1,25 @@
 # Local production profile. The certificate is Caddy's internal one, so a
 # browser warns once. Point a real certificate at this listener on a host
 # that other people reach, or set ACME_DOMAIN on the API and publish that.
-:443 {
+#
+# A bare ":443" site has no hostname, so the internal CA issues no leaf
+# certificate and every handshake fails with "internal error". Name the site.
+# Clients that open https://127.0.0.1 (curl, Chrome) often send no SNI;
+# default_sni selects the certificate in that case.
+#
+# Caddy listens on 443 inside the container. The published host port is
+# PROD_HTTPS_PORT (18443). The HTTP redirect must use that port: an automatic
+# redirect to https://127.0.0.1/ drops it, and port 80 was not published.
+{
+	default_sni 127.0.0.1
+	auto_https disable_redirects
+}
+
+127.0.0.1, localhost {
 	tls internal
 	reverse_proxy frontend:3000
+}
+
+http://127.0.0.1:80, http://localhost:80 {
+	redir https://127.0.0.1:{$PROD_HTTPS_PORT:18443}{uri} 308
 }

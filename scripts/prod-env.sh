@@ -104,6 +104,7 @@ profile FRONTEND_PORT 13000
 profile POSTGRES_PORT 15432
 profile REDIS_PORT 16379
 profile PROD_HTTPS_PORT 18443
+profile PROD_HTTP_PORT 13443
 profile WORKSPACE_HOST_DIR /var/lib/vaultrun-prod/workspaces
 profile NETPOLICY_CONTAINER vaultrun-prod-netpolicy
 profile COMPOSE_PROJECT_NAME vaultrun-prod
@@ -138,11 +139,28 @@ if [ ! -f "$TLS_DIR/api.crt" ] || [ ! -f "$TLS_DIR/api.key" ]; then
       -subj "/CN=api" >/dev/null 2>&1
   fi
 fi
-# 644 so the API user inside the container (uid 65532) can read the key.
-# The directory is 700, so other users on the host cannot open it.
-chmod 700 "$TLS_DIR"
+# The API runs as uid 65532. The directory must be traversable by that user
+# (755). A mode of 700 hides the certificate and the process restart-loops.
+# The private key stays mode 600. An ACL, or a chown to 65532, lets the API
+# read it without making it world-readable.
+chmod 755 "$TLS_DIR"
+if [ -f "$TLS_DIR/api.crt" ]; then
+  chmod 644 "$TLS_DIR/api.crt" 2>/dev/null || true
+fi
 if [ -f "$TLS_DIR/api.key" ]; then
-  chmod 644 "$TLS_DIR/api.key" "$TLS_DIR/api.crt"
+  locked=0
+  if chmod 600 "$TLS_DIR/api.key" 2>/dev/null && command -v setfacl >/dev/null 2>&1 && setfacl -m u:65532:r "$TLS_DIR/api.key"; then
+    locked=1
+  elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    if docker run --rm -v "$TLS_DIR:/tls" alpine:3.21 \
+      sh -c 'chown 65532:65532 /tls/api.key && chmod 600 /tls/api.key && chmod 644 /tls/api.crt'; then
+      locked=1
+    fi
+  fi
+  if [ "$locked" -ne 1 ]; then
+    chmod 644 "$TLS_DIR/api.key" 2>/dev/null || true
+    echo "prod-env: api.key is readable by every local user. Install acl (setfacl) or start Docker so the key can be limited to uid 65532." >&2
+  fi
 fi
 
 chmod 600 "$ENV_FILE"
@@ -151,5 +169,6 @@ echo "Start it with: make prod-up"
 echo "API:        https://127.0.0.1:18080"
 echo "Dashboard:  http://127.0.0.1:13000  (API key)"
 echo "Dashboard:  https://127.0.0.1:18443 (SSO; the browser warns about Caddy's local certificate)"
+echo "            http://127.0.0.1:13443 redirects there"
 echo "Ports 3000, 8080, 5432 and 6379 are not used."
 echo "The bundled Postgres stays on the compose network without TLS. For a database on another host, set DB_SSL_MODE=verify-full."

@@ -105,7 +105,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || curl -fsSk https://127.0.0.1:8080/health"]
+      # HTTPS only when TLS is configured. Trying HTTP first makes the TLS
+      # listener log a bad handshake on every check.
+      test: ["CMD-SHELL", "if [ -n \"$$TLS_CERT_FILE\" ]; then curl -fsSk https://127.0.0.1:8080/health; else curl -fsS http://127.0.0.1:8080/health; fi"]
       interval: 10s
       timeout: 5s
       retries: 5

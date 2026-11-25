@@ -13,8 +13,15 @@ if [ -n "${COMPOSE_EXTRA:-}" ]; then
 fi
 PORT="$(sed -n 's/^PORT=//p' "$ENV_FILE" 2>/dev/null | tail -1)"
 PORT="${PORT:-8080}"
-URL="http://127.0.0.1:${PORT}/health"
-TLS_URL="https://127.0.0.1:${PORT}/health"
+TLS_CERT="$(sed -n 's/^[[:space:]]*TLS_CERT_FILE=//p' "$ENV_FILE" 2>/dev/null | tail -1)"
+TLS_OFF="$(sed -n 's/^[[:space:]]*TLS_DISABLED=//p' "$ENV_FILE" 2>/dev/null | tail -1)"
+if [ -n "$TLS_CERT" ] && [ "$TLS_OFF" != "true" ] && [ "$TLS_OFF" != "1" ]; then
+  URL="https://127.0.0.1:${PORT}/health"
+  CURL=(curl -fsSk)
+else
+  URL="http://127.0.0.1:${PORT}/health"
+  CURL=(curl -fsS)
+fi
 FE_PORT="$(sed -n 's/^FRONTEND_PORT=//p' "$ENV_FILE" 2>/dev/null | tail -1)"
 FE_URL="http://127.0.0.1:${FE_PORT:-3000}/"
 
@@ -23,11 +30,8 @@ FE_URL="http://127.0.0.1:${FE_PORT:-3000}/"
 for _ in $(seq 1 "$((TIMEOUT / 2))"); do
   api=0
   fe=0
-  if curl -fsS "$URL" >/dev/null 2>&1; then
+  if "${CURL[@]}" "$URL" >/dev/null 2>&1; then
     api=1
-  elif curl -fsSk "$TLS_URL" >/dev/null 2>&1; then
-    api=1
-    URL="$TLS_URL"
   fi
   code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "$FE_URL" 2>/dev/null || true)"
   if [ -n "$code" ] && [ "$code" != "000" ]; then

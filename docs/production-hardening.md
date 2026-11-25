@@ -38,7 +38,9 @@ Upgrading from 0.3.4 or earlier: an existing `.env` without `VAULTRUN_INSECURE_D
 | Postgres / Redis | 5432 / 6379 | 15432 / 16379 |
 | Workspace | `/var/lib/vaultrun/workspaces` | `/var/lib/vaultrun-prod/workspaces` |
 
-What that profile turns on: `VAULTRUN_INSECURE_DEV=false`, the policy in `policy/production.rego` (mounted at `/etc/vaultrun/policy.rego`), TLS for the API, a metrics token, a Redis password, an audit key, an image allowlist, `MAX_WORKSPACE_MB=2048`, and `DOCKER_RUNTIME=runsc` when `runsc` is installed, otherwise `runc` with a warning. The dashboard on port 18443 is HTTPS via Caddy, so an SSO session cookie is stored. The browser warns once about Caddy's local certificate. An API key also works on port 13000.
+What that profile turns on: `VAULTRUN_INSECURE_DEV=false`, the policy in `policy/production.rego` (mounted at `/etc/vaultrun/policy.rego`), TLS for the API, a metrics token, a Redis password, an audit key, an image allowlist, `MAX_WORKSPACE_MB=2048`, and `DOCKER_RUNTIME=runsc` when `runsc` is installed, otherwise `runc` with a warning. The dashboard on port 18443 is HTTPS via Caddy, so an SSO session cookie is stored. The browser warns once about Caddy's local certificate. `http://127.0.0.1:13443` redirects to that HTTPS port. An API key also works on port 13000.
+
+`deployments/prod` is mode `755` so the API user (uid 65532) can read the certificate. `api.key` is not world-readable: that user is granted read with an ACL (`setfacl`) or by owning the file when Docker can `chown` it. The certificate itself stays world-readable. `make down-all` removes only sandboxes whose workspace is the one in the env file you pass (`ENV_FILE=.env.production` for this profile). `make bootstrap-key ENV_FILE=.env.production` calls the API on its own port, over HTTPS when TLS is on.
 
 What it does not do, because those belong to the host:
 

@@ -23,6 +23,8 @@ services:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    # A plain `up caddy` recreates the API and the frontend because of this.
+    # The core image has no SSO. make prod-caddy passes --no-deps.
     depends_on:
       frontend:
         condition: service_healthy

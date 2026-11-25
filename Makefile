@@ -49,10 +49,27 @@ up:
 
 # Production profile: its own ports, project and workspace, so it can run
 # beside a quickstart on 3000/8080. Does not install gVisor or format a disk.
+# prod-up builds the community API. That binary has no SSO, so it refuses to
+# start when OIDC or SAML is configured. An enterprise image already in this
+# project is replaced. Reload Caddy with prod-caddy instead.
 prod-env:
 	@./scripts/prod-env.sh
 
 prod-up: prod-env
+	@if [ "$(PROD_UP_COMMUNITY)" != "1" ]; then \
+	  oidc=$$(sed -n 's/^[[:space:]]*OIDC_ISSUER_URL=//p' .env.production | tail -1); \
+	  saml_meta=$$(sed -n 's/^[[:space:]]*SAML_IDP_METADATA_URL=//p' .env.production | tail -1); \
+	  saml_file=$$(sed -n 's/^[[:space:]]*SAML_IDP_METADATA_FILE=//p' .env.production | tail -1); \
+	  saml_cert=$$(sed -n 's/^[[:space:]]*SAML_CERT_FILE=//p' .env.production | tail -1); \
+	  saml_key=$$(sed -n 's/^[[:space:]]*SAML_KEY_FILE=//p' .env.production | tail -1); \
+	  if [ -n "$$oidc" ] || { [ -n "$$saml_cert" ] && [ -n "$$saml_key" ] && { [ -n "$$saml_meta" ] || [ -n "$$saml_file" ]; }; }; then \
+	    echo "make prod-up builds the community API. It has no SSO, so this stack would exit." >&2; \
+	    echo "An enterprise API already running in this project would be replaced." >&2; \
+	    echo "Reload Caddy with: make prod-caddy" >&2; \
+	    echo "To build the community image anyway: make prod-up PROD_UP_COMMUNITY=1" >&2; \
+	    exit 1; \
+	  fi; \
+	fi
 	@$(MAKE) up ENV_FILE=.env.production COMPOSE_EXTRA=deployments/docker-compose.prod.yml
 
 prod-down:
@@ -193,7 +210,8 @@ help:
 	@echo "  make test-local-gateway  Automated local-gateway smoke (no Ollama)"
 	@echo "  make up              Start all services via Docker Compose"
 	@echo "  make prod-env        Write .env.production (checks on, own ports, not the quickstart)"
-	@echo "  make prod-up         Start that profile beside a stack already on ports 3000 and 8080"
+	@echo "  make prod-up         Start that profile beside a stack on 3000/8080. Builds the community API."
+	@echo "                       With OIDC/SAML set it stops, so an enterprise image is not replaced. Use make prod-caddy."
 	@echo "  make prod-down       Stop the production profile"
 	@echo "  make prod-caddy      Reload Caddy only; does not recreate the API or the frontend"
 	@echo "  make dev-env         Add VAULTRUN_INSECURE_DEV=true to .env (local development only)"

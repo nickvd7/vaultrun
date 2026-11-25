@@ -42,7 +42,7 @@ What that profile turns on: `VAULTRUN_INSECURE_DEV=false`, the policy in `policy
 
 `deployments/prod` is mode `755` so the API user (uid 65532) can read the certificate. `api.key` is not world-readable: that user is granted read with an ACL (`setfacl`) or by owning the file when Docker can `chown` it. Without either, `make prod-env` stops and leaves the key unreadable rather than mode `644`. The certificate itself stays world-readable. `make down-all` removes only sandboxes whose workspace is the one in the env file you pass (`ENV_FILE=.env.production` for this profile). `make bootstrap-key ENV_FILE=.env.production` calls the API on its own port, over HTTPS when TLS is on.
 
-Reload Caddy with `make prod-caddy`. That is `--no-build --no-deps`. A plain `docker compose up caddy` follows `depends_on` and recreates the API and the frontend from this repository. That binary has no SSO, so a stack with `OIDC_*` or `SAML_*` set then exits (`SSO/SAML is a VaultRun Enterprise feature`). Recreate the API only when the enterprise compose file is included with `-f`.
+Reload Caddy with `make prod-caddy`. That is `--no-build --no-deps`. A plain `docker compose up caddy` follows `depends_on` and recreates the API and the frontend from this repository. That binary has no SSO, so a stack with `OIDC_*` or `SAML_*` set then exits (`SSO/SAML is a VaultRun Enterprise feature`). `make prod-up` is the same build: when OIDC or SAML is configured it stops before replacing an enterprise image. `make prod-up PROD_UP_COMMUNITY=1` builds anyway. Recreate the API only when the enterprise compose file is included with `-f`.
 
 What it does not do, because those belong to the host:
 
